@@ -23,6 +23,10 @@ export const FINGER_JOINTS = {
 // Bone rendering configuration
 const BONE_RADIUS = 0.002; // 2mm - thin pill bones (VR scale)
 
+// Pre-allocated vectors for updateBoneBetweenPoints to avoid per-frame allocations
+const _tempDir = new THREE.Vector3();
+const _upVector = new THREE.Vector3(0, 1, 0);
+
 /**
  * Create a bone mesh (cylinder that will be stretched between two points)
  * @param {THREE.Material} material
@@ -39,6 +43,7 @@ export function createBoneMesh(material, scale = 1) {
 
 /**
  * Update a bone mesh to stretch between two points
+ * Uses pre-allocated vectors to avoid per-frame allocations
  * @param {THREE.Mesh} bone
  * @param {THREE.Vector3} start
  * @param {THREE.Vector3} end
@@ -46,9 +51,9 @@ export function createBoneMesh(material, scale = 1) {
 export function updateBoneBetweenPoints(bone, start, end) {
     if (!bone || !start || !end) return;
 
-    // Calculate direction and length
-    const direction = new THREE.Vector3().subVectors(end, start);
-    const length = direction.length();
+    // Calculate direction and length using pre-allocated vector
+    _tempDir.subVectors(end, start);
+    const length = _tempDir.length();
 
     if (length < 0.001) {
         bone.visible = false;
@@ -63,10 +68,10 @@ export function updateBoneBetweenPoints(bone, start, end) {
     // Scale to match length
     bone.scale.set(1, length, 1);
 
-    // Rotate to point toward end
+    // Rotate to point toward end using pre-allocated up vector
     bone.quaternion.setFromUnitVectors(
-        new THREE.Vector3(0, 1, 0),
-        direction.normalize()
+        _upVector,
+        _tempDir.normalize()
     );
 }
 

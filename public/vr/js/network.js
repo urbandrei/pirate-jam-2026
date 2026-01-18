@@ -166,7 +166,15 @@ export class Network {
 
     disconnect() {
         if (this.socket) {
+            // Remove all event listeners to prevent accumulation on reconnect
+            this.socket.off('connect');
+            this.socket.off('message');
+            this.socket.off('disconnect');
+            this.socket.off('connect_error');
             this.socket.disconnect();
+            this.socket = null;
         }
+        this.playerId = null;
+        this.isConnected = false;
     }
 }

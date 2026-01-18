@@ -20,6 +20,9 @@ const JOINT_MIDDLE_TIP = 'middle-finger-tip';
 const JOINT_RING_TIP = 'ring-finger-tip';
 const JOINT_PINKY_TIP = 'pinky-finger-tip';
 
+// Cache Object.entries(FINGER_JOINTS) to avoid per-frame allocation
+const FINGER_JOINTS_ENTRIES = Object.entries(FINGER_JOINTS);
+
 export class Hands {
     constructor(scene, renderer) {
         this.scene = scene;
@@ -47,17 +50,49 @@ export class Hands {
         scene.add(this.leftHandMesh);
         scene.add(this.rightHandMesh);
 
+        // Cache mesh references to avoid getObjectByName() calls per frame
+        // These are O(n) tree traversals - cache them once after mesh creation
+        this._leftWrist = this.leftHandMesh.getObjectByName('wrist');
+        this._rightWrist = this.rightHandMesh.getObjectByName('wrist');
+        this._leftPinchIndicator = this.leftHandMesh.getObjectByName('pinchIndicator');
+        this._rightPinchIndicator = this.rightHandMesh.getObjectByName('pinchIndicator');
+        this._leftGrabRange = this.leftHandMesh.getObjectByName('grabRange');
+        this._rightGrabRange = this.rightHandMesh.getObjectByName('grabRange');
+
+        // Cache joint and bone meshes per hand
+        this._leftJointMeshes = {};
+        this._rightJointMeshes = {};
+        this._leftBoneMeshes = {};
+        this._rightBoneMeshes = {};
+        for (const [fingerName, joints] of Object.entries(FINGER_JOINTS)) {
+            for (const jointName of joints) {
+                this._leftJointMeshes[jointName] = this.leftHandMesh.getObjectByName('joint-' + jointName);
+                this._rightJointMeshes[jointName] = this.rightHandMesh.getObjectByName('joint-' + jointName);
+            }
+            for (let i = 0; i < joints.length - 1; i++) {
+                const boneName = 'bone-' + joints[i] + '-to-' + joints[i + 1];
+                this._leftBoneMeshes[boneName] = this.leftHandMesh.getObjectByName(boneName);
+                this._rightBoneMeshes[boneName] = this.rightHandMesh.getObjectByName(boneName);
+            }
+        }
+
         // Store joint positions for network transmission (local space, unscaled)
         this.leftJointPositions = {};
         this.rightJointPositions = {};
+        // Flags to avoid Object.keys().length > 0 checks per frame
+        this._hasLeftJoints = false;
+        this._hasRightJoints = false;
 
         // Track which input mode is active per hand
         this.leftHandMode = null; // 'hand-tracking' or 'controller'
         this.rightHandMode = null;
 
         // Velocity tracking for throw mechanic
-        this.leftHandPrevPos = null;
-        this.rightHandPrevPos = null;
+        // Pre-allocate objects to avoid per-frame allocations
+        this.leftHandPrevPos = { x: 0, y: 0, z: 0 };
+        this.rightHandPrevPos = { x: 0, y: 0, z: 0 };
+        this._hasLeftPrevPos = false;
+        this._hasRightPrevPos = false;
         this.leftHandVelocity = { x: 0, y: 0, z: 0 };
         this.rightHandVelocity = { x: 0, y: 0, z: 0 };
         this.lastVelocityUpdateTime = 0;
@@ -140,48 +175,60 @@ export class Hands {
         this.controller0 = this.renderer.xr.getController(0);
         this.controller1 = this.renderer.xr.getController(1);
 
-        // Controller event listeners for squeeze (grip button)
-        this.controller0.addEventListener('selectstart', () => {
-            if (this.rightHandMode === 'controller') {
-                this.handlePinchStart('right');
+        // Store listener references for cleanup in dispose()
+        this._controller0Listeners = {
+            selectstart: () => {
+                if (this.rightHandMode === 'controller') {
+                    this.handlePinchStart('right');
+                }
+            },
+            selectend: () => {
+                if (this.rightHandMode === 'controller') {
+                    this.handlePinchEnd('right');
+                }
+            },
+            squeezestart: () => {
+                if (this.rightHandMode === 'controller') {
+                    this.handlePinchStart('right');
+                }
+            },
+            squeezeend: () => {
+                if (this.rightHandMode === 'controller') {
+                    this.handlePinchEnd('right');
+                }
             }
-        });
-        this.controller0.addEventListener('selectend', () => {
-            if (this.rightHandMode === 'controller') {
-                this.handlePinchEnd('right');
-            }
-        });
-        this.controller0.addEventListener('squeezestart', () => {
-            if (this.rightHandMode === 'controller') {
-                this.handlePinchStart('right');
-            }
-        });
-        this.controller0.addEventListener('squeezeend', () => {
-            if (this.rightHandMode === 'controller') {
-                this.handlePinchEnd('right');
-            }
-        });
+        };
 
-        this.controller1.addEventListener('selectstart', () => {
-            if (this.leftHandMode === 'controller') {
-                this.handlePinchStart('left');
+        this._controller1Listeners = {
+            selectstart: () => {
+                if (this.leftHandMode === 'controller') {
+                    this.handlePinchStart('left');
+                }
+            },
+            selectend: () => {
+                if (this.leftHandMode === 'controller') {
+                    this.handlePinchEnd('left');
+                }
+            },
+            squeezestart: () => {
+                if (this.leftHandMode === 'controller') {
+                    this.handlePinchStart('left');
+                }
+            },
+            squeezeend: () => {
+                if (this.leftHandMode === 'controller') {
+                    this.handlePinchEnd('left');
+                }
             }
-        });
-        this.controller1.addEventListener('selectend', () => {
-            if (this.leftHandMode === 'controller') {
-                this.handlePinchEnd('left');
-            }
-        });
-        this.controller1.addEventListener('squeezestart', () => {
-            if (this.leftHandMode === 'controller') {
-                this.handlePinchStart('left');
-            }
-        });
-        this.controller1.addEventListener('squeezeend', () => {
-            if (this.leftHandMode === 'controller') {
-                this.handlePinchEnd('left');
-            }
-        });
+        };
+
+        // Add controller event listeners
+        for (const [event, handler] of Object.entries(this._controller0Listeners)) {
+            this.controller0.addEventListener(event, handler);
+        }
+        for (const [event, handler] of Object.entries(this._controller1Listeners)) {
+            this.controller1.addEventListener(event, handler);
+        }
 
         this.scene.add(this.controller0);
         this.scene.add(this.controller1);
@@ -190,12 +237,10 @@ export class Hands {
     handlePinchStart(hand) {
         if (hand === 'left') {
             this.leftPinching = true;
-            const indicator = this.leftHandMesh.getObjectByName('pinchIndicator');
-            if (indicator) indicator.visible = true;
+            if (this._leftPinchIndicator) this._leftPinchIndicator.visible = true;
         } else {
             this.rightPinching = true;
-            const indicator = this.rightHandMesh.getObjectByName('pinchIndicator');
-            if (indicator) indicator.visible = true;
+            if (this._rightPinchIndicator) this._rightPinchIndicator.visible = true;
         }
 
         if (this.onPinchStart) {
@@ -206,12 +251,10 @@ export class Hands {
     handlePinchEnd(hand) {
         if (hand === 'left') {
             this.leftPinching = false;
-            const indicator = this.leftHandMesh.getObjectByName('pinchIndicator');
-            if (indicator) indicator.visible = false;
+            if (this._leftPinchIndicator) this._leftPinchIndicator.visible = false;
         } else {
             this.rightPinching = false;
-            const indicator = this.rightHandMesh.getObjectByName('pinchIndicator');
-            if (indicator) indicator.visible = false;
+            if (this._rightPinchIndicator) this._rightPinchIndicator.visible = false;
         }
 
         if (this.onPinchEnd) {
@@ -268,6 +311,7 @@ export class Hands {
     /**
      * Track hand velocity for throw mechanic
      * Calculates velocity based on position change over time
+     * Uses pre-allocated objects - mutates in place to avoid GC pressure
      */
     updateVelocityTracking() {
         const now = performance.now();
@@ -278,29 +322,33 @@ export class Hands {
             // Update left hand velocity
             if (this.leftHandMesh.visible) {
                 const currentPos = this.leftHandMesh.position;
-                if (this.leftHandPrevPos) {
-                    // Calculate velocity in VR space, then scale to world units
-                    this.leftHandVelocity = {
-                        x: ((currentPos.x - this.leftHandPrevPos.x) / deltaTime) * GIANT_SCALE,
-                        y: ((currentPos.y - this.leftHandPrevPos.y) / deltaTime) * GIANT_SCALE,
-                        z: ((currentPos.z - this.leftHandPrevPos.z) / deltaTime) * GIANT_SCALE
-                    };
+                if (this._hasLeftPrevPos) {
+                    // Calculate velocity in VR space, then scale to world units - mutate in place
+                    this.leftHandVelocity.x = ((currentPos.x - this.leftHandPrevPos.x) / deltaTime) * GIANT_SCALE;
+                    this.leftHandVelocity.y = ((currentPos.y - this.leftHandPrevPos.y) / deltaTime) * GIANT_SCALE;
+                    this.leftHandVelocity.z = ((currentPos.z - this.leftHandPrevPos.z) / deltaTime) * GIANT_SCALE;
                 }
-                this.leftHandPrevPos = { x: currentPos.x, y: currentPos.y, z: currentPos.z };
+                // Update prevPos in place
+                this.leftHandPrevPos.x = currentPos.x;
+                this.leftHandPrevPos.y = currentPos.y;
+                this.leftHandPrevPos.z = currentPos.z;
+                this._hasLeftPrevPos = true;
             }
 
             // Update right hand velocity
             if (this.rightHandMesh.visible) {
                 const currentPos = this.rightHandMesh.position;
-                if (this.rightHandPrevPos) {
-                    // Calculate velocity in VR space, then scale to world units
-                    this.rightHandVelocity = {
-                        x: ((currentPos.x - this.rightHandPrevPos.x) / deltaTime) * GIANT_SCALE,
-                        y: ((currentPos.y - this.rightHandPrevPos.y) / deltaTime) * GIANT_SCALE,
-                        z: ((currentPos.z - this.rightHandPrevPos.z) / deltaTime) * GIANT_SCALE
-                    };
+                if (this._hasRightPrevPos) {
+                    // Calculate velocity in VR space, then scale to world units - mutate in place
+                    this.rightHandVelocity.x = ((currentPos.x - this.rightHandPrevPos.x) / deltaTime) * GIANT_SCALE;
+                    this.rightHandVelocity.y = ((currentPos.y - this.rightHandPrevPos.y) / deltaTime) * GIANT_SCALE;
+                    this.rightHandVelocity.z = ((currentPos.z - this.rightHandPrevPos.z) / deltaTime) * GIANT_SCALE;
                 }
-                this.rightHandPrevPos = { x: currentPos.x, y: currentPos.y, z: currentPos.z };
+                // Update prevPos in place
+                this.rightHandPrevPos.x = currentPos.x;
+                this.rightHandPrevPos.y = currentPos.y;
+                this.rightHandPrevPos.z = currentPos.z;
+                this._hasRightPrevPos = true;
             }
         }
 
@@ -311,9 +359,10 @@ export class Hands {
      * Get current hand velocity for throw mechanic
      * @param {string} hand - 'left' or 'right'
      * @returns {Object} Velocity in world units per second {x, y, z}
+     * NOTE: Returns internal reference - do not mutate!
      */
     getHandVelocity(hand = 'right') {
-        return hand === 'left' ? { ...this.leftHandVelocity } : { ...this.rightHandVelocity };
+        return hand === 'left' ? this.leftHandVelocity : this.rightHandVelocity;
     }
 
     /**
@@ -350,8 +399,8 @@ export class Hands {
             handMesh.position.set(wristPos.x, wristPos.y, wristPos.z);
             handMesh.quaternion.set(wristRot.x, wristRot.y, wristRot.z, wristRot.w);
 
-            // Wrist sphere stays at origin
-            const wristMesh = handMesh.getObjectByName('wrist');
+            // Wrist sphere stays at origin - use cached reference
+            const wristMesh = handName === 'left' ? this._leftWrist : this._rightWrist;
             if (wristMesh) {
                 wristMesh.position.set(0, 0, 0);
                 wristMesh.visible = true;
@@ -362,6 +411,8 @@ export class Hands {
 
             // Get the joint positions storage for this hand
             const jointPosStorage = handName === 'left' ? this.leftJointPositions : this.rightJointPositions;
+            const jointMeshes = handName === 'left' ? this._leftJointMeshes : this._rightJointMeshes;
+            const boneMeshes = handName === 'left' ? this._leftBoneMeshes : this._rightBoneMeshes;
 
             // Track whether we found thumb and index tips for pinch detection
             let hasThumbTip = false;
@@ -370,8 +421,11 @@ export class Hands {
             // Get pre-allocated joint position objects for this hand
             const jointPosObjects = handName === 'left' ? this._leftJointPosObjects : this._rightJointPosObjects;
 
-            // Update each finger's joints and bones
-            for (const [fingerName, joints] of Object.entries(FINGER_JOINTS)) {
+            // Track if any joints were found for this hand (used to avoid Object.keys check later)
+            let foundAnyJoint = false;
+
+            // Update each finger's joints and bones - use cached entries to avoid allocation
+            for (const [fingerName, joints] of FINGER_JOINTS_ENTRIES) {
                 // Use pre-allocated arrays for this finger
                 const jointPositions = this._fingerJointPositions[fingerName];
                 const validFlags = this._fingerJointValid[fingerName];
@@ -418,19 +472,20 @@ export class Hands {
                     jointPosObj.y = localPos.y;
                     jointPosObj.z = localPos.z;
                     jointPosStorage[jointName] = jointPosObj;
+                    foundAnyJoint = true;
 
-                    // Update joint sphere
-                    const jointMesh = handMesh.getObjectByName('joint-' + jointName);
+                    // Update joint sphere using cached reference
+                    const jointMesh = jointMeshes[jointName];
                     if (jointMesh) {
                         jointMesh.position.copy(localPos);
                         jointMesh.visible = true;
                     }
                 }
 
-                // Update bone segments between consecutive joints
+                // Update bone segments between consecutive joints using cached references
                 for (let i = 0; i < joints.length - 1; i++) {
                     const boneName = 'bone-' + joints[i] + '-to-' + joints[i + 1];
-                    const bone = handMesh.getObjectByName(boneName);
+                    const bone = boneMeshes[boneName];
 
                     if (bone && validFlags[i] && validFlags[i + 1]) {
                         updateBoneBetweenPoints(bone, jointPositions[i], jointPositions[i + 1]);
@@ -440,13 +495,20 @@ export class Hands {
                 }
             }
 
+            // Update the hasJoints flag to avoid Object.keys().length check in getHandData
+            if (handName === 'left') {
+                this._hasLeftJoints = foundAnyJoint;
+            } else {
+                this._hasRightJoints = foundAnyJoint;
+            }
+
             // Pinch detection based on thumb-index distance
             if (hasThumbTip && hasIndexTip) {
                 const pinchDistance = this._thumbTipPos.distanceTo(this._indexTipPos);
                 const isPinching = pinchDistance < PINCH_THRESHOLD;
 
-                // Update pinch indicator position to midpoint between thumb and index
-                const pinchIndicator = handMesh.getObjectByName('pinchIndicator');
+                // Update pinch indicator position to midpoint between thumb and index - use cached reference
+                const pinchIndicator = handName === 'left' ? this._leftPinchIndicator : this._rightPinchIndicator;
                 if (pinchIndicator) {
                     // Calculate pinch point as midpoint between thumb and index tips (reusing _pinchPoint)
                     this._pinchPoint.copy(this._thumbTipPos).lerp(this._indexTipPos, 0.5);
@@ -495,23 +557,27 @@ export class Hands {
     updateControllerHand(controller, handMesh, frame, referenceSpace, handName) {
         if (!controller || !handMesh) return;
 
-        // Hide all finger joints and bones in controller mode
-        for (const [fingerName, joints] of Object.entries(FINGER_JOINTS)) {
+        // Get cached mesh references for this hand
+        const jointMeshes = handName === 'left' ? this._leftJointMeshes : this._rightJointMeshes;
+        const boneMeshes = handName === 'left' ? this._leftBoneMeshes : this._rightBoneMeshes;
+        const wrist = handName === 'left' ? this._leftWrist : this._rightWrist;
+
+        // Hide all finger joints and bones in controller mode using cached references
+        for (const joints of Object.values(FINGER_JOINTS)) {
             // Hide joint spheres
-            joints.forEach(jointName => {
-                const joint = handMesh.getObjectByName('joint-' + jointName);
+            for (const jointName of joints) {
+                const joint = jointMeshes[jointName];
                 if (joint) joint.visible = false;
-            });
+            }
             // Hide bone segments
             for (let i = 0; i < joints.length - 1; i++) {
                 const boneName = 'bone-' + joints[i] + '-to-' + joints[i + 1];
-                const bone = handMesh.getObjectByName(boneName);
+                const bone = boneMeshes[boneName];
                 if (bone) bone.visible = false;
             }
         }
 
-        // Make wrist sphere bigger in controller mode
-        const wrist = handMesh.getObjectByName('wrist');
+        // Make wrist sphere bigger in controller mode - use cached reference
         if (wrist) {
             wrist.scale.set(3, 3, 3); // Larger sphere for controller
             wrist.visible = true;
@@ -595,8 +661,8 @@ export class Hands {
                 this._leftHandData.pinchPoint = null;
             }
 
-            // Include joint positions only in hand tracking mode
-            if (this.leftHandMode === 'hand-tracking' && Object.keys(this.leftJointPositions).length > 0) {
+            // Include joint positions only in hand tracking mode - use flag to avoid Object.keys allocation
+            if (this.leftHandMode === 'hand-tracking' && this._hasLeftJoints) {
                 for (const [jointName, pos] of Object.entries(this.leftJointPositions)) {
                     if (!this._leftJointsData[jointName]) {
                         this._leftJointsData[jointName] = { x: 0, y: 0, z: 0 };
@@ -634,8 +700,8 @@ export class Hands {
                 this._rightHandData.pinchPoint = null;
             }
 
-            // Include joint positions only in hand tracking mode
-            if (this.rightHandMode === 'hand-tracking' && Object.keys(this.rightJointPositions).length > 0) {
+            // Include joint positions only in hand tracking mode - use flag to avoid Object.keys allocation
+            if (this.rightHandMode === 'hand-tracking' && this._hasRightJoints) {
                 for (const [jointName, pos] of Object.entries(this.rightJointPositions)) {
                     if (!this._rightJointsData[jointName]) {
                         this._rightJointsData[jointName] = { x: 0, y: 0, z: 0 };
@@ -690,11 +756,77 @@ export class Hands {
     }
 
     setGrabbing(hand, isGrabbing) {
-        const mesh = hand === 'left' ? this.leftHandMesh : this.rightHandMesh;
-        const grabRange = mesh.getObjectByName('grabRange');
+        // Use cached grab range reference
+        const grabRange = hand === 'left' ? this._leftGrabRange : this._rightGrabRange;
         if (grabRange) {
             grabRange.material.color.setHex(isGrabbing ? 0xff0000 : 0x00ff00);
             grabRange.material.opacity = isGrabbing ? 0.5 : 0.3;
         }
+    }
+
+    /**
+     * Clean up all resources to prevent memory leaks.
+     * Call this when the VR session ends or on disconnect.
+     */
+    dispose() {
+        // Remove controller event listeners
+        if (this.controller0 && this._controller0Listeners) {
+            for (const [event, handler] of Object.entries(this._controller0Listeners)) {
+                this.controller0.removeEventListener(event, handler);
+            }
+        }
+        if (this.controller1 && this._controller1Listeners) {
+            for (const [event, handler] of Object.entries(this._controller1Listeners)) {
+                this.controller1.removeEventListener(event, handler);
+            }
+        }
+
+        // Remove controllers from scene
+        if (this.controller0) {
+            this.scene.remove(this.controller0);
+        }
+        if (this.controller1) {
+            this.scene.remove(this.controller1);
+        }
+
+        // Remove hand meshes from scene and dispose of their resources
+        if (this.leftHandMesh) {
+            this.scene.remove(this.leftHandMesh);
+            this.leftHandMesh.traverse((child) => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            });
+        }
+        if (this.rightHandMesh) {
+            this.scene.remove(this.rightHandMesh);
+            this.rightHandMesh.traverse((child) => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            });
+        }
+
+        // Clear cached references
+        this._leftWrist = null;
+        this._rightWrist = null;
+        this._leftPinchIndicator = null;
+        this._rightPinchIndicator = null;
+        this._leftGrabRange = null;
+        this._rightGrabRange = null;
+        this._leftJointMeshes = null;
+        this._rightJointMeshes = null;
+        this._leftBoneMeshes = null;
+        this._rightBoneMeshes = null;
     }
 }

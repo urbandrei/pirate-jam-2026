@@ -43,11 +43,9 @@ export class RemotePlayers {
     updatePlayers(state, localPlayerId) {
         if (!state || !state.players) return;
 
-        const currentPlayerIds = new Set(Object.keys(state.players));
-
-        // Remove players that left
+        // Remove players that left - iterate directly without creating Set
         for (const [playerId, data] of this.players) {
-            if (!currentPlayerIds.has(playerId)) {
+            if (!(playerId in state.players)) {
                 this.disposePlayerMesh(data.mesh);
                 this.scene.remove(data.mesh);
                 this.players.delete(playerId);
@@ -78,7 +76,9 @@ export class RemotePlayers {
                 playerObj = {
                     mesh,
                     type: playerData.type,
-                    targetPosition: new THREE.Vector3()
+                    targetPosition: new THREE.Vector3(),
+                    // Cache grabbedOutline reference to avoid getObjectByName per frame
+                    grabbedOutline: playerData.type === 'pc' ? mesh.getObjectByName('grabbedOutline') : null
                 };
                 this.players.set(playerId, playerObj);
             }
@@ -116,10 +116,9 @@ export class RemotePlayers {
             mesh.rotation.y = data.lookRotation.y;
         }
 
-        // Update grabbed state visual
-        const outline = mesh.getObjectByName('grabbedOutline');
-        if (outline) {
-            outline.visible = data.isGrabbed;
+        // Update grabbed state visual using cached reference
+        if (playerObj.grabbedOutline) {
+            playerObj.grabbedOutline.visible = data.isGrabbed;
         }
     }
 
@@ -148,13 +147,14 @@ export class RemotePlayers {
     }
 
     // Get list of PC players for grab detection
+    // NOTE: Returns direct position references - do not mutate!
     getPCPlayerPositions() {
         const positions = [];
         for (const [playerId, data] of this.players) {
             if (data.type === 'pc') {
                 positions.push({
                     id: playerId,
-                    position: data.mesh.position.clone()
+                    position: data.mesh.position  // Return reference directly to avoid clone allocation
                 });
             }
         }
