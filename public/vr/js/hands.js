@@ -66,6 +66,38 @@ export class Hands {
         this.leftPinchPoint = null;
         this.rightPinchPoint = null;
 
+        // Reusable objects to avoid allocation in update loop
+        this._wristWorldPos = new THREE.Vector3();
+        this._invQuat = new THREE.Quaternion();
+        this._tempVec3 = new THREE.Vector3();
+        this._thumbTipPos = new THREE.Vector3();
+        this._indexTipPos = new THREE.Vector3();
+        this._pinchPoint = new THREE.Vector3();
+
+        // Reusable hand data structures for getHandData()
+        this._handData = {
+            leftHand: null,
+            rightHand: null
+        };
+        this._leftHandData = {
+            position: { x: 0, y: 0, z: 0 },
+            rotation: { x: 0, y: 0, z: 0, w: 1 },
+            pinching: false,
+            pinchPoint: null,
+            joints: null
+        };
+        this._rightHandData = {
+            position: { x: 0, y: 0, z: 0 },
+            rotation: { x: 0, y: 0, z: 0, w: 1 },
+            pinching: false,
+            pinchPoint: null,
+            joints: null
+        };
+        this._leftPinchPointData = { x: 0, y: 0, z: 0 };
+        this._rightPinchPointData = { x: 0, y: 0, z: 0 };
+        this._leftJointsData = {};
+        this._rightJointsData = {};
+
         // Setup controllers for fallback
         this.setupControllers();
     }
@@ -306,17 +338,15 @@ export class Hands {
                 wristMesh.visible = true;
             }
 
-            const wristWorldPos = new THREE.Vector3(wristPos.x, wristPos.y, wristPos.z);
-            const invQuat = handMesh.quaternion.clone().invert();
+            this._wristWorldPos.set(wristPos.x, wristPos.y, wristPos.z);
+            this._invQuat.copy(handMesh.quaternion).invert();
 
             // Get the joint positions storage for this hand
             const jointPosStorage = handName === 'left' ? this.leftJointPositions : this.rightJointPositions;
 
-            // Store joint positions for pinch detection
-            let thumbTipWorldPos = null;
-            let indexTipWorldPos = null;
-            let thumbTipRealPos = null;
-            let indexTipRealPos = null;
+            // Track whether we found thumb and index tips for pinch detection
+            let hasThumbTip = false;
+            let hasIndexTip = false;
 
             // Update each finger's joints and bones
             for (const [fingerName, joints] of Object.entries(FINGER_JOINTS)) {
@@ -337,20 +367,22 @@ export class Hands {
                     }
 
                     const pos = jointPose.transform.position;
-                    const worldPos = new THREE.Vector3(pos.x, pos.y, pos.z);
 
-                    // Store tip positions for pinch detection
+                    // Store tip positions for pinch detection (reusing cached Vector3s)
                     if (jointName === JOINT_THUMB_TIP) {
-                        thumbTipWorldPos = worldPos.clone();
-                        thumbTipRealPos = new THREE.Vector3(pos.x, pos.y, pos.z);
+                        this._thumbTipPos.set(pos.x, pos.y, pos.z);
+                        hasThumbTip = true;
                     } else if (jointName === JOINT_INDEX_TIP) {
-                        indexTipWorldPos = worldPos.clone();
-                        indexTipRealPos = new THREE.Vector3(pos.x, pos.y, pos.z);
+                        this._indexTipPos.set(pos.x, pos.y, pos.z);
+                        hasIndexTip = true;
                     }
 
-                    // Convert to local space
-                    const localPos = worldPos.clone().sub(wristWorldPos);
-                    localPos.applyQuaternion(invQuat);
+                    // Convert to local space (reusing _tempVec3)
+                    this._tempVec3.set(pos.x, pos.y, pos.z);
+                    this._tempVec3.sub(this._wristWorldPos);
+                    this._tempVec3.applyQuaternion(this._invQuat);
+                    // Clone for storage since we reuse _tempVec3
+                    const localPos = this._tempVec3.clone();
                     jointPositions.push(localPos);
 
                     // Store joint position for network transmission (local space, unscaled)
@@ -378,27 +410,27 @@ export class Hands {
             }
 
             // Pinch detection based on thumb-index distance
-            if (thumbTipRealPos && indexTipRealPos) {
-                const pinchDistance = thumbTipRealPos.distanceTo(indexTipRealPos);
+            if (hasThumbTip && hasIndexTip) {
+                const pinchDistance = this._thumbTipPos.distanceTo(this._indexTipPos);
                 const isPinching = pinchDistance < PINCH_THRESHOLD;
 
                 // Update pinch indicator position to midpoint between thumb and index
                 const pinchIndicator = handMesh.getObjectByName('pinchIndicator');
-                if (pinchIndicator && thumbTipWorldPos && indexTipWorldPos) {
-                    // Calculate pinch point as midpoint between thumb and index tips
-                    const pinchPointWorld = thumbTipWorldPos.clone().lerp(indexTipWorldPos, 0.5);
+                if (pinchIndicator) {
+                    // Calculate pinch point as midpoint between thumb and index tips (reusing _pinchPoint)
+                    this._pinchPoint.copy(this._thumbTipPos).lerp(this._indexTipPos, 0.5);
 
                     // Store the pinch point in VR world coordinates (unscaled)
                     if (handName === 'left') {
-                        this.leftPinchPoint = { x: pinchPointWorld.x, y: pinchPointWorld.y, z: pinchPointWorld.z };
+                        this.leftPinchPoint = { x: this._pinchPoint.x, y: this._pinchPoint.y, z: this._pinchPoint.z };
                     } else {
-                        this.rightPinchPoint = { x: pinchPointWorld.x, y: pinchPointWorld.y, z: pinchPointWorld.z };
+                        this.rightPinchPoint = { x: this._pinchPoint.x, y: this._pinchPoint.y, z: this._pinchPoint.z };
                     }
 
-                    // Convert to local space for the indicator
-                    const localMid = pinchPointWorld.clone().sub(wristWorldPos);
-                    localMid.applyQuaternion(invQuat);
-                    pinchIndicator.position.copy(localMid);
+                    // Convert to local space for the indicator (reusing _tempVec3)
+                    this._tempVec3.copy(this._pinchPoint).sub(this._wristWorldPos);
+                    this._tempVec3.applyQuaternion(this._invQuat);
+                    pinchIndicator.position.copy(this._tempVec3);
                     pinchIndicator.visible = isPinching;
                 }
 
@@ -505,90 +537,91 @@ export class Hands {
     }
 
     getHandData() {
-        const data = {
-            leftHand: null,
-            rightHand: null
-        };
+        // Reuse cached data structures to avoid allocation each frame
+        this._handData.leftHand = null;
+        this._handData.rightHand = null;
 
         // Scale positions by GIANT_SCALE to convert VR meters to world units
         // VR hand at 0.5m -> 5m in world units
         if (this.leftHandMesh.visible) {
-            data.leftHand = {
-                position: {
-                    x: this.leftHandMesh.position.x * GIANT_SCALE,
-                    y: this.leftHandMesh.position.y * GIANT_SCALE,
-                    z: this.leftHandMesh.position.z * GIANT_SCALE
-                },
-                rotation: {
-                    x: this.leftHandMesh.quaternion.x,
-                    y: this.leftHandMesh.quaternion.y,
-                    z: this.leftHandMesh.quaternion.z,
-                    w: this.leftHandMesh.quaternion.w
-                },
-                pinching: this.leftPinching
-            };
+            // Update left hand data in place
+            this._leftHandData.position.x = this.leftHandMesh.position.x * GIANT_SCALE;
+            this._leftHandData.position.y = this.leftHandMesh.position.y * GIANT_SCALE;
+            this._leftHandData.position.z = this.leftHandMesh.position.z * GIANT_SCALE;
+            this._leftHandData.rotation.x = this.leftHandMesh.quaternion.x;
+            this._leftHandData.rotation.y = this.leftHandMesh.quaternion.y;
+            this._leftHandData.rotation.z = this.leftHandMesh.quaternion.z;
+            this._leftHandData.rotation.w = this.leftHandMesh.quaternion.w;
+            this._leftHandData.pinching = this.leftPinching;
 
             // Include pinch point position for grab mechanics
             if (this.leftPinchPoint) {
-                data.leftHand.pinchPoint = {
-                    x: this.leftPinchPoint.x * GIANT_SCALE,
-                    y: this.leftPinchPoint.y * GIANT_SCALE,
-                    z: this.leftPinchPoint.z * GIANT_SCALE
-                };
+                this._leftPinchPointData.x = this.leftPinchPoint.x * GIANT_SCALE;
+                this._leftPinchPointData.y = this.leftPinchPoint.y * GIANT_SCALE;
+                this._leftPinchPointData.z = this.leftPinchPoint.z * GIANT_SCALE;
+                this._leftHandData.pinchPoint = this._leftPinchPointData;
+            } else {
+                this._leftHandData.pinchPoint = null;
             }
 
             // Include joint positions only in hand tracking mode
             if (this.leftHandMode === 'hand-tracking' && Object.keys(this.leftJointPositions).length > 0) {
-                data.leftHand.joints = {};
                 for (const [jointName, pos] of Object.entries(this.leftJointPositions)) {
-                    data.leftHand.joints[jointName] = {
-                        x: pos.x * GIANT_SCALE,
-                        y: pos.y * GIANT_SCALE,
-                        z: pos.z * GIANT_SCALE
-                    };
+                    if (!this._leftJointsData[jointName]) {
+                        this._leftJointsData[jointName] = { x: 0, y: 0, z: 0 };
+                    }
+                    this._leftJointsData[jointName].x = pos.x * GIANT_SCALE;
+                    this._leftJointsData[jointName].y = pos.y * GIANT_SCALE;
+                    this._leftJointsData[jointName].z = pos.z * GIANT_SCALE;
                 }
+                this._leftHandData.joints = this._leftJointsData;
+            } else {
+                this._leftHandData.joints = null;
             }
+
+            this._handData.leftHand = this._leftHandData;
         }
 
         if (this.rightHandMesh.visible) {
-            data.rightHand = {
-                position: {
-                    x: this.rightHandMesh.position.x * GIANT_SCALE,
-                    y: this.rightHandMesh.position.y * GIANT_SCALE,
-                    z: this.rightHandMesh.position.z * GIANT_SCALE
-                },
-                rotation: {
-                    x: this.rightHandMesh.quaternion.x,
-                    y: this.rightHandMesh.quaternion.y,
-                    z: this.rightHandMesh.quaternion.z,
-                    w: this.rightHandMesh.quaternion.w
-                },
-                pinching: this.rightPinching
-            };
+            // Update right hand data in place
+            this._rightHandData.position.x = this.rightHandMesh.position.x * GIANT_SCALE;
+            this._rightHandData.position.y = this.rightHandMesh.position.y * GIANT_SCALE;
+            this._rightHandData.position.z = this.rightHandMesh.position.z * GIANT_SCALE;
+            this._rightHandData.rotation.x = this.rightHandMesh.quaternion.x;
+            this._rightHandData.rotation.y = this.rightHandMesh.quaternion.y;
+            this._rightHandData.rotation.z = this.rightHandMesh.quaternion.z;
+            this._rightHandData.rotation.w = this.rightHandMesh.quaternion.w;
+            this._rightHandData.pinching = this.rightPinching;
 
             // Include pinch point position for grab mechanics
             if (this.rightPinchPoint) {
-                data.rightHand.pinchPoint = {
-                    x: this.rightPinchPoint.x * GIANT_SCALE,
-                    y: this.rightPinchPoint.y * GIANT_SCALE,
-                    z: this.rightPinchPoint.z * GIANT_SCALE
-                };
+                this._rightPinchPointData.x = this.rightPinchPoint.x * GIANT_SCALE;
+                this._rightPinchPointData.y = this.rightPinchPoint.y * GIANT_SCALE;
+                this._rightPinchPointData.z = this.rightPinchPoint.z * GIANT_SCALE;
+                this._rightHandData.pinchPoint = this._rightPinchPointData;
+            } else {
+                this._rightHandData.pinchPoint = null;
             }
 
             // Include joint positions only in hand tracking mode
             if (this.rightHandMode === 'hand-tracking' && Object.keys(this.rightJointPositions).length > 0) {
-                data.rightHand.joints = {};
                 for (const [jointName, pos] of Object.entries(this.rightJointPositions)) {
-                    data.rightHand.joints[jointName] = {
-                        x: pos.x * GIANT_SCALE,
-                        y: pos.y * GIANT_SCALE,
-                        z: pos.z * GIANT_SCALE
-                    };
+                    if (!this._rightJointsData[jointName]) {
+                        this._rightJointsData[jointName] = { x: 0, y: 0, z: 0 };
+                    }
+                    this._rightJointsData[jointName].x = pos.x * GIANT_SCALE;
+                    this._rightJointsData[jointName].y = pos.y * GIANT_SCALE;
+                    this._rightJointsData[jointName].z = pos.z * GIANT_SCALE;
                 }
+                this._rightHandData.joints = this._rightJointsData;
+            } else {
+                this._rightHandData.joints = null;
             }
+
+            this._handData.rightHand = this._rightHandData;
         }
 
-        return data;
+        return this._handData;
     }
 
     isPinching(hand = 'right') {

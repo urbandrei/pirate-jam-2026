@@ -33,6 +33,10 @@ class VRGame {
         this.networkInterval = 1000 / NETWORK_RATE;
         this.currentFrame = null;
 
+        // Reusable objects for sendPose() to avoid allocation each frame
+        this._headPosition = new THREE.Vector3();
+        this._headQuaternion = new THREE.Quaternion();
+
         this.init();
     }
 
@@ -219,20 +223,19 @@ class VRGame {
         // Fallback to camera if viewer pose unavailable
         if (!head) {
             const camera = this.scene.renderer.xr.getCamera();
-            const headPosition = new THREE.Vector3();
-            const headQuaternion = new THREE.Quaternion();
 
-            camera.getWorldPosition(headPosition);
-            camera.getWorldQuaternion(headQuaternion);
+            // Reuse cached objects to avoid allocation each frame
+            camera.getWorldPosition(this._headPosition);
+            camera.getWorldQuaternion(this._headQuaternion);
 
             // Scale head position by GIANT_SCALE
             head = {
                 position: {
-                    x: headPosition.x * GIANT_SCALE,
-                    y: headPosition.y * GIANT_SCALE,
-                    z: headPosition.z * GIANT_SCALE
+                    x: this._headPosition.x * GIANT_SCALE,
+                    y: this._headPosition.y * GIANT_SCALE,
+                    z: this._headPosition.z * GIANT_SCALE
                 },
-                rotation: { x: headQuaternion.x, y: headQuaternion.y, z: headQuaternion.z, w: headQuaternion.w }
+                rotation: { x: this._headQuaternion.x, y: this._headQuaternion.y, z: this._headQuaternion.z, w: this._headQuaternion.w }
             };
         }
 

@@ -17,6 +17,29 @@ export class RemotePlayers {
         this.players = new Map(); // playerId -> { mesh, type, data }
     }
 
+    /**
+     * Properly dispose of a player mesh and all its resources to prevent memory leaks.
+     * Must be called before removing a mesh from the scene.
+     */
+    disposePlayerMesh(mesh) {
+        mesh.traverse((child) => {
+            if (child.geometry) {
+                child.geometry.dispose();
+            }
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(m => {
+                        if (m.map) m.map.dispose();
+                        m.dispose();
+                    });
+                } else {
+                    if (child.material.map) child.material.map.dispose();
+                    child.material.dispose();
+                }
+            }
+        });
+    }
+
     updatePlayers(state, localPlayerId) {
         if (!state || !state.players) return;
 
@@ -25,6 +48,7 @@ export class RemotePlayers {
         // Remove players that left
         for (const [playerId, data] of this.players) {
             if (!currentPlayerIds.has(playerId)) {
+                this.disposePlayerMesh(data.mesh);
                 this.scene.remove(data.mesh);
                 this.players.delete(playerId);
             }
@@ -80,8 +104,12 @@ export class RemotePlayers {
             data.position.z / GIANT_SCALE
         );
 
-        // Interpolate
-        mesh.position.lerp(playerObj.targetPosition, 0.3);
+        // Skip interpolation when grabbed - follow hand position immediately
+        if (data.isGrabbed) {
+            mesh.position.copy(playerObj.targetPosition);
+        } else {
+            mesh.position.lerp(playerObj.targetPosition, 0.3);
+        }
 
         // Update rotation based on look direction
         if (data.lookRotation) {
@@ -113,6 +141,7 @@ export class RemotePlayers {
     removePlayer(playerId) {
         const playerObj = this.players.get(playerId);
         if (playerObj) {
+            this.disposePlayerMesh(playerObj.mesh);
             this.scene.remove(playerObj.mesh);
             this.players.delete(playerId);
         }

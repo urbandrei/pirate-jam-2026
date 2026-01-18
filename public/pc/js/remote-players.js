@@ -65,16 +65,19 @@ export class RemotePlayers {
     }
 
     updatePCPlayer(playerObj, data) {
-        // Interpolate position
         const mesh = playerObj.mesh;
-        mesh.position.lerp(
-            new THREE.Vector3(
-                playerObj.targetPosition.x,
-                playerObj.targetPosition.y,
-                playerObj.targetPosition.z
-            ),
-            0.3
+        const targetVec = new THREE.Vector3(
+            playerObj.targetPosition.x,
+            playerObj.targetPosition.y,
+            playerObj.targetPosition.z
         );
+
+        // Skip interpolation when grabbed - follow hand position immediately
+        if (data.isGrabbed) {
+            mesh.position.copy(targetVec);
+        } else {
+            mesh.position.lerp(targetVec, 0.3);
+        }
 
         // Update rotation based on look direction
         if (data.lookRotation) {
