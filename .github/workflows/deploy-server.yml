@@ -1,0 +1,56 @@
+name: Deploy Server to Oracle Cloud
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            cd /opt/pirate-jam
+
+            # Pull latest code (or clone if first time)
+            if [ -d ".git" ]; then
+              git pull origin main
+            else
+              git clone https://github.com/${{ github.repository }}.git .
+            fi
+
+            # Install dependencies
+            npm ci --production
+
+            # Restart server with PM2
+            pm2 restart pirate-jam || pm2 start server/index.js --name pirate-jam
+            pm2 save
+
+  deploy-clients:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install butler
+        run: |
+          curl -L -o butler.zip https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default
+          unzip butler.zip
+          chmod +x butler
+          ./butler -V
+
+      - name: Build PC client
+        run: |
+          mkdir -p build/pc-client
+          cp -r public/pc/* build/pc-client/
+
+      - name: Push to itch.io
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: ./butler push build/pc-client urbandrei/pirate-jam-2026:html5
