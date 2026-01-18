@@ -153,7 +153,7 @@ class GrabSystem {
      * Uses lerp interpolation to smooth movement and prevent jitter
      */
     updateGrabbedPositions() {
-        const SMOOTHING = 0.25; // Interpolation factor per tick
+        const SMOOTHING = 0.8; // Interpolation factor per tick (higher = more responsive)
 
         for (const [vrPlayerId, pcPlayerId] of this.gameState.grabs) {
             const vrPlayer = this.gameState.getPlayer(vrPlayerId);
