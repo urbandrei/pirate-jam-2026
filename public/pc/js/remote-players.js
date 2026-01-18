@@ -53,8 +53,10 @@ export class RemotePlayers {
                 this.players.set(playerId, playerObj);
             }
 
-            // Update target position for interpolation
-            playerObj.targetPosition = { ...playerData.position };
+            // Update target position for interpolation (reuse existing object)
+            playerObj.targetPosition.x = playerData.position.x;
+            playerObj.targetPosition.y = playerData.position.y;
+            playerObj.targetPosition.z = playerData.position.z;
 
             if (playerData.type === 'vr') {
                 this.updateVRPlayer(playerObj, playerData);
@@ -66,17 +68,22 @@ export class RemotePlayers {
 
     updatePCPlayer(playerObj, data) {
         const mesh = playerObj.mesh;
-        const targetVec = new THREE.Vector3(
-            playerObj.targetPosition.x,
-            playerObj.targetPosition.y,
-            playerObj.targetPosition.z
-        );
 
         // Skip interpolation when grabbed - follow hand position immediately
         if (data.isGrabbed) {
-            mesh.position.copy(targetVec);
+            mesh.position.set(
+                playerObj.targetPosition.x,
+                playerObj.targetPosition.y,
+                playerObj.targetPosition.z
+            );
         } else {
-            mesh.position.lerp(targetVec, 0.3);
+            // Lerp requires a Vector3, so set target then lerp back
+            const tx = playerObj.targetPosition.x;
+            const ty = playerObj.targetPosition.y;
+            const tz = playerObj.targetPosition.z;
+            mesh.position.x += (tx - mesh.position.x) * 0.3;
+            mesh.position.y += (ty - mesh.position.y) * 0.3;
+            mesh.position.z += (tz - mesh.position.z) * 0.3;
         }
 
         // Update rotation based on look direction

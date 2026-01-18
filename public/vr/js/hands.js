@@ -74,6 +74,25 @@ export class Hands {
         this._indexTipPos = new THREE.Vector3();
         this._pinchPoint = new THREE.Vector3();
 
+        // Pre-allocated joint position arrays to avoid per-frame allocation
+        // Each finger needs up to 5 joint positions (max joints in a finger)
+        this._fingerJointPositions = {};
+        this._fingerJointValid = {}; // Track which joints are valid per finger
+        for (const [fingerName, joints] of Object.entries(FINGER_JOINTS)) {
+            this._fingerJointPositions[fingerName] = joints.map(() => new THREE.Vector3());
+            this._fingerJointValid[fingerName] = joints.map(() => false);
+        }
+
+        // Pre-allocate joint position storage objects for network transmission
+        this._leftJointPosObjects = {};
+        this._rightJointPosObjects = {};
+        for (const [fingerName, joints] of Object.entries(FINGER_JOINTS)) {
+            for (const jointName of joints) {
+                this._leftJointPosObjects[jointName] = { x: 0, y: 0, z: 0 };
+                this._rightJointPosObjects[jointName] = { x: 0, y: 0, z: 0 };
+            }
+        }
+
         // Reusable hand data structures for getHandData()
         this._handData = {
             leftHand: null,
@@ -348,21 +367,30 @@ export class Hands {
             let hasThumbTip = false;
             let hasIndexTip = false;
 
+            // Get pre-allocated joint position objects for this hand
+            const jointPosObjects = handName === 'left' ? this._leftJointPosObjects : this._rightJointPosObjects;
+
             // Update each finger's joints and bones
             for (const [fingerName, joints] of Object.entries(FINGER_JOINTS)) {
-                const jointPositions = []; // Local positions of each joint
+                // Use pre-allocated arrays for this finger
+                const jointPositions = this._fingerJointPositions[fingerName];
+                const validFlags = this._fingerJointValid[fingerName];
+
+                // Reset valid flags
+                for (let i = 0; i < validFlags.length; i++) {
+                    validFlags[i] = false;
+                }
 
                 // Get all joint positions for this finger
-                for (const jointName of joints) {
+                for (let i = 0; i < joints.length; i++) {
+                    const jointName = joints[i];
                     const joint = hand.get(jointName);
                     if (!joint) {
-                        jointPositions.push(null);
                         continue;
                     }
 
                     const jointPose = frame.getJointPose(joint, referenceSpace);
                     if (!jointPose) {
-                        jointPositions.push(null);
                         continue;
                     }
 
@@ -377,16 +405,19 @@ export class Hands {
                         hasIndexTip = true;
                     }
 
-                    // Convert to local space (reusing _tempVec3)
-                    this._tempVec3.set(pos.x, pos.y, pos.z);
-                    this._tempVec3.sub(this._wristWorldPos);
-                    this._tempVec3.applyQuaternion(this._invQuat);
-                    // Clone for storage since we reuse _tempVec3
-                    const localPos = this._tempVec3.clone();
-                    jointPositions.push(localPos);
+                    // Convert to local space using pre-allocated Vector3
+                    const localPos = jointPositions[i];
+                    localPos.set(pos.x, pos.y, pos.z);
+                    localPos.sub(this._wristWorldPos);
+                    localPos.applyQuaternion(this._invQuat);
+                    validFlags[i] = true;
 
-                    // Store joint position for network transmission (local space, unscaled)
-                    jointPosStorage[jointName] = { x: localPos.x, y: localPos.y, z: localPos.z };
+                    // Update pre-allocated joint position object for network transmission
+                    const jointPosObj = jointPosObjects[jointName];
+                    jointPosObj.x = localPos.x;
+                    jointPosObj.y = localPos.y;
+                    jointPosObj.z = localPos.z;
+                    jointPosStorage[jointName] = jointPosObj;
 
                     // Update joint sphere
                     const jointMesh = handMesh.getObjectByName('joint-' + jointName);
@@ -401,7 +432,7 @@ export class Hands {
                     const boneName = 'bone-' + joints[i] + '-to-' + joints[i + 1];
                     const bone = handMesh.getObjectByName(boneName);
 
-                    if (bone && jointPositions[i] && jointPositions[i + 1]) {
+                    if (bone && validFlags[i] && validFlags[i + 1]) {
                         updateBoneBetweenPoints(bone, jointPositions[i], jointPositions[i + 1]);
                     } else if (bone) {
                         bone.visible = false;
