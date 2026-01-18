@@ -10,7 +10,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, WORLD_SIZE, GIANT_SCALE } from '../../shared/constants.js';
+import { COLORS, WORLD_SIZE, GIANT_SCALE } from '../../pc/shared/constants.js';
 
 export class VRScene {
     constructor(container) {

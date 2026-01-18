@@ -5,7 +5,7 @@
  * This controller just manages the grab state and sends messages.
  */
 
-import { GRAB_RADIUS, GIANT_SCALE } from '../../shared/constants.js';
+import { GRAB_RADIUS, GIANT_SCALE } from '../../pc/shared/constants.js';
 
 export class GrabController {
     constructor(hands, network) {

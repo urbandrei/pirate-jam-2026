@@ -14,7 +14,7 @@ import { Hands } from './hands.js';
 import { Network } from './network.js';
 import { RemotePlayers } from './remote-players.js';
 import { GrabController } from './grab-controller.js';
-import { NETWORK_RATE, GIANT_SCALE } from '../../shared/constants.js';
+import { NETWORK_RATE, GIANT_SCALE } from '../../pc/shared/constants.js';
 
 class VRGame {
     constructor() {

@@ -94,8 +94,11 @@ class GrabSystem {
 
     /**
      * Update grabbed player positions to follow the grabbing hand
+     * Uses lerp interpolation to smooth movement and prevent jitter
      */
     updateGrabbedPositions() {
+        const SMOOTHING = 0.25; // Interpolation factor per tick
+
         for (const [vrPlayerId, pcPlayerId] of this.gameState.grabs) {
             const vrPlayer = this.gameState.getPlayer(vrPlayerId);
             const pcPlayer = this.gameState.getPlayer(pcPlayerId);
@@ -105,12 +108,11 @@ class GrabSystem {
             // Use right hand by default, fall back to left
             const handData = vrPlayer.rightHand || vrPlayer.leftHand;
             if (handData && handData.position) {
-                // Move PC player to hand position (same coordinate space)
-                pcPlayer.position = {
-                    x: handData.position.x,
-                    y: handData.position.y,
-                    z: handData.position.z
-                };
+                // Smoothly interpolate toward hand position instead of teleporting
+                pcPlayer.position.x += (handData.position.x - pcPlayer.position.x) * SMOOTHING;
+                pcPlayer.position.y += (handData.position.y - pcPlayer.position.y) * SMOOTHING;
+                pcPlayer.position.z += (handData.position.z - pcPlayer.position.z) * SMOOTHING;
+
                 pcPlayer.velocity = { x: 0, y: 0, z: 0 };
                 pcPlayer.grounded = false;
             }

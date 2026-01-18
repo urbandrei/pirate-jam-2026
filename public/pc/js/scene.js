@@ -3,7 +3,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, WORLD_SIZE } from '../../shared/constants.js';
+import { COLORS, WORLD_SIZE } from '../shared/constants.js';
 
 export class Scene {
     constructor(container) {

@@ -2,7 +2,7 @@
  * Socket.IO network client for PC
  */
 
-import { MSG, createJoinMessage, createInputMessage } from '../../shared/protocol.js';
+import { MSG, createJoinMessage, createInputMessage } from '../shared/protocol.js';
 
 export class Network {
     constructor() {

@@ -9,15 +9,27 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, PINCH_THRESHOLD, GIANT_SCALE } from '../../shared/constants.js';
+import { COLORS, PINCH_THRESHOLD, GIANT_SCALE } from '../../pc/shared/constants.js';
 
-// WebXR hand joint names for fingertips
+// WebXR hand joint names
 const JOINT_WRIST = 'wrist';
 const JOINT_THUMB_TIP = 'thumb-tip';
 const JOINT_INDEX_TIP = 'index-finger-tip';
 const JOINT_MIDDLE_TIP = 'middle-finger-tip';
 const JOINT_RING_TIP = 'ring-finger-tip';
 const JOINT_PINKY_TIP = 'pinky-finger-tip';
+
+// Full finger joint hierarchy for articulated bones
+const FINGER_JOINTS = {
+    thumb: ['thumb-metacarpal', 'thumb-phalanx-proximal', 'thumb-phalanx-distal', 'thumb-tip'],
+    index: ['index-finger-metacarpal', 'index-finger-phalanx-proximal', 'index-finger-phalanx-intermediate', 'index-finger-phalanx-distal', 'index-finger-tip'],
+    middle: ['middle-finger-metacarpal', 'middle-finger-phalanx-proximal', 'middle-finger-phalanx-intermediate', 'middle-finger-phalanx-distal', 'middle-finger-tip'],
+    ring: ['ring-finger-metacarpal', 'ring-finger-phalanx-proximal', 'ring-finger-phalanx-intermediate', 'ring-finger-phalanx-distal', 'ring-finger-tip'],
+    pinky: ['pinky-finger-metacarpal', 'pinky-finger-phalanx-proximal', 'pinky-finger-phalanx-intermediate', 'pinky-finger-phalanx-distal', 'pinky-finger-tip']
+};
+
+// Bone rendering configuration
+const BONE_RADIUS = 0.002; // 2mm - thin pill bones
 
 export class Hands {
     constructor(scene, renderer) {
@@ -56,9 +68,9 @@ export class Hands {
 
     /**
      * Create pill-bone hand mesh structure:
-     * - Palm sphere at wrist
-     * - 5 fingertip spheres
-     * - 5 capsule bones connecting palm to fingertips
+     * - Wrist sphere
+     * - Joint spheres at each finger joint
+     * - 19 bone segments (4 per finger, 3 for thumb)
      * - Pinch indicator
      * - Grab range indicator
      *
@@ -68,7 +80,7 @@ export class Hands {
         const group = new THREE.Group();
         group.name = side + 'Hand';
 
-        const handMaterial = new THREE.MeshStandardMaterial({
+        const jointMaterial = new THREE.MeshStandardMaterial({
             color: COLORS.VR_HAND,
             roughness: 0.7,
             metalness: 0.1
@@ -80,33 +92,36 @@ export class Hands {
             metalness: 0.2
         });
 
-        // Palm sphere (at wrist joint) - real hand scale
-        const palm = new THREE.Mesh(
-            new THREE.SphereGeometry(0.025, 12, 12), // 2.5cm radius
-            handMaterial
+        // Wrist sphere - slightly larger
+        const wrist = new THREE.Mesh(
+            new THREE.SphereGeometry(0.012, 8, 8), // 12mm radius
+            jointMaterial
         );
-        palm.name = 'palm';
-        group.add(palm);
+        wrist.name = 'wrist';
+        group.add(wrist);
 
-        // Fingertip spheres - real hand scale
-        const fingerNames = ['thumb', 'index', 'middle', 'ring', 'pinky'];
-        fingerNames.forEach(finger => {
-            const tip = new THREE.Mesh(
-                new THREE.SphereGeometry(0.01, 8, 8), // 1cm radius
-                handMaterial
-            );
-            tip.name = finger + 'Tip';
-            tip.visible = false;
-            group.add(tip);
-        });
+        // Create joint spheres and bone segments for each finger
+        for (const [fingerName, joints] of Object.entries(FINGER_JOINTS)) {
+            // Create a small sphere at each joint
+            joints.forEach(jointName => {
+                const joint = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.004, 6, 6), // 4mm radius - small joint spheres
+                    jointMaterial
+                );
+                joint.name = 'joint-' + jointName;
+                joint.visible = false;
+                group.add(joint);
+            });
 
-        // Bone capsules (palm to each fingertip)
-        fingerNames.forEach(finger => {
-            const bone = this.createBoneMesh(boneMaterial);
-            bone.name = finger + 'Bone';
-            bone.visible = false;
-            group.add(bone);
-        });
+            // Create bone segments between consecutive joints
+            // Each finger has joints.length - 1 bones
+            for (let i = 0; i < joints.length - 1; i++) {
+                const bone = this.createBoneMesh(boneMaterial);
+                bone.name = 'bone-' + joints[i] + '-to-' + joints[i + 1];
+                bone.visible = false;
+                group.add(bone);
+            }
+        }
 
         // Pinch indicator (shown when pinching)
         const pinchIndicator = new THREE.Mesh(
@@ -145,8 +160,8 @@ export class Hands {
      */
     createBoneMesh(material) {
         // Create a unit cylinder along Y axis that we'll scale/rotate to connect points
-        // Real VR scale (6mm radius for finger bones)
-        const geometry = new THREE.CylinderGeometry(0.006, 0.006, 1, 8);
+        // Thin pill bones (2mm radius)
+        const geometry = new THREE.CylinderGeometry(BONE_RADIUS, BONE_RADIUS, 1, 6);
         // Move origin to bottom of cylinder so we can position at start point
         geometry.translate(0, 0.5, 0);
         return new THREE.Mesh(geometry, material);
@@ -311,6 +326,7 @@ export class Hands {
 
     /**
      * Update hand mesh using WebXR Hand Tracking API
+     * Renders all 19 bone segments with thin pills
      */
     updateHandTracking(inputSource, handMesh, handName, frame, referenceSpace) {
         if (!inputSource || !inputSource.hand) {
@@ -321,7 +337,7 @@ export class Hands {
         const hand = inputSource.hand;
 
         try {
-            // Get wrist (palm) position
+            // Get wrist position
             const wristJoint = hand.get(JOINT_WRIST);
             if (!wristJoint) {
                 handMesh.visible = false;
@@ -336,89 +352,94 @@ export class Hands {
 
             handMesh.visible = true;
 
-            // Update palm position (hand mesh group position) - real-world scale for local rendering
+            // Update hand mesh position/rotation from wrist
             const wristPos = wristPose.transform.position;
             const wristRot = wristPose.transform.orientation;
             handMesh.position.set(wristPos.x, wristPos.y, wristPos.z);
             handMesh.quaternion.set(wristRot.x, wristRot.y, wristRot.z, wristRot.w);
 
-            // Palm sphere stays at origin (wrist position)
-            const palm = handMesh.getObjectByName('palm');
-            if (palm) {
-                palm.position.set(0, 0, 0);
-                palm.visible = true;
+            // Wrist sphere stays at origin
+            const wristMesh = handMesh.getObjectByName('wrist');
+            if (wristMesh) {
+                wristMesh.position.set(0, 0, 0);
+                wristMesh.visible = true;
             }
 
-            // Joint mappings
-            const fingerJoints = {
-                thumb: JOINT_THUMB_TIP,
-                index: JOINT_INDEX_TIP,
-                middle: JOINT_MIDDLE_TIP,
-                ring: JOINT_RING_TIP,
-                pinky: JOINT_PINKY_TIP
-            };
+            const wristWorldPos = new THREE.Vector3(wristPos.x, wristPos.y, wristPos.z);
+            const invQuat = handMesh.quaternion.clone().invert();
 
-            const palmWorldPos = new THREE.Vector3(wristPos.x, wristPos.y, wristPos.z);
-            let thumbTipWorldPos = null;  // Scaled position for visuals
-            let indexTipWorldPos = null;  // Scaled position for visuals
-            let thumbTipRealPos = null;   // Unscaled position for pinch detection
-            let indexTipRealPos = null;   // Unscaled position for pinch detection
+            // Store joint positions for pinch detection
+            let thumbTipWorldPos = null;
+            let indexTipWorldPos = null;
+            let thumbTipRealPos = null;
+            let indexTipRealPos = null;
 
-            // Update each finger
-            for (const [fingerName, jointName] of Object.entries(fingerJoints)) {
-                const joint = hand.get(jointName);
-                if (!joint) continue;
+            // Update each finger's joints and bones
+            for (const [fingerName, joints] of Object.entries(FINGER_JOINTS)) {
+                const jointPositions = []; // Local positions of each joint
 
-                const jointPose = frame.getJointPose(joint, referenceSpace);
-                if (!jointPose) continue;
+                // Get all joint positions for this finger
+                for (const jointName of joints) {
+                    const joint = hand.get(jointName);
+                    if (!joint) {
+                        jointPositions.push(null);
+                        continue;
+                    }
 
-                const tipPos = jointPose.transform.position;
-                const tipWorldPos = new THREE.Vector3(tipPos.x, tipPos.y, tipPos.z);
+                    const jointPose = frame.getJointPose(joint, referenceSpace);
+                    if (!jointPose) {
+                        jointPositions.push(null);
+                        continue;
+                    }
 
-                // Store thumb and index tip positions for pinch detection (unscaled for real distance)
-                if (fingerName === 'thumb') {
-                    thumbTipWorldPos = tipWorldPos.clone();
-                    thumbTipRealPos = new THREE.Vector3(tipPos.x, tipPos.y, tipPos.z);
-                } else if (fingerName === 'index') {
-                    indexTipWorldPos = tipWorldPos.clone();
-                    indexTipRealPos = new THREE.Vector3(tipPos.x, tipPos.y, tipPos.z);
+                    const pos = jointPose.transform.position;
+                    const worldPos = new THREE.Vector3(pos.x, pos.y, pos.z);
+
+                    // Store tip positions for pinch detection
+                    if (jointName === JOINT_THUMB_TIP) {
+                        thumbTipWorldPos = worldPos.clone();
+                        thumbTipRealPos = new THREE.Vector3(pos.x, pos.y, pos.z);
+                    } else if (jointName === JOINT_INDEX_TIP) {
+                        indexTipWorldPos = worldPos.clone();
+                        indexTipRealPos = new THREE.Vector3(pos.x, pos.y, pos.z);
+                    }
+
+                    // Convert to local space
+                    const localPos = worldPos.clone().sub(wristWorldPos);
+                    localPos.applyQuaternion(invQuat);
+                    jointPositions.push(localPos);
+
+                    // Update joint sphere
+                    const jointMesh = handMesh.getObjectByName('joint-' + jointName);
+                    if (jointMesh) {
+                        jointMesh.position.copy(localPos);
+                        jointMesh.visible = true;
+                    }
                 }
 
-                // Convert to local space relative to hand mesh
-                const tipLocalPos = tipWorldPos.clone().sub(palmWorldPos);
-                // Transform to hand mesh local coordinates
-                const invQuat = handMesh.quaternion.clone().invert();
-                tipLocalPos.applyQuaternion(invQuat);
+                // Update bone segments between consecutive joints
+                for (let i = 0; i < joints.length - 1; i++) {
+                    const boneName = 'bone-' + joints[i] + '-to-' + joints[i + 1];
+                    const bone = handMesh.getObjectByName(boneName);
 
-                // Update fingertip sphere
-                const tipMesh = handMesh.getObjectByName(fingerName + 'Tip');
-                if (tipMesh) {
-                    tipMesh.position.copy(tipLocalPos);
-                    tipMesh.visible = true;
-                }
-
-                // Update bone between palm and fingertip
-                const bone = handMesh.getObjectByName(fingerName + 'Bone');
-                if (bone) {
-                    this.updateBoneBetweenPoints(
-                        bone,
-                        new THREE.Vector3(0, 0, 0), // Palm is at local origin
-                        tipLocalPos
-                    );
+                    if (bone && jointPositions[i] && jointPositions[i + 1]) {
+                        this.updateBoneBetweenPoints(bone, jointPositions[i], jointPositions[i + 1]);
+                    } else if (bone) {
+                        bone.visible = false;
+                    }
                 }
             }
 
-            // Pinch detection based on thumb-index distance (use unscaled real positions)
+            // Pinch detection based on thumb-index distance
             if (thumbTipRealPos && indexTipRealPos) {
                 const pinchDistance = thumbTipRealPos.distanceTo(indexTipRealPos);
                 const isPinching = pinchDistance < PINCH_THRESHOLD;
 
                 // Update pinch indicator position to midpoint between thumb and index
                 const pinchIndicator = handMesh.getObjectByName('pinchIndicator');
-                if (pinchIndicator) {
+                if (pinchIndicator && thumbTipWorldPos && indexTipWorldPos) {
                     const midpoint = thumbTipWorldPos.clone().lerp(indexTipWorldPos, 0.5);
-                    const localMid = midpoint.sub(palmWorldPos);
-                    const invQuat = handMesh.quaternion.clone().invert();
+                    const localMid = midpoint.sub(wristWorldPos);
                     localMid.applyQuaternion(invQuat);
                     pinchIndicator.position.copy(localMid);
                     pinchIndicator.visible = isPinching;
@@ -454,20 +475,26 @@ export class Hands {
     updateControllerHand(controller, handMesh, frame, referenceSpace, handName) {
         if (!controller || !handMesh) return;
 
-        // Hide finger bones/tips in controller mode - just show palm sphere
-        const fingerNames = ['thumb', 'index', 'middle', 'ring', 'pinky'];
-        fingerNames.forEach(finger => {
-            const tip = handMesh.getObjectByName(finger + 'Tip');
-            const bone = handMesh.getObjectByName(finger + 'Bone');
-            if (tip) tip.visible = false;
-            if (bone) bone.visible = false;
-        });
+        // Hide all finger joints and bones in controller mode
+        for (const [fingerName, joints] of Object.entries(FINGER_JOINTS)) {
+            // Hide joint spheres
+            joints.forEach(jointName => {
+                const joint = handMesh.getObjectByName('joint-' + jointName);
+                if (joint) joint.visible = false;
+            });
+            // Hide bone segments
+            for (let i = 0; i < joints.length - 1; i++) {
+                const boneName = 'bone-' + joints[i] + '-to-' + joints[i + 1];
+                const bone = handMesh.getObjectByName(boneName);
+                if (bone) bone.visible = false;
+            }
+        }
 
-        // Make palm sphere bigger in controller mode
-        const palm = handMesh.getObjectByName('palm');
-        if (palm) {
-            palm.scale.set(3, 3, 3); // 0.075m radius
-            palm.visible = true;
+        // Make wrist sphere bigger in controller mode
+        const wrist = handMesh.getObjectByName('wrist');
+        if (wrist) {
+            wrist.scale.set(3, 3, 3); // Larger sphere for controller
+            wrist.visible = true;
         }
 
         try {

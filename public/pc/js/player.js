@@ -3,7 +3,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, PLAYER_HEIGHT, PLAYER_RADIUS, GROUND_LEVEL } from '../../shared/constants.js';
+import { COLORS, PLAYER_HEIGHT, PLAYER_RADIUS, GROUND_LEVEL } from '../shared/constants.js';
 
 export class Player {
     constructor(scene) {

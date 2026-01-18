@@ -2,7 +2,7 @@
  * Socket.IO network client for VR
  */
 
-import { MSG, createJoinMessage, createVRPoseMessage, createGrabAttemptMessage, createGrabReleaseMessage } from '../../shared/protocol.js';
+import { MSG, createJoinMessage, createVRPoseMessage, createGrabAttemptMessage, createGrabReleaseMessage } from '../../pc/shared/protocol.js';
 
 export class Network {
     constructor() {

@@ -9,8 +9,8 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { GIANT_SCALE } from '../../shared/constants.js';
-import { createPCPlayerMesh, createVRPlayerMeshForPC } from '../../shared/player-mesh.js';
+import { GIANT_SCALE } from '../shared/constants.js';
+import { createPCPlayerMesh, createVRPlayerMeshForPC } from '../shared/player-mesh.js';
 
 export class RemotePlayers {
     constructor(scene) {

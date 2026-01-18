@@ -3,7 +3,7 @@
  * WASD movement + mouse look + jumping
  */
 
-import { MOVE_SPEED, PLAYER_EYE_HEIGHT } from '../../shared/constants.js';
+import { MOVE_SPEED, PLAYER_EYE_HEIGHT } from '../shared/constants.js';
 
 export class Controls {
     constructor(camera, domElement) {

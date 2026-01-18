@@ -7,7 +7,7 @@ import { Controls } from './controls.js';
 import { Network } from './network.js';
 import { Player } from './player.js';
 import { RemotePlayers } from './remote-players.js';
-import { INPUT_RATE } from '../../shared/constants.js';
+import { INPUT_RATE } from '../shared/constants.js';
 
 class Game {
     constructor() {
