@@ -10,6 +10,7 @@
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { COLORS, PINCH_THRESHOLD, GIANT_SCALE } from '../../pc/shared/constants.js';
+import { FINGER_JOINTS, createVRHandMesh, updateBoneBetweenPoints } from '../../pc/shared/player-mesh.js';
 
 // WebXR hand joint names
 const JOINT_WRIST = 'wrist';
@@ -18,18 +19,6 @@ const JOINT_INDEX_TIP = 'index-finger-tip';
 const JOINT_MIDDLE_TIP = 'middle-finger-tip';
 const JOINT_RING_TIP = 'ring-finger-tip';
 const JOINT_PINKY_TIP = 'pinky-finger-tip';
-
-// Full finger joint hierarchy for articulated bones
-const FINGER_JOINTS = {
-    thumb: ['thumb-metacarpal', 'thumb-phalanx-proximal', 'thumb-phalanx-distal', 'thumb-tip'],
-    index: ['index-finger-metacarpal', 'index-finger-phalanx-proximal', 'index-finger-phalanx-intermediate', 'index-finger-phalanx-distal', 'index-finger-tip'],
-    middle: ['middle-finger-metacarpal', 'middle-finger-phalanx-proximal', 'middle-finger-phalanx-intermediate', 'middle-finger-phalanx-distal', 'middle-finger-tip'],
-    ring: ['ring-finger-metacarpal', 'ring-finger-phalanx-proximal', 'ring-finger-phalanx-intermediate', 'ring-finger-phalanx-distal', 'ring-finger-tip'],
-    pinky: ['pinky-finger-metacarpal', 'pinky-finger-phalanx-proximal', 'pinky-finger-phalanx-intermediate', 'pinky-finger-phalanx-distal', 'pinky-finger-tip']
-};
-
-// Bone rendering configuration
-const BONE_RADIUS = 0.002; // 2mm - thin pill bones
 
 export class Hands {
     constructor(scene, renderer) {
@@ -58,6 +47,10 @@ export class Hands {
         scene.add(this.leftHandMesh);
         scene.add(this.rightHandMesh);
 
+        // Store joint positions for network transmission (local space, unscaled)
+        this.leftJointPositions = {};
+        this.rightJointPositions = {};
+
         // Track which input mode is active per hand
         this.leftHandMode = null; // 'hand-tracking' or 'controller'
         this.rightHandMode = null;
@@ -67,134 +60,17 @@ export class Hands {
     }
 
     /**
-     * Create pill-bone hand mesh structure:
-     * - Wrist sphere
-     * - Joint spheres at each finger joint
-     * - 19 bone segments (4 per finger, 3 for thumb)
-     * - Pinch indicator
-     * - Grab range indicator
-     *
+     * Create pill-bone hand mesh structure using shared code.
      * All sizes are in real VR meters (1:1 scale with user's hands)
      */
     createHandMesh(side) {
-        const group = new THREE.Group();
+        const group = createVRHandMesh({
+            scale: 1, // VR scale (1:1 real world)
+            includePinchIndicator: true,
+            includeGrabRange: true
+        });
         group.name = side + 'Hand';
-
-        const jointMaterial = new THREE.MeshStandardMaterial({
-            color: COLORS.VR_HAND,
-            roughness: 0.7,
-            metalness: 0.1
-        });
-
-        const boneMaterial = new THREE.MeshStandardMaterial({
-            color: COLORS.VR_HAND,
-            roughness: 0.6,
-            metalness: 0.2
-        });
-
-        // Wrist sphere - slightly larger
-        const wrist = new THREE.Mesh(
-            new THREE.SphereGeometry(0.012, 8, 8), // 12mm radius
-            jointMaterial
-        );
-        wrist.name = 'wrist';
-        group.add(wrist);
-
-        // Create joint spheres and bone segments for each finger
-        for (const [fingerName, joints] of Object.entries(FINGER_JOINTS)) {
-            // Create a small sphere at each joint
-            joints.forEach(jointName => {
-                const joint = new THREE.Mesh(
-                    new THREE.SphereGeometry(0.004, 6, 6), // 4mm radius - small joint spheres
-                    jointMaterial
-                );
-                joint.name = 'joint-' + jointName;
-                joint.visible = false;
-                group.add(joint);
-            });
-
-            // Create bone segments between consecutive joints
-            // Each finger has joints.length - 1 bones
-            for (let i = 0; i < joints.length - 1; i++) {
-                const bone = this.createBoneMesh(boneMaterial);
-                bone.name = 'bone-' + joints[i] + '-to-' + joints[i + 1];
-                bone.visible = false;
-                group.add(bone);
-            }
-        }
-
-        // Pinch indicator (shown when pinching)
-        const pinchIndicator = new THREE.Mesh(
-            new THREE.SphereGeometry(0.015, 8, 8), // 1.5cm radius
-            new THREE.MeshBasicMaterial({
-                color: 0xffff00,
-                transparent: true,
-                opacity: 0.9
-            })
-        );
-        pinchIndicator.name = 'pinchIndicator';
-        pinchIndicator.visible = false;
-        group.add(pinchIndicator);
-
-        // Grab range indicator - shows the grab radius in VR space
-        // GRAB_RADIUS is 0.5m in world units, which is 0.05m in VR space (0.5 / GIANT_SCALE)
-        const grabRangeVR = 0.5 / GIANT_SCALE; // 5cm in VR = 0.5m in world
-        const grabRange = new THREE.Mesh(
-            new THREE.SphereGeometry(grabRangeVR, 8, 8),
-            new THREE.MeshBasicMaterial({
-                color: 0x00ff00,
-                transparent: true,
-                opacity: 0.3,
-                wireframe: true
-            })
-        );
-        grabRange.name = 'grabRange';
-        group.add(grabRange);
-
-        group.visible = false;
         return group;
-    }
-
-    /**
-     * Create a bone mesh (cylinder that will be stretched between two points)
-     */
-    createBoneMesh(material) {
-        // Create a unit cylinder along Y axis that we'll scale/rotate to connect points
-        // Thin pill bones (2mm radius)
-        const geometry = new THREE.CylinderGeometry(BONE_RADIUS, BONE_RADIUS, 1, 6);
-        // Move origin to bottom of cylinder so we can position at start point
-        geometry.translate(0, 0.5, 0);
-        return new THREE.Mesh(geometry, material);
-    }
-
-    /**
-     * Update a bone mesh to stretch between two points
-     */
-    updateBoneBetweenPoints(bone, start, end) {
-        if (!bone || !start || !end) return;
-
-        // Calculate direction and length
-        const direction = new THREE.Vector3().subVectors(end, start);
-        const length = direction.length();
-
-        if (length < 0.001) {
-            bone.visible = false;
-            return;
-        }
-
-        bone.visible = true;
-
-        // Position at start point
-        bone.position.copy(start);
-
-        // Scale to match length
-        bone.scale.set(1, length, 1);
-
-        // Rotate to point toward end
-        bone.quaternion.setFromUnitVectors(
-            new THREE.Vector3(0, 1, 0),
-            direction.normalize()
-        );
     }
 
     setupControllers() {
@@ -368,6 +244,9 @@ export class Hands {
             const wristWorldPos = new THREE.Vector3(wristPos.x, wristPos.y, wristPos.z);
             const invQuat = handMesh.quaternion.clone().invert();
 
+            // Get the joint positions storage for this hand
+            const jointPosStorage = handName === 'left' ? this.leftJointPositions : this.rightJointPositions;
+
             // Store joint positions for pinch detection
             let thumbTipWorldPos = null;
             let indexTipWorldPos = null;
@@ -409,6 +288,9 @@ export class Hands {
                     localPos.applyQuaternion(invQuat);
                     jointPositions.push(localPos);
 
+                    // Store joint position for network transmission (local space, unscaled)
+                    jointPosStorage[jointName] = { x: localPos.x, y: localPos.y, z: localPos.z };
+
                     // Update joint sphere
                     const jointMesh = handMesh.getObjectByName('joint-' + jointName);
                     if (jointMesh) {
@@ -423,7 +305,7 @@ export class Hands {
                     const bone = handMesh.getObjectByName(boneName);
 
                     if (bone && jointPositions[i] && jointPositions[i + 1]) {
-                        this.updateBoneBetweenPoints(bone, jointPositions[i], jointPositions[i + 1]);
+                        updateBoneBetweenPoints(bone, jointPositions[i], jointPositions[i + 1]);
                     } else if (bone) {
                         bone.visible = false;
                     }
@@ -570,6 +452,18 @@ export class Hands {
                 },
                 pinching: this.leftPinching
             };
+
+            // Include joint positions only in hand tracking mode
+            if (this.leftHandMode === 'hand-tracking' && Object.keys(this.leftJointPositions).length > 0) {
+                data.leftHand.joints = {};
+                for (const [jointName, pos] of Object.entries(this.leftJointPositions)) {
+                    data.leftHand.joints[jointName] = {
+                        x: pos.x * GIANT_SCALE,
+                        y: pos.y * GIANT_SCALE,
+                        z: pos.z * GIANT_SCALE
+                    };
+                }
+            }
         }
 
         if (this.rightHandMesh.visible) {
@@ -587,6 +481,18 @@ export class Hands {
                 },
                 pinching: this.rightPinching
             };
+
+            // Include joint positions only in hand tracking mode
+            if (this.rightHandMode === 'hand-tracking' && Object.keys(this.rightJointPositions).length > 0) {
+                data.rightHand.joints = {};
+                for (const [jointName, pos] of Object.entries(this.rightJointPositions)) {
+                    data.rightHand.joints[jointName] = {
+                        x: pos.x * GIANT_SCALE,
+                        y: pos.y * GIANT_SCALE,
+                        z: pos.z * GIANT_SCALE
+                    };
+                }
+            }
         }
 
         return data;

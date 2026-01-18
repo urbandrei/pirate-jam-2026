@@ -10,7 +10,7 @@
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { GIANT_SCALE } from '../shared/constants.js';
-import { createPCPlayerMesh, createVRPlayerMeshForPC } from '../shared/player-mesh.js';
+import { createPCPlayerMesh, createVRPlayerMeshForPC, FINGER_JOINTS, updateBoneBetweenPoints } from '../shared/player-mesh.js';
 
 export class RemotePlayers {
     constructor(scene) {
@@ -121,6 +121,9 @@ export class RemotePlayers {
                     data.leftHand.rotation.w
                 );
             }
+
+            // Update articulated joints if available
+            this.updateHandJoints(leftHand, data.leftHand);
         }
 
         if (data.rightHand && data.rightHand.position) {
@@ -137,6 +140,86 @@ export class RemotePlayers {
                     data.rightHand.rotation.w
                 );
             }
+
+            // Update articulated joints if available
+            this.updateHandJoints(rightHand, data.rightHand);
+        }
+    }
+
+    /**
+     * Update articulated hand joints and bones from network data
+     * Joint positions are in local space (relative to wrist), already scaled to GIANT_SCALE
+     */
+    updateHandJoints(handMesh, handData) {
+        if (!handData.joints) {
+            // No joint data (controller mode) - hide all joints and bones
+            for (const [fingerName, joints] of Object.entries(FINGER_JOINTS)) {
+                joints.forEach(jointName => {
+                    const joint = handMesh.getObjectByName('joint-' + jointName);
+                    if (joint) joint.visible = false;
+                });
+                for (let i = 0; i < joints.length - 1; i++) {
+                    const boneName = 'bone-' + joints[i] + '-to-' + joints[i + 1];
+                    const bone = handMesh.getObjectByName(boneName);
+                    if (bone) bone.visible = false;
+                }
+            }
+            // Make wrist visible and larger for controller mode
+            const wrist = handMesh.getObjectByName('wrist');
+            if (wrist) {
+                wrist.scale.set(3, 3, 3);
+                wrist.visible = true;
+            }
+            return;
+        }
+
+        // Reset wrist scale for hand tracking mode
+        const wrist = handMesh.getObjectByName('wrist');
+        if (wrist) {
+            wrist.scale.set(1, 1, 1);
+            wrist.visible = true;
+        }
+
+        // Update each finger's joints and bones
+        for (const [fingerName, joints] of Object.entries(FINGER_JOINTS)) {
+            const jointPositions = [];
+
+            // Update joint positions
+            for (const jointName of joints) {
+                const jointData = handData.joints[jointName];
+                if (!jointData) {
+                    jointPositions.push(null);
+                    continue;
+                }
+
+                const localPos = new THREE.Vector3(jointData.x, jointData.y, jointData.z);
+                jointPositions.push(localPos);
+
+                // Update joint sphere
+                const jointMesh = handMesh.getObjectByName('joint-' + jointName);
+                if (jointMesh) {
+                    jointMesh.position.copy(localPos);
+                    jointMesh.visible = true;
+                }
+            }
+
+            // Update bone segments between consecutive joints
+            for (let i = 0; i < joints.length - 1; i++) {
+                const boneName = 'bone-' + joints[i] + '-to-' + joints[i + 1];
+                const bone = handMesh.getObjectByName(boneName);
+
+                if (bone && jointPositions[i] && jointPositions[i + 1]) {
+                    updateBoneBetweenPoints(bone, jointPositions[i], jointPositions[i + 1]);
+                } else if (bone) {
+                    bone.visible = false;
+                }
+            }
+        }
+
+        // Update pinch indicator
+        const pinchIndicator = handMesh.getObjectByName('pinchIndicator');
+        if (pinchIndicator) {
+            pinchIndicator.visible = handData.pinching === true;
         }
     }
 
