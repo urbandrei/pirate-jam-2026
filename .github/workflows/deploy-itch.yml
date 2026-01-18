@@ -10,19 +10,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install butler
-        run: |
-          curl -L -o butler.zip https://broth.itch.ovh/butler/linux-amd64/LATEST/archive/default
-          unzip butler.zip
-          chmod +x butler
-          ./butler -V
-
       - name: Build PC client
         run: |
           mkdir -p build/pc-client
           cp -r public/pc/* build/pc-client/
 
       - name: Push to itch.io
-        env:
-          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
-        run: ./butler push build/pc-client urbandrei/pirate-jam-2026:html5
+        uses: itchio/butler-push-action@v1
+        with:
+          butler_key: ${{ secrets.BUTLER_API_KEY }}
+          directory: build/pc-client
+          itch_game: urbandrei/pirate-jam-2026
+          channel: html5
