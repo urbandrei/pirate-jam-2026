@@ -5,6 +5,8 @@
 
 const express = require('express');
 const http = require('http');
+const https = require('https');
+const fs = require('fs');
 const cors = require('cors');
 const { Server } = require('socket.io');
 const path = require('path');
@@ -20,9 +22,27 @@ const PORT = process.env.PORT || 3000;
 const TICK_RATE = 60; // Physics ticks per second
 const NETWORK_RATE = 20; // State updates per second
 
+// SSL Configuration (for production with Let's Encrypt)
+const SSL_CERT_PATH = process.env.SSL_CERT_PATH || '/etc/letsencrypt/live/urbandrei.com/fullchain.pem';
+const SSL_KEY_PATH = process.env.SSL_KEY_PATH || '/etc/letsencrypt/live/urbandrei.com/privkey.pem';
+const USE_HTTPS = process.env.USE_HTTPS === 'true' || (fs.existsSync(SSL_CERT_PATH) && fs.existsSync(SSL_KEY_PATH));
+
 // Initialize Express
 const app = express();
-const server = http.createServer(app);
+
+// Create HTTP or HTTPS server based on certificate availability
+let server;
+if (USE_HTTPS) {
+    const sslOptions = {
+        cert: fs.readFileSync(SSL_CERT_PATH),
+        key: fs.readFileSync(SSL_KEY_PATH)
+    };
+    server = https.createServer(sslOptions, app);
+    console.log('Starting with HTTPS (SSL enabled)');
+} else {
+    server = http.createServer(app);
+    console.log('Starting with HTTP (no SSL certificates found)');
+}
 
 // Enable CORS for all origins (required for itch.io)
 app.use(cors());
@@ -156,14 +176,16 @@ function gameLoop() {
 
 // Start server
 server.listen(PORT, () => {
+    const protocol = USE_HTTPS ? 'https' : 'http';
     console.log(`
 ╔════════════════════════════════════════════╗
 ║     Pirate Jam 2026 - Game Server          ║
 ╠════════════════════════════════════════════╣
 ║  Server running on port ${PORT}               ║
+║  Protocol: ${protocol.toUpperCase().padEnd(30)}║
 ║                                            ║
-║  PC Client:  http://localhost:${PORT}/pc/     ║
-║  VR Client:  http://localhost:${PORT}/vr/     ║
+║  PC Client:  ${protocol}://localhost:${PORT}/pc/    ║
+║  VR Client:  ${protocol}://localhost:${PORT}/vr/    ║
 ║                                            ║
 ║  Physics:    ${TICK_RATE} Hz                        ║
 ║  Network:    ${NETWORK_RATE} Hz                        ║
