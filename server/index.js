@@ -5,6 +5,7 @@
 
 const express = require('express');
 const http = require('http');
+const cors = require('cors');
 const { Server } = require('socket.io');
 const path = require('path');
 
@@ -22,6 +23,9 @@ const NETWORK_RATE = 20; // State updates per second
 // Initialize Express
 const app = express();
 const server = http.createServer(app);
+
+// Enable CORS for all origins (required for itch.io)
+app.use(cors());
 
 // Initialize Socket.IO
 const io = new Server(server, {
