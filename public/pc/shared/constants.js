@@ -44,7 +44,7 @@ export const WORLD_HALF = 50;
 // Colors
 export const COLORS = {
     GROUND: 0x3d5c3d,
-    SKY: 0x87ceeb,
+    SKY: 0x000000,
     PC_PLAYER: 0x4488ff,
     VR_PLAYER: 0xff4444,
     VR_HAND: 0xffcc88,

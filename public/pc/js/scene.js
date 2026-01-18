@@ -60,7 +60,7 @@ export class Scene {
         this.scene.add(sun);
 
         // Hemisphere light for better ambient
-        const hemi = new THREE.HemisphereLight(0x87ceeb, 0x3d5c3d, 0.3);
+        const hemi = new THREE.HemisphereLight(0x000000, 0x3d5c3d, 0.3);
         this.scene.add(hemi);
     }
 
