@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pirate Jam 2026 - PC Client</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            background: #000;
+            font-family: 'Segoe UI', sans-serif;
+        }
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        canvas {
+            display: block;
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+        }
+        #crosshair::before,
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(255, 255, 255, 0.8);
+        }
+        #crosshair::before {
+            width: 2px;
+            height: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        #crosshair::after {
+            width: 100%;
+            height: 2px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        #status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 14px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+        #click-to-play {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 30px 50px;
+            border-radius: 10px;
+            text-align: center;
+            pointer-events: auto;
+            cursor: pointer;
+        }
+        #click-to-play h2 {
+            margin-bottom: 10px;
+        }
+        #click-to-play p {
+            opacity: 0.7;
+            font-size: 14px;
+        }
+        #grabbed-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 0, 0, 0.3);
+            display: none;
+        }
+        #grabbed-overlay.active {
+            display: block;
+        }
+        #grabbed-text {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        }
+        #controls-help {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="ui-overlay">
+            <div id="crosshair"></div>
+            <div id="status">Connecting...</div>
+            <div id="click-to-play">
+                <h2>Click to Play</h2>
+                <p>WASD to move, Mouse to look, Space to jump</p>
+            </div>
+            <div id="grabbed-overlay">
+                <div id="grabbed-text">YOU'VE BEEN GRABBED!</div>
+            </div>
+            <div id="controls-help">WASD: Move | Mouse: Look | Space: Jump | ESC: Release cursor</div>
+        </div>
+    </div>
+
+    <!-- Three.js from CDN -->
+    <script src="https://unpkg.com/three@0.160.0/build/three.module.js" type="module"></script>
+
+    <!-- Server configuration (update before itch.io upload) -->
+    <script src="config.js"></script>
+
+    <!-- Socket.IO client (bundled for cross-origin compatibility) -->
+    <script src="lib/socket.io.min.js"></script>
+
+    <!-- Game modules -->
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>

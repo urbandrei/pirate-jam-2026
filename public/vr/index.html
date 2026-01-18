@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pirate Jam 2026 - VR Client</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            background: #000;
+            font-family: 'Segoe UI', sans-serif;
+            color: white;
+        }
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        canvas {
+            display: block;
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+        }
+        #status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 14px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+        #vr-button {
+            padding: 20px 40px;
+            font-size: 24px;
+            background: #4488ff;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            pointer-events: auto;
+            transition: background 0.2s;
+        }
+        #vr-button:hover {
+            background: #5599ff;
+        }
+        #vr-button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            text-align: center;
+            width: 100%;
+            opacity: 0.7;
+            font-size: 14px;
+        }
+        #grab-status {
+            position: absolute;
+            top: 50px;
+            left: 10px;
+            font-size: 16px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+        .no-vr-message {
+            background: rgba(255, 100, 100, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            max-width: 400px;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="ui-overlay">
+            <div id="status">Initializing...</div>
+            <button id="vr-button" disabled>Checking VR...</button>
+            <div id="grab-status"></div>
+            <div id="instructions">
+                Pinch gesture (thumb + index) to grab tiny players
+            </div>
+        </div>
+    </div>
+
+    <!-- Three.js from CDN -->
+    <script src="https://unpkg.com/three@0.160.0/build/three.module.js" type="module"></script>
+
+    <!-- Socket.IO is loaded dynamically from server -->
+
+    <!-- Game modules -->
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
