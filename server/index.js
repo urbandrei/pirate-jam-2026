@@ -18,7 +18,7 @@ const PhysicsValidator = require('./physics-validator');
 const MessageHandler = require('./message-handler');
 
 // Configuration
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 443;
 const TICK_RATE = 60; // Physics ticks per second
 const NETWORK_RATE = 20; // State updates per second
 
