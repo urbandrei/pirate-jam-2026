@@ -92,7 +92,12 @@ class MessageHandler {
     }
 
     handleGrabAttempt(peerId, message) {
-        const grabbedPlayer = this.grabSystem.attemptGrab(peerId, message.hand || 'right');
+        // Pass the hand position from the message for immediate grab check
+        const grabbedPlayer = this.grabSystem.attemptGrab(
+            peerId,
+            message.hand || 'right',
+            message.handPosition
+        );
 
         if (grabbedPlayer) {
             // Notify the grabbed player
@@ -110,7 +115,8 @@ class MessageHandler {
     }
 
     handleGrabRelease(peerId, message) {
-        const releasedPlayerId = this.grabSystem.releaseGrab(peerId);
+        // Pass velocity to grab system for throw mechanic
+        const releasedPlayerId = this.grabSystem.releaseGrab(peerId, message.velocity);
 
         if (releasedPlayerId) {
             // Notify the released player

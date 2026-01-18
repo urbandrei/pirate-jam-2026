@@ -55,6 +55,17 @@ export class Hands {
         this.leftHandMode = null; // 'hand-tracking' or 'controller'
         this.rightHandMode = null;
 
+        // Velocity tracking for throw mechanic
+        this.leftHandPrevPos = null;
+        this.rightHandPrevPos = null;
+        this.leftHandVelocity = { x: 0, y: 0, z: 0 };
+        this.rightHandVelocity = { x: 0, y: 0, z: 0 };
+        this.lastVelocityUpdateTime = 0;
+
+        // Pinch point positions (midpoint between thumb tip and index tip, in VR world coords)
+        this.leftPinchPoint = null;
+        this.rightPinchPoint = null;
+
         // Setup controllers for fallback
         this.setupControllers();
     }
@@ -195,9 +206,63 @@ export class Hands {
                 this.rightHandMode = 'controller';
                 this.updateControllerHand(this.controller0, this.rightHandMesh, frame, referenceSpace, 'right');
             }
+
+            // Update velocity tracking for throw mechanic
+            this.updateVelocityTracking();
         } catch (error) {
             console.warn('Error in hands update:', error.message);
         }
+    }
+
+    /**
+     * Track hand velocity for throw mechanic
+     * Calculates velocity based on position change over time
+     */
+    updateVelocityTracking() {
+        const now = performance.now();
+        const deltaTime = (now - this.lastVelocityUpdateTime) / 1000; // Convert to seconds
+
+        // Only update if we have a reasonable time delta (avoid division by zero or huge velocities)
+        if (deltaTime > 0.001 && deltaTime < 0.5) {
+            // Update left hand velocity
+            if (this.leftHandMesh.visible) {
+                const currentPos = this.leftHandMesh.position;
+                if (this.leftHandPrevPos) {
+                    // Calculate velocity in VR space, then scale to world units
+                    this.leftHandVelocity = {
+                        x: ((currentPos.x - this.leftHandPrevPos.x) / deltaTime) * GIANT_SCALE,
+                        y: ((currentPos.y - this.leftHandPrevPos.y) / deltaTime) * GIANT_SCALE,
+                        z: ((currentPos.z - this.leftHandPrevPos.z) / deltaTime) * GIANT_SCALE
+                    };
+                }
+                this.leftHandPrevPos = { x: currentPos.x, y: currentPos.y, z: currentPos.z };
+            }
+
+            // Update right hand velocity
+            if (this.rightHandMesh.visible) {
+                const currentPos = this.rightHandMesh.position;
+                if (this.rightHandPrevPos) {
+                    // Calculate velocity in VR space, then scale to world units
+                    this.rightHandVelocity = {
+                        x: ((currentPos.x - this.rightHandPrevPos.x) / deltaTime) * GIANT_SCALE,
+                        y: ((currentPos.y - this.rightHandPrevPos.y) / deltaTime) * GIANT_SCALE,
+                        z: ((currentPos.z - this.rightHandPrevPos.z) / deltaTime) * GIANT_SCALE
+                    };
+                }
+                this.rightHandPrevPos = { x: currentPos.x, y: currentPos.y, z: currentPos.z };
+            }
+        }
+
+        this.lastVelocityUpdateTime = now;
+    }
+
+    /**
+     * Get current hand velocity for throw mechanic
+     * @param {string} hand - 'left' or 'right'
+     * @returns {Object} Velocity in world units per second {x, y, z}
+     */
+    getHandVelocity(hand = 'right') {
+        return hand === 'left' ? { ...this.leftHandVelocity } : { ...this.rightHandVelocity };
     }
 
     /**
@@ -320,8 +385,18 @@ export class Hands {
                 // Update pinch indicator position to midpoint between thumb and index
                 const pinchIndicator = handMesh.getObjectByName('pinchIndicator');
                 if (pinchIndicator && thumbTipWorldPos && indexTipWorldPos) {
-                    const midpoint = thumbTipWorldPos.clone().lerp(indexTipWorldPos, 0.5);
-                    const localMid = midpoint.sub(wristWorldPos);
+                    // Calculate pinch point as midpoint between thumb and index tips
+                    const pinchPointWorld = thumbTipWorldPos.clone().lerp(indexTipWorldPos, 0.5);
+
+                    // Store the pinch point in VR world coordinates (unscaled)
+                    if (handName === 'left') {
+                        this.leftPinchPoint = { x: pinchPointWorld.x, y: pinchPointWorld.y, z: pinchPointWorld.z };
+                    } else {
+                        this.rightPinchPoint = { x: pinchPointWorld.x, y: pinchPointWorld.y, z: pinchPointWorld.z };
+                    }
+
+                    // Convert to local space for the indicator
+                    const localMid = pinchPointWorld.clone().sub(wristWorldPos);
                     localMid.applyQuaternion(invQuat);
                     pinchIndicator.position.copy(localMid);
                     pinchIndicator.visible = isPinching;
@@ -453,6 +528,15 @@ export class Hands {
                 pinching: this.leftPinching
             };
 
+            // Include pinch point position for grab mechanics
+            if (this.leftPinchPoint) {
+                data.leftHand.pinchPoint = {
+                    x: this.leftPinchPoint.x * GIANT_SCALE,
+                    y: this.leftPinchPoint.y * GIANT_SCALE,
+                    z: this.leftPinchPoint.z * GIANT_SCALE
+                };
+            }
+
             // Include joint positions only in hand tracking mode
             if (this.leftHandMode === 'hand-tracking' && Object.keys(this.leftJointPositions).length > 0) {
                 data.leftHand.joints = {};
@@ -482,6 +566,15 @@ export class Hands {
                 pinching: this.rightPinching
             };
 
+            // Include pinch point position for grab mechanics
+            if (this.rightPinchPoint) {
+                data.rightHand.pinchPoint = {
+                    x: this.rightPinchPoint.x * GIANT_SCALE,
+                    y: this.rightPinchPoint.y * GIANT_SCALE,
+                    z: this.rightPinchPoint.z * GIANT_SCALE
+                };
+            }
+
             // Include joint positions only in hand tracking mode
             if (this.rightHandMode === 'hand-tracking' && Object.keys(this.rightJointPositions).length > 0) {
                 data.rightHand.joints = {};
@@ -510,6 +603,25 @@ export class Hands {
             x: mesh.position.x * GIANT_SCALE,
             y: mesh.position.y * GIANT_SCALE,
             z: mesh.position.z * GIANT_SCALE
+        };
+    }
+
+    /**
+     * Get the pinch point position (midpoint between thumb tip and index finger tip)
+     * @param {string} hand - 'left' or 'right'
+     * @returns {Object|null} Position in world units {x, y, z} or null if not available
+     */
+    getPinchPointPosition(hand = 'right') {
+        const pinchPoint = hand === 'left' ? this.leftPinchPoint : this.rightPinchPoint;
+        if (!pinchPoint) {
+            // Fall back to wrist position if pinch point not available (e.g., controller mode)
+            return this.getHandPosition(hand);
+        }
+        // Scale by GIANT_SCALE to get world-space position for gameplay
+        return {
+            x: pinchPoint.x * GIANT_SCALE,
+            y: pinchPoint.y * GIANT_SCALE,
+            z: pinchPoint.z * GIANT_SCALE
         };
     }
 

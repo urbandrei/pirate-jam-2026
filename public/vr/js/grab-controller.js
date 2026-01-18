@@ -27,8 +27,13 @@ export class GrabController {
 
         console.log('Pinch started:', hand);
 
-        // Send grab attempt to server
-        this.network.sendGrabAttempt(hand);
+        // Get pinch point position (midpoint between thumb and index finger tips)
+        // This is where the grab should occur, not at the wrist
+        const pinchPosition = this.hands.getPinchPointPosition(hand);
+        console.log('Pinch point for grab:', pinchPosition);
+
+        // Send grab attempt to server with pinch point position
+        this.network.sendGrabAttempt(hand, pinchPosition);
         this.activeHand = hand;
     }
 
@@ -38,8 +43,12 @@ export class GrabController {
 
         console.log('Pinch ended:', hand);
 
-        // Send release to server
-        this.network.sendGrabRelease();
+        // Get hand velocity for throw mechanic
+        const velocity = this.hands.getHandVelocity(hand);
+        console.log('Throw velocity:', velocity);
+
+        // Send release to server with velocity for throw
+        this.network.sendGrabRelease(velocity);
     }
 
     onGrabSuccess(playerId) {

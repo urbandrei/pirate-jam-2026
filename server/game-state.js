@@ -11,6 +11,9 @@ class GameState {
         // Grab relationships: vrPlayerId -> pcPlayerId
         this.grabs = new Map();
 
+        // Track which hand is grabbing: vrPlayerId -> 'left' or 'right'
+        this.grabHand = new Map();
+
         // Reverse lookup: pcPlayerId -> vrPlayerId (who's grabbing them)
         this.grabbedBy = new Map();
     }
@@ -111,8 +114,9 @@ class GameState {
         }
     }
 
-    setGrab(vrPlayerId, pcPlayerId) {
+    setGrab(vrPlayerId, pcPlayerId, hand = 'right') {
         this.grabs.set(vrPlayerId, pcPlayerId);
+        this.grabHand.set(vrPlayerId, hand);
         this.grabbedBy.set(pcPlayerId, vrPlayerId);
     }
 
@@ -121,9 +125,14 @@ class GameState {
         if (pcPlayerId) {
             this.grabbedBy.delete(pcPlayerId);
             this.grabs.delete(vrPlayerId);
+            this.grabHand.delete(vrPlayerId);
             return pcPlayerId;
         }
         return null;
+    }
+
+    getGrabHand(vrPlayerId) {
+        return this.grabHand.get(vrPlayerId) || 'right';
     }
 
     isPlayerGrabbed(pcPlayerId) {

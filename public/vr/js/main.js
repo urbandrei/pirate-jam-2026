@@ -24,6 +24,11 @@ class VRGame {
         this.remotePlayers = null;
         this.grabController = null;
 
+        // Player count HUD
+        this.playerCountSprite = null;
+        this.playerCountCanvas = null;
+        this.playerCountCtx = null;
+
         this.lastNetworkTime = 0;
         this.networkInterval = 1000 / NETWORK_RATE;
         this.currentFrame = null;
@@ -37,6 +42,9 @@ class VRGame {
         // Setup Three.js + WebXR scene
         const container = document.getElementById('game-container');
         this.scene = new VRScene(container);
+
+        // Setup player count HUD
+        this.setupPlayerCountHUD();
 
         // Setup hands
         this.hands = new Hands(this.scene.scene, this.scene.renderer);
@@ -67,6 +75,10 @@ class VRGame {
         this.network.onStateUpdate = (state) => {
             // Update remote players
             this.remotePlayers.updatePlayers(state, this.network.playerId);
+
+            // Update player count HUD
+            const playerCount = Object.keys(state.players).length;
+            this.updatePlayerCountHUD(playerCount);
         };
 
         this.network.onGrabSuccess = (playerId) => {
@@ -80,6 +92,52 @@ class VRGame {
         this.network.onPlayerLeft = (playerId) => {
             this.remotePlayers.removePlayer(playerId);
         };
+    }
+
+    setupPlayerCountHUD() {
+        // Create canvas for text rendering
+        this.playerCountCanvas = document.createElement('canvas');
+        this.playerCountCanvas.width = 256;
+        this.playerCountCanvas.height = 64;
+        this.playerCountCtx = this.playerCountCanvas.getContext('2d');
+
+        // Create texture and sprite
+        const texture = new THREE.CanvasTexture(this.playerCountCanvas);
+        const material = new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true
+        });
+        this.playerCountSprite = new THREE.Sprite(material);
+
+        // Position in upper-right of view (VR scale: ~0.5m in front of eyes)
+        this.playerCountSprite.position.set(0.3, 0.2, -0.5);
+        this.playerCountSprite.scale.set(0.2, 0.05, 1);
+
+        // Attach to camera rig so it follows the head
+        this.scene.cameraRig.add(this.playerCountSprite);
+
+        // Initial render
+        this.updatePlayerCountHUD(0);
+    }
+
+    updatePlayerCountHUD(count) {
+        const ctx = this.playerCountCtx;
+        ctx.clearRect(0, 0, 256, 64);
+
+        // Semi-transparent background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.roundRect(0, 0, 256, 64, 10);
+        ctx.fill();
+
+        // Text
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 32px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`Players: ${count}`, 128, 32);
+
+        // Update texture
+        this.playerCountSprite.material.map.needsUpdate = true;
     }
 
     gameLoop(time, frame) {

@@ -144,12 +144,12 @@ export class Network {
         this.send(createVRPoseMessage(head, leftHand, rightHand));
     }
 
-    sendGrabAttempt(hand) {
-        this.send(createGrabAttemptMessage(hand));
+    sendGrabAttempt(hand, handPosition = null) {
+        this.send(createGrabAttemptMessage(hand, handPosition));
     }
 
-    sendGrabRelease() {
-        this.send(createGrabReleaseMessage());
+    sendGrabRelease(velocity = null) {
+        this.send(createGrabReleaseMessage(velocity));
     }
 
     updateStatus(text) {

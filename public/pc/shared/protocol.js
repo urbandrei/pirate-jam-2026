@@ -52,15 +52,17 @@ export function createVRPoseMessage(head, leftHand, rightHand) {
     };
 }
 
-export function createGrabAttemptMessage(hand) {
+export function createGrabAttemptMessage(hand, handPosition = null) {
     return {
         type: MSG.GRAB_ATTEMPT,
-        hand: hand // 'left' or 'right'
+        hand: hand, // 'left' or 'right'
+        handPosition: handPosition // Current hand position for immediate grab check
     };
 }
 
-export function createGrabReleaseMessage() {
+export function createGrabReleaseMessage(velocity = null) {
     return {
-        type: MSG.GRAB_RELEASE
+        type: MSG.GRAB_RELEASE,
+        velocity: velocity // Hand velocity for throw mechanic {x, y, z}
     };
 }
