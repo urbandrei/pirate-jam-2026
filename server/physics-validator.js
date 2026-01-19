@@ -31,11 +31,6 @@ class PhysicsValidator {
      * Update a PC player based on their input state
      */
     updatePCPlayer(player, deltaTime) {
-        // Don't update movement if player is grabbed
-        if (this.gameState.isPlayerGrabbed(player.id)) {
-            return;
-        }
-
         const input = player.input;
         const lookYaw = player.lookRotation?.y || 0;
 
