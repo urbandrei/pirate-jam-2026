@@ -43,7 +43,6 @@ export class Hands {
         // Callbacks
         this.onPinchStart = null;
         this.onPinchEnd = null;
-        this.onLeftSqueeze = null; // For diagnostics toggle
 
         // Hand meshes
         this.leftHandMesh = this.createHandMesh('left');
@@ -217,10 +216,6 @@ export class Hands {
             squeezestart: () => {
                 if (this.leftHandMode === 'controller') {
                     this.handlePinchStart('left');
-                }
-                // Fire left squeeze callback for diagnostics toggle
-                if (this.onLeftSqueeze) {
-                    this.onLeftSqueeze();
                 }
             },
             squeezeend: () => {

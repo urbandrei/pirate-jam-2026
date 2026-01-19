@@ -14,7 +14,6 @@ import { Hands } from './hands.js';
 import { Network } from './network.js';
 import { RemotePlayers } from './remote-players.js';
 import { GrabController } from './grab-controller.js';
-import { DiagnosticsDisplay } from './diagnostics.js';
 import { NETWORK_RATE, GIANT_SCALE } from '../../pc/shared/constants.js';
 
 class VRGame {
@@ -24,7 +23,6 @@ class VRGame {
         this.network = null;
         this.remotePlayers = null;
         this.grabController = null;
-        this.diagnostics = null;
 
         // Player count HUD
         this.playerCountSprite = null;
@@ -70,10 +68,6 @@ class VRGame {
 
         // Setup grab controller
         this.grabController = new GrabController(this.hands, this.network);
-
-        // Setup diagnostics display as floating HUD attached to camera
-        this.diagnostics = new DiagnosticsDisplay(this.scene.scene, this.scene.renderer);
-        this.diagnostics.attachToCamera(this.scene.cameraRig);
 
         // Connect to server
         try {
@@ -181,11 +175,6 @@ class VRGame {
                 } catch (grabError) {
                     console.warn('Grab controller update error:', grabError.message);
                 }
-            }
-
-            // Update diagnostics display (always visible as floating HUD)
-            if (this.diagnostics) {
-                this.diagnostics.update(time);
             }
 
             // Send pose to server at fixed rate

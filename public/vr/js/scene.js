@@ -25,8 +25,7 @@ export class VRScene {
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.shadowMap.enabled = false;
         this.renderer.xr.enabled = true;
         container.insertBefore(this.renderer.domElement, container.firstChild);
 
@@ -68,15 +67,6 @@ export class VRScene {
         // World is 10m visual, so light at reasonable VR-scale height
         const sun = new THREE.DirectionalLight(0xffffff, 1);
         sun.position.set(5, 10, 5);
-        sun.castShadow = true;
-        sun.shadow.mapSize.width = 2048;
-        sun.shadow.mapSize.height = 2048;
-        sun.shadow.camera.near = 0.5;
-        sun.shadow.camera.far = 30;
-        sun.shadow.camera.left = -15;
-        sun.shadow.camera.right = 15;
-        sun.shadow.camera.top = 15;
-        sun.shadow.camera.bottom = -15;
         this.scene.add(sun);
 
         // Hemisphere light
@@ -96,11 +86,10 @@ export class VRScene {
         });
         this.ground = new THREE.Mesh(groundGeometry, groundMaterial);
         this.ground.rotation.x = -Math.PI / 2;
-        this.ground.receiveShadow = true;
         this.scene.add(this.ground);
 
-        // Grid helper - 10m with 50 divisions = 0.2m cells
-        const grid = new THREE.GridHelper(groundSize, 50, 0x000000, 0x444444);
+        // Grid helper - 10m with 10 divisions = 1m cells (reduced for Quest 2 performance)
+        const grid = new THREE.GridHelper(groundSize, 10, 0x000000, 0x444444);
         grid.position.y = 0.001; // Slight offset to prevent z-fighting
         grid.material.opacity = 0.2;
         grid.material.transparent = true;
@@ -140,13 +129,11 @@ export class VRScene {
             });
             const block = new THREE.Mesh(geometry, material);
             block.position.set(pos.x, 1.5 / GIANT_SCALE, pos.z);
-            block.castShadow = true;
-            block.receiveShadow = true;
             this.scene.add(block);
         });
 
-        // Scattered blocks - smaller toy-sized blocks
-        for (let i = 0; i < 20; i++) {
+        // Scattered blocks - smaller toy-sized blocks (reduced count for Quest 2 performance)
+        for (let i = 0; i < 5; i++) {
             const worldSize = 0.5 + Math.random() * 1.5; // 0.5-2m in world
             const vrSize = worldSize / GIANT_SCALE; // 0.05-0.2m in VR
             const geometry = new THREE.BoxGeometry(vrSize, vrSize * 2, vrSize);
@@ -162,8 +149,6 @@ export class VRScene {
                 (Math.random() - 0.5) * 40 / GIANT_SCALE
             );
             block.rotation.y = Math.random() * Math.PI;
-            block.castShadow = true;
-            block.receiveShadow = true;
             this.scene.add(block);
         }
     }
