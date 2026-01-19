@@ -13,7 +13,6 @@ import { VRScene } from './scene.js';
 import { Hands } from './hands.js';
 import { Network } from './network.js';
 import { RemotePlayers } from './remote-players.js';
-import { GrabController } from './grab-controller.js';
 import { NETWORK_RATE, GIANT_SCALE } from '../../pc/shared/constants.js';
 
 class VRGame {
@@ -22,7 +21,6 @@ class VRGame {
         this.hands = null;
         this.network = null;
         this.remotePlayers = null;
-        this.grabController = null;
         this.disposed = false;
 
         // Player count HUD
@@ -68,9 +66,6 @@ class VRGame {
         this.network = new Network();
         this.setupNetworkCallbacks();
 
-        // Setup grab controller
-        this.grabController = new GrabController(this.hands, this.network);
-
         // Hook cleanup to VR session end
         this.scene.onSessionEnd = () => {
             console.log('[VRGame] VR session ended, cleaning up...');
@@ -97,14 +92,6 @@ class VRGame {
             // Update player count HUD
             const playerCount = Object.keys(state.players).length;
             this.updatePlayerCountHUD(playerCount);
-        };
-
-        this.network.onGrabSuccess = (playerId) => {
-            this.grabController.onGrabSuccess(playerId);
-        };
-
-        this.network.onReleaseSuccess = (playerId) => {
-            this.grabController.onReleaseSuccess(playerId);
         };
 
         this.network.onPlayerLeft = (playerId) => {
@@ -183,15 +170,6 @@ class VRGame {
                 } catch (handError) {
                     // Log but don't crash - hands may not be ready yet
                     console.debug('Hand update skipped:', handError.message);
-                }
-            }
-
-            // Update grab controller (with safety check)
-            if (this.grabController) {
-                try {
-                    this.grabController.update();
-                } catch (grabError) {
-                    console.warn('Grab controller update error:', grabError.message);
                 }
             }
 
@@ -313,17 +291,6 @@ class VRGame {
                 this.remotePlayers = null;
             } catch (err) {
                 console.warn('[VRGame] Error disposing remote players:', err);
-            }
-        }
-
-        if (this.grabController) {
-            try {
-                if (this.grabController.dispose) {
-                    this.grabController.dispose();
-                }
-                this.grabController = null;
-            } catch (err) {
-                console.warn('[VRGame] Error disposing grab controller:', err);
             }
         }
 

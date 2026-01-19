@@ -62,7 +62,7 @@ export class RemotePlayers {
             if (!playerObj) {
                 // Create new player using shared mesh functions
                 const mesh = playerData.type === 'pc'
-                    ? createPCPlayerMesh({ includeGrabIndicator: true, includeLabel: true })
+                    ? createPCPlayerMesh({ includeLabel: true })
                     : createVRPlayerMeshForVR();
 
                 // Scale PC player mesh to 1/GIANT_SCALE for tiny world
@@ -76,9 +76,7 @@ export class RemotePlayers {
                 playerObj = {
                     mesh,
                     type: playerData.type,
-                    targetPosition: new THREE.Vector3(),
-                    // Cache grabbedOutline reference to avoid getObjectByName per frame
-                    grabbedOutline: playerData.type === 'pc' ? mesh.getObjectByName('grabbedOutline') : null
+                    targetPosition: new THREE.Vector3()
                 };
                 this.players.set(playerId, playerObj);
             }
@@ -104,21 +102,11 @@ export class RemotePlayers {
             data.position.z / GIANT_SCALE
         );
 
-        // Skip interpolation when grabbed - follow hand position immediately
-        if (data.isGrabbed) {
-            mesh.position.copy(playerObj.targetPosition);
-        } else {
-            mesh.position.lerp(playerObj.targetPosition, 0.3);
-        }
+        mesh.position.lerp(playerObj.targetPosition, 0.3);
 
         // Update rotation based on look direction
         if (data.lookRotation) {
             mesh.rotation.y = data.lookRotation.y;
-        }
-
-        // Update grabbed state visual using cached reference
-        if (playerObj.grabbedOutline) {
-            playerObj.grabbedOutline.visible = data.isGrabbed;
         }
     }
 
@@ -144,21 +132,6 @@ export class RemotePlayers {
             this.scene.remove(playerObj.mesh);
             this.players.delete(playerId);
         }
-    }
-
-    // Get list of PC players for grab detection
-    // NOTE: Returns direct position references - do not mutate!
-    getPCPlayerPositions() {
-        const positions = [];
-        for (const [playerId, data] of this.players) {
-            if (data.type === 'pc') {
-                positions.push({
-                    id: playerId,
-                    position: data.mesh.position  // Return reference directly to avoid clone allocation
-                });
-            }
-        }
-        return positions;
     }
 
     /**

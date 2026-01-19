@@ -2,7 +2,7 @@
  * Socket.IO network client for VR
  */
 
-import { MSG, createJoinMessage, createVRPoseMessage, createGrabAttemptMessage, createGrabReleaseMessage } from '../../pc/shared/protocol.js';
+import { MSG, createJoinMessage, createVRPoseMessage } from '../../pc/shared/protocol.js';
 
 export class Network {
     constructor() {
@@ -15,14 +15,11 @@ export class Network {
         this.onConnected = null;
         this.onDisconnected = null;
         this.onStateUpdate = null;
-        this.onGrabSuccess = null;
-        this.onReleaseSuccess = null;
         this.onPlayerJoined = null;
         this.onPlayerLeft = null;
 
         // Status element
         this.statusEl = document.getElementById('status');
-        this.grabStatusEl = document.getElementById('grab-status');
     }
 
     connect() {
@@ -112,18 +109,6 @@ export class Network {
                 }
                 break;
 
-            case MSG.GRAB_SUCCESS:
-                console.log('Grabbed player:', message.grabbedPlayer);
-                this.updateGrabStatus('Holding player: ' + message.grabbedPlayer.slice(0, 8));
-                if (this.onGrabSuccess) this.onGrabSuccess(message.grabbedPlayer);
-                break;
-
-            case MSG.RELEASE_SUCCESS:
-                console.log('Released player:', message.releasedPlayer);
-                this.updateGrabStatus('');
-                if (this.onReleaseSuccess) this.onReleaseSuccess(message.releasedPlayer);
-                break;
-
             case MSG.PLAYER_JOINED:
                 console.log('Player joined:', message.player);
                 if (this.onPlayerJoined) this.onPlayerJoined(message.player);
@@ -146,23 +131,9 @@ export class Network {
         this.send(createVRPoseMessage(head, leftHand, rightHand));
     }
 
-    sendGrabAttempt(hand, handPosition = null) {
-        this.send(createGrabAttemptMessage(hand, handPosition));
-    }
-
-    sendGrabRelease(velocity = null) {
-        this.send(createGrabReleaseMessage(velocity));
-    }
-
     updateStatus(text) {
         if (this.statusEl) {
             this.statusEl.textContent = text;
-        }
-    }
-
-    updateGrabStatus(text) {
-        if (this.grabStatusEl) {
-            this.grabStatusEl.textContent = text;
         }
     }
 

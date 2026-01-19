@@ -13,7 +13,6 @@ const path = require('path');
 
 const GameState = require('./game-state');
 const PlayerManager = require('./player-manager');
-const GrabSystem = require('./grab-system');
 const PhysicsValidator = require('./physics-validator');
 const MessageHandler = require('./message-handler');
 
@@ -96,9 +95,8 @@ app.get('/api/status', (req, res) => {
 // Initialize game systems
 const gameState = new GameState();
 const playerManager = new PlayerManager(gameState);
-const grabSystem = new GrabSystem(gameState);
 const physicsValidator = new PhysicsValidator(gameState);
-const messageHandler = new MessageHandler(gameState, playerManager, grabSystem);
+const messageHandler = new MessageHandler(gameState, playerManager);
 
 // Socket.IO event handling
 io.on('connection', (socket) => {
@@ -154,7 +152,6 @@ function gameLoop() {
     const tickDelta = (now - lastTickTime) / 1000;
     if (tickDelta >= 1 / TICK_RATE) {
         physicsValidator.tick(tickDelta);
-        grabSystem.updateGrabbedPositions();
         lastTickTime = now;
     }
 

@@ -16,9 +16,6 @@ export class Player {
         // For interpolation
         this.targetPosition = { x: 0, y: GROUND_LEVEL, z: 0 };
 
-        // Grabbed state
-        this.isGrabbed = false;
-
         // Create visual representation (capsule)
         this.mesh = this.createCapsuleMesh();
         // Don't add to scene - first person view doesn't show own body
@@ -69,22 +66,14 @@ export class Player {
 
         this.serverPosition = { ...serverState.position };
         this.targetPosition = { ...serverState.position };
-        this.isGrabbed = serverState.isGrabbed || false;
     }
 
     update(deltaTime) {
-        // Skip interpolation when grabbed - follow hand position immediately
-        if (this.isGrabbed) {
-            this.position.x = this.targetPosition.x;
-            this.position.y = this.targetPosition.y;
-            this.position.z = this.targetPosition.z;
-        } else {
-            // Smooth interpolation to server position
-            const lerpFactor = 0.3;
-            this.position.x += (this.targetPosition.x - this.position.x) * lerpFactor;
-            this.position.y += (this.targetPosition.y - this.position.y) * lerpFactor;
-            this.position.z += (this.targetPosition.z - this.position.z) * lerpFactor;
-        }
+        // Smooth interpolation to server position
+        const lerpFactor = 0.3;
+        this.position.x += (this.targetPosition.x - this.position.x) * lerpFactor;
+        this.position.y += (this.targetPosition.y - this.position.y) * lerpFactor;
+        this.position.z += (this.targetPosition.z - this.position.z) * lerpFactor;
 
         // Update mesh position (if visible)
         this.mesh.position.set(this.position.x, this.position.y, this.position.z);

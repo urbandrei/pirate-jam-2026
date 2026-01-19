@@ -7,15 +7,6 @@ class GameState {
     constructor() {
         // Map of peerId -> player state
         this.players = new Map();
-
-        // Grab relationships: vrPlayerId -> pcPlayerId
-        this.grabs = new Map();
-
-        // Track which hand is grabbing: vrPlayerId -> 'left' or 'right'
-        this.grabHand = new Map();
-
-        // Reverse lookup: pcPlayerId -> vrPlayerId (who's grabbing them)
-        this.grabbedBy = new Map();
     }
 
     addPlayer(peerId, playerType) {
@@ -53,18 +44,6 @@ class GameState {
     }
 
     removePlayer(peerId) {
-        // Clean up any grab relationships
-        if (this.grabs.has(peerId)) {
-            const grabbedPlayer = this.grabs.get(peerId);
-            this.grabbedBy.delete(grabbedPlayer);
-            this.grabs.delete(peerId);
-        }
-        if (this.grabbedBy.has(peerId)) {
-            const grabber = this.grabbedBy.get(peerId);
-            this.grabs.delete(grabber);
-            this.grabbedBy.delete(peerId);
-        }
-
         this.players.delete(peerId);
     }
 
@@ -114,39 +93,6 @@ class GameState {
         }
     }
 
-    setGrab(vrPlayerId, pcPlayerId, hand = 'right') {
-        this.grabs.set(vrPlayerId, pcPlayerId);
-        this.grabHand.set(vrPlayerId, hand);
-        this.grabbedBy.set(pcPlayerId, vrPlayerId);
-    }
-
-    releaseGrab(vrPlayerId) {
-        const pcPlayerId = this.grabs.get(vrPlayerId);
-        if (pcPlayerId) {
-            this.grabbedBy.delete(pcPlayerId);
-            this.grabs.delete(vrPlayerId);
-            this.grabHand.delete(vrPlayerId);
-            return pcPlayerId;
-        }
-        return null;
-    }
-
-    getGrabHand(vrPlayerId) {
-        return this.grabHand.get(vrPlayerId) || 'right';
-    }
-
-    isPlayerGrabbed(pcPlayerId) {
-        return this.grabbedBy.has(pcPlayerId);
-    }
-
-    getGrabber(pcPlayerId) {
-        return this.grabbedBy.get(pcPlayerId);
-    }
-
-    getGrabbedPlayer(vrPlayerId) {
-        return this.grabs.get(vrPlayerId);
-    }
-
     // Get serializable state for network transmission
     getSerializableState() {
         const players = {};
@@ -161,15 +107,12 @@ class GameState {
                 headPosition: player.headPosition,
                 headRotation: player.headRotation,
                 leftHand: player.leftHand,
-                rightHand: player.rightHand,
-                isGrabbed: this.grabbedBy.has(player.id),
-                grabbedBy: this.grabbedBy.get(player.id) || null
+                rightHand: player.rightHand
             };
         }
 
         return {
             players,
-            grabs: Object.fromEntries(this.grabs),
             timestamp: Date.now()
         };
     }

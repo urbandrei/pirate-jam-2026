@@ -33,8 +33,7 @@ export const SERVER_PEER_ID = 'game-server';
 export const NETWORK_RATE = 20; // Hz
 export const INPUT_RATE = 60; // Hz
 
-// Grab mechanics
-export const GRAB_RADIUS = 0.5; // meters (PC scale)
+// Pinch detection
 export const PINCH_THRESHOLD = 0.02; // 2cm (VR scale)
 
 // World

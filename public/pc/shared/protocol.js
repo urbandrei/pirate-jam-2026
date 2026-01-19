@@ -8,18 +8,12 @@ export const MSG = {
     JOIN: 'JOIN',
     INPUT: 'INPUT',
     VR_POSE: 'VR_POSE',
-    GRAB_ATTEMPT: 'GRAB_ATTEMPT',
-    GRAB_RELEASE: 'GRAB_RELEASE',
 
     // Server -> Client
     JOINED: 'JOINED',
     PLAYER_JOINED: 'PLAYER_JOINED',
     PLAYER_LEFT: 'PLAYER_LEFT',
-    STATE_UPDATE: 'STATE_UPDATE',
-    GRABBED: 'GRABBED',
-    RELEASED: 'RELEASED',
-    GRAB_SUCCESS: 'GRAB_SUCCESS',
-    RELEASE_SUCCESS: 'RELEASE_SUCCESS'
+    STATE_UPDATE: 'STATE_UPDATE'
 };
 
 // Message creators for type safety
@@ -49,20 +43,5 @@ export function createVRPoseMessage(head, leftHand, rightHand) {
         head: head,
         leftHand: leftHand,
         rightHand: rightHand
-    };
-}
-
-export function createGrabAttemptMessage(hand, handPosition = null) {
-    return {
-        type: MSG.GRAB_ATTEMPT,
-        hand: hand, // 'left' or 'right'
-        handPosition: handPosition // Current hand position for immediate grab check
-    };
-}
-
-export function createGrabReleaseMessage(velocity = null) {
-    return {
-        type: MSG.GRAB_RELEASE,
-        velocity: velocity // Hand velocity for throw mechanic {x, y, z}
     };
 }

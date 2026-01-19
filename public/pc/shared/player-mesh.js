@@ -81,14 +81,12 @@ export function updateBoneBetweenPoints(bone, start, end) {
  * @param {Object} options
  * @param {number} options.scale - Scale factor (1 for VR, GIANT_SCALE for PC view)
  * @param {boolean} options.includePinchIndicator - Add pinch indicator sphere
- * @param {boolean} options.includeGrabRange - Add grab range indicator
  * @returns {THREE.Group}
  */
 export function createVRHandMesh(options = {}) {
     const {
         scale = 1,
-        includePinchIndicator = true,
-        includeGrabRange = false
+        includePinchIndicator = true
     } = options;
 
     const group = new THREE.Group();
@@ -153,22 +151,6 @@ export function createVRHandMesh(options = {}) {
         group.add(pinchIndicator);
     }
 
-    // Grab range indicator - shows the grab radius
-    if (includeGrabRange) {
-        const grabRangeRadius = 0.5 / GIANT_SCALE * scale; // 5cm in VR space, scaled
-        const grabRange = new THREE.Mesh(
-            new THREE.SphereGeometry(grabRangeRadius, 8, 8),
-            new THREE.MeshBasicMaterial({
-                color: 0x00ff00,
-                transparent: true,
-                opacity: 0.3,
-                wireframe: true
-            })
-        );
-        grabRange.name = 'grabRange';
-        group.add(grabRange);
-    }
-
     group.visible = false;
     return group;
 }
@@ -176,12 +158,11 @@ export function createVRHandMesh(options = {}) {
 /**
  * Create a PC player mesh (capsule body with face indicator)
  * @param {Object} options
- * @param {boolean} options.includeGrabIndicator - Add grabbedOutline for VR grab visualization
  * @param {boolean} options.includeLabel - Add floating label above player
  * @returns {THREE.Group}
  */
 export function createPCPlayerMesh(options = {}) {
-    const { includeGrabIndicator = false, includeLabel = false } = options;
+    const { includeLabel = false } = options;
     const group = new THREE.Group();
 
     // Capsule body
@@ -219,22 +200,6 @@ export function createPCPlayerMesh(options = {}) {
     );
     face.position.set(0, cylinderHeight / 2 + 0.1, -PLAYER_RADIUS);
     group.add(face);
-
-    // Grabbed indicator (glowing outline when grabbed) - for VR view
-    if (includeGrabIndicator) {
-        const outline = new THREE.Mesh(
-            new THREE.CylinderGeometry(PLAYER_RADIUS * 1.2, PLAYER_RADIUS * 1.2, PLAYER_HEIGHT, 16),
-            new THREE.MeshBasicMaterial({
-                color: 0xff0000,
-                transparent: true,
-                opacity: 0.4,
-                side: THREE.BackSide
-            })
-        );
-        outline.name = 'grabbedOutline';
-        outline.visible = false;
-        group.add(outline);
-    }
 
     // Label (floating text above player) - for VR view
     if (includeLabel) {
@@ -314,8 +279,7 @@ export function createVRPlayerMeshForPC() {
     // Articulated hands - scaled to GIANT_SCALE for PC view
     const leftHand = createVRHandMesh({
         scale: GIANT_SCALE,
-        includePinchIndicator: true,
-        includeGrabRange: false
+        includePinchIndicator: true
     });
     leftHand.name = 'leftHand';
     leftHand.visible = true; // Make visible by default
@@ -323,8 +287,7 @@ export function createVRPlayerMeshForPC() {
 
     const rightHand = createVRHandMesh({
         scale: GIANT_SCALE,
-        includePinchIndicator: true,
-        includeGrabRange: false
+        includePinchIndicator: true
     });
     rightHand.name = 'rightHand';
     rightHand.visible = true; // Make visible by default

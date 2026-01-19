@@ -56,8 +56,6 @@ export class Hands {
         this._rightWrist = this.rightHandMesh.getObjectByName('wrist');
         this._leftPinchIndicator = this.leftHandMesh.getObjectByName('pinchIndicator');
         this._rightPinchIndicator = this.rightHandMesh.getObjectByName('pinchIndicator');
-        this._leftGrabRange = this.leftHandMesh.getObjectByName('grabRange');
-        this._rightGrabRange = this.rightHandMesh.getObjectByName('grabRange');
 
         // Cache joint and bone meshes per hand
         this._leftJointMeshes = {};
@@ -86,16 +84,6 @@ export class Hands {
         // Track which input mode is active per hand
         this.leftHandMode = null; // 'hand-tracking' or 'controller'
         this.rightHandMode = null;
-
-        // Velocity tracking for throw mechanic
-        // Pre-allocate objects to avoid per-frame allocations
-        this.leftHandPrevPos = { x: 0, y: 0, z: 0 };
-        this.rightHandPrevPos = { x: 0, y: 0, z: 0 };
-        this._hasLeftPrevPos = false;
-        this._hasRightPrevPos = false;
-        this.leftHandVelocity = { x: 0, y: 0, z: 0 };
-        this.rightHandVelocity = { x: 0, y: 0, z: 0 };
-        this.lastVelocityUpdateTime = 0;
 
         // Pinch point positions (midpoint between thumb tip and index tip, in VR world coords)
         // Pre-allocate to avoid per-frame allocation
@@ -166,8 +154,7 @@ export class Hands {
     createHandMesh(side) {
         const group = createVRHandMesh({
             scale: 1, // VR scale (1:1 real world)
-            includePinchIndicator: true,
-            includeGrabRange: true
+            includePinchIndicator: true
         });
         group.name = side + 'Hand';
         return group;
@@ -303,69 +290,9 @@ export class Hands {
                 this.rightHandMode = 'controller';
                 this.updateControllerHand(this.controller0, this.rightHandMesh, frame, referenceSpace, 'right');
             }
-
-            // Update velocity tracking for throw mechanic
-            this.updateVelocityTracking();
         } catch (error) {
             console.warn('Error in hands update:', error.message);
         }
-    }
-
-    /**
-     * Track hand velocity for throw mechanic
-     * Calculates velocity based on position change over time
-     * Uses pre-allocated objects - mutates in place to avoid GC pressure
-     */
-    updateVelocityTracking() {
-        const now = performance.now();
-        const deltaTime = (now - this.lastVelocityUpdateTime) / 1000; // Convert to seconds
-
-        // Only update if we have a reasonable time delta (avoid division by zero or huge velocities)
-        if (deltaTime > 0.001 && deltaTime < 0.5) {
-            // Update left hand velocity
-            if (this.leftHandMesh.visible) {
-                const currentPos = this.leftHandMesh.position;
-                if (this._hasLeftPrevPos) {
-                    // Calculate velocity in VR space, then scale to world units - mutate in place
-                    this.leftHandVelocity.x = ((currentPos.x - this.leftHandPrevPos.x) / deltaTime) * GIANT_SCALE;
-                    this.leftHandVelocity.y = ((currentPos.y - this.leftHandPrevPos.y) / deltaTime) * GIANT_SCALE;
-                    this.leftHandVelocity.z = ((currentPos.z - this.leftHandPrevPos.z) / deltaTime) * GIANT_SCALE;
-                }
-                // Update prevPos in place
-                this.leftHandPrevPos.x = currentPos.x;
-                this.leftHandPrevPos.y = currentPos.y;
-                this.leftHandPrevPos.z = currentPos.z;
-                this._hasLeftPrevPos = true;
-            }
-
-            // Update right hand velocity
-            if (this.rightHandMesh.visible) {
-                const currentPos = this.rightHandMesh.position;
-                if (this._hasRightPrevPos) {
-                    // Calculate velocity in VR space, then scale to world units - mutate in place
-                    this.rightHandVelocity.x = ((currentPos.x - this.rightHandPrevPos.x) / deltaTime) * GIANT_SCALE;
-                    this.rightHandVelocity.y = ((currentPos.y - this.rightHandPrevPos.y) / deltaTime) * GIANT_SCALE;
-                    this.rightHandVelocity.z = ((currentPos.z - this.rightHandPrevPos.z) / deltaTime) * GIANT_SCALE;
-                }
-                // Update prevPos in place
-                this.rightHandPrevPos.x = currentPos.x;
-                this.rightHandPrevPos.y = currentPos.y;
-                this.rightHandPrevPos.z = currentPos.z;
-                this._hasRightPrevPos = true;
-            }
-        }
-
-        this.lastVelocityUpdateTime = now;
-    }
-
-    /**
-     * Get current hand velocity for throw mechanic
-     * @param {string} hand - 'left' or 'right'
-     * @returns {Object} Velocity in world units per second {x, y, z}
-     * NOTE: Returns internal reference - do not mutate!
-     */
-    getHandVelocity(hand = 'right') {
-        return hand === 'left' ? this.leftHandVelocity : this.rightHandVelocity;
     }
 
     /**
@@ -769,15 +696,6 @@ export class Hands {
         };
     }
 
-    setGrabbing(hand, isGrabbing) {
-        // Use cached grab range reference
-        const grabRange = hand === 'left' ? this._leftGrabRange : this._rightGrabRange;
-        if (grabRange) {
-            grabRange.material.color.setHex(isGrabbing ? 0xff0000 : 0x00ff00);
-            grabRange.material.opacity = isGrabbing ? 0.5 : 0.3;
-        }
-    }
-
     /**
      * Get the left wrist mesh for attaching objects (e.g., diagnostics display)
      * @returns {THREE.Object3D|null} The left wrist mesh or null if not available
@@ -844,8 +762,6 @@ export class Hands {
         this._rightWrist = null;
         this._leftPinchIndicator = null;
         this._rightPinchIndicator = null;
-        this._leftGrabRange = null;
-        this._rightGrabRange = null;
         this._leftJointMeshes = null;
         this._rightJointMeshes = null;
         this._leftBoneMeshes = null;

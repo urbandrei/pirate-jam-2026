@@ -3,10 +3,9 @@
  */
 
 class MessageHandler {
-    constructor(gameState, playerManager, grabSystem) {
+    constructor(gameState, playerManager) {
         this.gameState = gameState;
         this.playerManager = playerManager;
-        this.grabSystem = grabSystem;
     }
 
     /**
@@ -29,12 +28,6 @@ class MessageHandler {
                 break;
             case 'VR_POSE':
                 this.handleVRPose(peerId, message);
-                break;
-            case 'GRAB_ATTEMPT':
-                this.handleGrabAttempt(peerId, message);
-                break;
-            case 'GRAB_RELEASE':
-                this.handleGrabRelease(peerId, message);
                 break;
             default:
                 console.warn(`Unknown message type from ${peerId}:`, message.type);
@@ -89,47 +82,6 @@ class MessageHandler {
             leftHand: message.leftHand,
             rightHand: message.rightHand
         });
-    }
-
-    handleGrabAttempt(peerId, message) {
-        // Pass the hand position from the message for immediate grab check
-        const grabbedPlayer = this.grabSystem.attemptGrab(
-            peerId,
-            message.hand || 'right',
-            message.handPosition
-        );
-
-        if (grabbedPlayer) {
-            // Notify the grabbed player
-            this.playerManager.sendTo(grabbedPlayer.id, {
-                type: 'GRABBED',
-                grabbedBy: peerId
-            });
-
-            // Notify the VR player of successful grab
-            this.playerManager.sendTo(peerId, {
-                type: 'GRAB_SUCCESS',
-                grabbedPlayer: grabbedPlayer.id
-            });
-        }
-    }
-
-    handleGrabRelease(peerId, message) {
-        // Pass velocity to grab system for throw mechanic
-        const releasedPlayerId = this.grabSystem.releaseGrab(peerId, message.velocity);
-
-        if (releasedPlayerId) {
-            // Notify the released player
-            this.playerManager.sendTo(releasedPlayerId, {
-                type: 'RELEASED'
-            });
-
-            // Notify the VR player
-            this.playerManager.sendTo(peerId, {
-                type: 'RELEASE_SUCCESS',
-                releasedPlayer: releasedPlayerId
-            });
-        }
     }
 }
 
