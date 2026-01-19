@@ -71,19 +71,9 @@ class VRGame {
         // Setup grab controller
         this.grabController = new GrabController(this.hands, this.network);
 
-        // Setup diagnostics display
+        // Setup diagnostics display as floating HUD attached to camera
         this.diagnostics = new DiagnosticsDisplay(this.scene.scene, this.scene.renderer);
-
-        // Attach diagnostics to left wrist when available
-        const leftWrist = this.hands.getLeftWristMesh();
-        if (leftWrist) {
-            this.diagnostics.attachToWrist(leftWrist);
-        }
-
-        // Wire up left squeeze button to toggle diagnostics
-        this.hands.onLeftSqueeze = () => {
-            this.diagnostics.toggle();
-        };
+        this.diagnostics.attachToCamera(this.scene.cameraRig);
 
         // Connect to server
         try {
@@ -193,19 +183,8 @@ class VRGame {
                 }
             }
 
-            // Update diagnostics display
+            // Update diagnostics display (always visible as floating HUD)
             if (this.diagnostics) {
-                // Auto-attach and show diagnostics when hand tracking is active
-                // (since there's no squeeze button to toggle in hand tracking mode)
-                if (this.hands && this.hands.leftHandMode === 'hand-tracking') {
-                    if (!this.diagnostics.isAttachedToWrist()) {
-                        const leftWrist = this.hands.getLeftWristMesh();
-                        if (leftWrist) {
-                            this.diagnostics.attachToWrist(leftWrist);
-                            this.diagnostics.show();
-                        }
-                    }
-                }
                 this.diagnostics.update(time);
             }
 

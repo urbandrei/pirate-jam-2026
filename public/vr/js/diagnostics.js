@@ -1,6 +1,7 @@
 /**
- * Wrist-mounted diagnostic display for VR performance monitoring
+ * Floating HUD diagnostic display for VR performance monitoring
  * Shows FPS, frame time, JS heap memory, and Three.js renderer stats
+ * Attaches to camera rig so it follows head movement (always visible)
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
@@ -9,7 +10,7 @@ export class DiagnosticsDisplay {
     constructor(scene, renderer) {
         this.scene = scene;
         this.renderer = renderer;
-        this.visible = false;
+        this.visible = true;
 
         // Update interval (500ms to minimize overhead)
         this.updateInterval = 500;
@@ -40,13 +41,13 @@ export class DiagnosticsDisplay {
             depthTest: false
         });
 
-        // Create plane geometry (sized for wrist viewing ~8cm x 8cm)
-        const geometry = new THREE.PlaneGeometry(0.08, 0.08);
+        // Create plane geometry (sized for HUD viewing ~10cm x 10cm)
+        const geometry = new THREE.PlaneGeometry(0.10, 0.10);
         this.mesh = new THREE.Mesh(geometry, material);
-        this.mesh.visible = false;
+        this.mesh.visible = true;
 
-        // Will be attached to wrist in attachToWrist()
-        this.attachedToWrist = false;
+        // Will be attached to camera rig in attachToCamera()
+        this.attachedToCamera = false;
 
         scene.add(this.mesh);
 
@@ -55,32 +56,26 @@ export class DiagnosticsDisplay {
     }
 
     /**
-     * Attach the diagnostic display to a wrist mesh
-     * @param {THREE.Object3D} wristMesh - The wrist mesh to attach to
+     * Attach the diagnostic display to the camera rig (floating HUD)
+     * @param {THREE.Object3D} cameraRig - The camera rig to attach to
      */
-    attachToWrist(wristMesh) {
-        if (!wristMesh) return;
+    attachToCamera(cameraRig) {
+        if (!cameraRig) return;
 
-        // Remove from scene and add to wrist
+        // Remove from scene and add to camera rig
         this.scene.remove(this.mesh);
-        wristMesh.add(this.mesh);
+        cameraRig.add(this.mesh);
 
-        // Position slightly above and in front of wrist for visibility
-        // Offset so it's visible when looking at inner wrist
-        this.mesh.position.set(0, 0.05, 0.03);
+        // Position in lower-left of view (opposite from player count in upper-right)
+        // Player count is at (0.3, 0.2, -0.5), so we go to (-0.3, -0.15, -0.5)
+        this.mesh.position.set(-0.25, -0.15, -0.5);
 
-        // Rotate to face user when looking at wrist
-        this.mesh.rotation.set(-Math.PI / 4, 0, 0);
+        // Face the camera (no rotation needed since it's a child of cameraRig)
+        this.mesh.rotation.set(0, 0, 0);
 
-        this.attachedToWrist = true;
-    }
-
-    /**
-     * Check if the display is attached to a wrist mesh
-     * @returns {boolean} True if attached to wrist
-     */
-    isAttachedToWrist() {
-        return this.attachedToWrist;
+        this.attachedToCamera = true;
+        this.visible = true;
+        this.mesh.visible = true;
     }
 
     /**
