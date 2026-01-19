@@ -3,10 +3,11 @@
  */
 
 class MessageHandler {
-    constructor(gameState, playerManager, grabSystem) {
+    constructor(gameState, playerManager, grabSystem, io = null) {
         this.gameState = gameState;
         this.playerManager = playerManager;
         this.grabSystem = grabSystem;
+        this.io = io;
     }
 
     /**
@@ -35,6 +36,9 @@ class MessageHandler {
                 break;
             case 'GRAB_RELEASE':
                 this.handleGrabRelease(peerId, message);
+                break;
+            case 'ERROR_REPORT':
+                this.handleErrorReport(peerId, message);
                 break;
             default:
                 console.warn(`Unknown message type from ${peerId}:`, message.type);
@@ -128,6 +132,24 @@ class MessageHandler {
             this.playerManager.sendTo(peerId, {
                 type: 'RELEASE_SUCCESS',
                 releasedPlayer: releasedPlayerId
+            });
+        }
+    }
+
+    handleErrorReport(peerId, message) {
+        console.log(`[CLIENT ERROR] ${peerId}: ${message.errorType} - ${message.message}`);
+        if (message.stack) {
+            console.log(`  Stack: ${message.stack}`);
+        }
+
+        // Broadcast to all clients including sender
+        if (this.io) {
+            this.io.emit('message', {
+                type: 'ERROR_BROADCAST',
+                source: peerId,
+                errorType: message.errorType,
+                message: message.message,
+                timestamp: message.timestamp
             });
         }
     }

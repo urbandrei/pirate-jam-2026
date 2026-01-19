@@ -98,7 +98,7 @@ const gameState = new GameState();
 const playerManager = new PlayerManager(gameState);
 const grabSystem = new GrabSystem(gameState);
 const physicsValidator = new PhysicsValidator(gameState);
-const messageHandler = new MessageHandler(gameState, playerManager, grabSystem);
+const messageHandler = new MessageHandler(gameState, playerManager, grabSystem, io);
 
 // Socket.IO event handling
 io.on('connection', (socket) => {

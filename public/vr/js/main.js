@@ -165,6 +165,7 @@ class VRGame {
                 } catch (handError) {
                     // Log but don't crash - hands may not be ready yet
                     console.debug('Hand update skipped:', handError.message);
+                    this.network.sendError('HAND_UPDATE', handError);
                 }
             }
 
@@ -174,6 +175,7 @@ class VRGame {
                     this.grabController.update();
                 } catch (grabError) {
                     console.warn('Grab controller update error:', grabError.message);
+                    this.network.sendError('GRAB_CONTROLLER', grabError);
                 }
             }
 
@@ -184,6 +186,7 @@ class VRGame {
                         this.sendPose();
                     } catch (poseError) {
                         console.warn('Failed to send pose:', poseError.message);
+                        this.network.sendError('POSE_SEND', poseError);
                     }
                 }
                 this.lastNetworkTime = time;
@@ -191,6 +194,7 @@ class VRGame {
         } catch (error) {
             // Catch-all to prevent VR session from hanging on any error
             console.error('Game loop error:', error);
+            this.network.sendError('GAME_LOOP', error);
         }
 
         // Render scene - required even with WebXR
