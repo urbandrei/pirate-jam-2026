@@ -23,11 +23,13 @@ class VRGame {
         this.network = null;
         this.remotePlayers = null;
         this.grabController = null;
+        this.disposed = false;
 
         // Player count HUD
         this.playerCountSprite = null;
         this.playerCountCanvas = null;
         this.playerCountCtx = null;
+        this._lastPlayerCount = -1;
 
         this.lastNetworkTime = 0;
         this.networkInterval = 1000 / NETWORK_RATE;
@@ -137,6 +139,10 @@ class VRGame {
     }
 
     updatePlayerCountHUD(count) {
+        // Skip update if count hasn't changed (reduces GPU texture uploads)
+        if (this._lastPlayerCount === count) return;
+        this._lastPlayerCount = count;
+
         const ctx = this.playerCountCtx;
         ctx.clearRect(0, 0, 256, 64);
 
@@ -268,6 +274,13 @@ class VRGame {
      * Called when VR session ends
      */
     dispose() {
+        // Guard against double disposal
+        if (this.disposed) {
+            console.warn('[VRGame] Already disposed, skipping');
+            return;
+        }
+        this.disposed = true;
+
         console.log('[VRGame] Disposing all resources...');
 
         // Stop animation loop FIRST to prevent further updates

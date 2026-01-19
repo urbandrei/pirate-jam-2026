@@ -233,6 +233,7 @@ export class VRScene {
                     }
                 }
 
+                // Use { once: true } to prevent listener accumulation across sessions
                 this.xrSession.addEventListener('end', () => {
                     console.log('[VRScene] XR session ended');
                     this.xrSession = null;
@@ -247,7 +248,7 @@ export class VRScene {
                             console.warn('[VRScene] onSessionEnd callback error:', callbackErr);
                         }
                     }
-                });
+                }, { once: true });
             } catch (err) {
                 console.error('[VRScene] Failed to start XR session:', err);
                 status.textContent = 'Failed to start VR: ' + err.message;

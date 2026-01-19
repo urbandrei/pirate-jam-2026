@@ -9,6 +9,7 @@ export class Network {
         this.socket = null;
         this.playerId = null;
         this.isConnected = false;
+        this.socketScript = null; // Track Socket.IO script for cleanup
 
         // Callbacks
         this.onConnected = null;
@@ -48,6 +49,7 @@ export class Network {
                 reject(new Error('Failed to load Socket.IO'));
             };
             document.head.appendChild(script);
+            this.socketScript = script; // Store reference for cleanup
         });
     }
 
@@ -174,6 +176,13 @@ export class Network {
             this.socket.disconnect();
             this.socket = null;
         }
+
+        // Remove Socket.IO script from DOM to prevent duplicate loads
+        if (this.socketScript && this.socketScript.parentNode) {
+            this.socketScript.parentNode.removeChild(this.socketScript);
+            this.socketScript = null;
+        }
+
         this.playerId = null;
         this.isConnected = false;
     }
