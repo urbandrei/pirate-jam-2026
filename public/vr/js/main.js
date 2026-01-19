@@ -69,6 +69,12 @@ class VRGame {
         // Setup grab controller
         this.grabController = new GrabController(this.hands, this.network);
 
+        // Hook cleanup to VR session end
+        this.scene.onSessionEnd = () => {
+            console.log('[VRGame] VR session ended, cleaning up...');
+            this.dispose();
+        };
+
         // Connect to server
         try {
             await this.network.connect();
@@ -151,6 +157,12 @@ class VRGame {
     }
 
     gameLoop(time, frame) {
+        // Guard: Stop if XR session ended
+        if (!this.scene.renderer.xr.isPresenting) {
+            console.debug('XR session not active, skipping frame');
+            return;
+        }
+
         // Store frame reference for sendPose
         this.currentFrame = frame;
 
@@ -165,7 +177,6 @@ class VRGame {
                 } catch (handError) {
                     // Log but don't crash - hands may not be ready yet
                     console.debug('Hand update skipped:', handError.message);
-                    this.network.sendError('HAND_UPDATE', handError);
                 }
             }
 
@@ -175,7 +186,6 @@ class VRGame {
                     this.grabController.update();
                 } catch (grabError) {
                     console.warn('Grab controller update error:', grabError.message);
-                    this.network.sendError('GRAB_CONTROLLER', grabError);
                 }
             }
 
@@ -186,7 +196,6 @@ class VRGame {
                         this.sendPose();
                     } catch (poseError) {
                         console.warn('Failed to send pose:', poseError.message);
-                        this.network.sendError('POSE_SEND', poseError);
                     }
                 }
                 this.lastNetworkTime = time;
@@ -194,7 +203,6 @@ class VRGame {
         } catch (error) {
             // Catch-all to prevent VR session from hanging on any error
             console.error('Game loop error:', error);
-            this.network.sendError('GAME_LOOP', error);
         }
 
         // Render scene - required even with WebXR
@@ -253,6 +261,94 @@ class VRGame {
         const handData = this.hands.getHandData();
 
         this.network.sendPose(this._headData, handData.leftHand, handData.rightHand);
+    }
+
+    /**
+     * Cleanup all resources to prevent memory leaks
+     * Called when VR session ends
+     */
+    dispose() {
+        console.log('[VRGame] Disposing all resources...');
+
+        // Stop animation loop FIRST to prevent further updates
+        if (this.scene && this.scene.renderer) {
+            this.scene.renderer.setAnimationLoop(null);
+        }
+
+        // Dispose subsystems
+        if (this.hands) {
+            try {
+                this.hands.dispose();
+                this.hands = null;
+            } catch (err) {
+                console.warn('[VRGame] Error disposing hands:', err);
+            }
+        }
+
+        if (this.network) {
+            try {
+                this.network.disconnect();
+                this.network = null;
+            } catch (err) {
+                console.warn('[VRGame] Error disconnecting network:', err);
+            }
+        }
+
+        if (this.remotePlayers) {
+            try {
+                this.remotePlayers.dispose();
+                this.remotePlayers = null;
+            } catch (err) {
+                console.warn('[VRGame] Error disposing remote players:', err);
+            }
+        }
+
+        if (this.grabController) {
+            try {
+                if (this.grabController.dispose) {
+                    this.grabController.dispose();
+                }
+                this.grabController = null;
+            } catch (err) {
+                console.warn('[VRGame] Error disposing grab controller:', err);
+            }
+        }
+
+        // Dispose HUD resources
+        if (this.playerCountSprite) {
+            try {
+                if (this.playerCountSprite.material && this.playerCountSprite.material.map) {
+                    this.playerCountSprite.material.map.dispose();
+                }
+                if (this.playerCountSprite.material) {
+                    this.playerCountSprite.material.dispose();
+                }
+                if (this.playerCountSprite.geometry) {
+                    this.playerCountSprite.geometry.dispose();
+                }
+                this.playerCountSprite = null;
+            } catch (err) {
+                console.warn('[VRGame] Error disposing HUD:', err);
+            }
+        }
+
+        this.playerCountCanvas = null;
+        this.playerCountCtx = null;
+
+        // Dispose scene last (includes renderer cleanup)
+        if (this.scene) {
+            try {
+                this.scene.dispose();
+                this.scene = null;
+            } catch (err) {
+                console.warn('[VRGame] Error disposing scene:', err);
+            }
+        }
+
+        // Clear frame reference
+        this.currentFrame = null;
+
+        console.log('[VRGame] All resources disposed');
     }
 }
 

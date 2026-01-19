@@ -14,48 +14,54 @@ import { COLORS, WORLD_SIZE, GIANT_SCALE } from '../../pc/shared/constants.js';
 
 export class VRScene {
     constructor(container) {
-        this.container = container;
-        this.xrSession = null;
+        try {
+            this.container = container;
+            this.xrSession = null;
 
-        // Session state callbacks
-        this.onSessionStart = null;
-        this.onSessionEnd = null;
+            // Session state callbacks
+            this.onSessionStart = null;
+            this.onSessionEnd = null;
 
-        // Create renderer with WebXR support
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        this.renderer.shadowMap.enabled = false;
-        this.renderer.xr.enabled = true;
-        container.insertBefore(this.renderer.domElement, container.firstChild);
+            // Create renderer with WebXR support
+            this.renderer = new THREE.WebGLRenderer({ antialias: true });
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            this.renderer.shadowMap.enabled = false; // Disabled for VR performance
+            this.renderer.xr.enabled = true;
+            container.insertBefore(this.renderer.domElement, container.firstChild);
 
-        // Create scene
-        this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(COLORS.SKY);
+            // Create scene
+            this.scene = new THREE.Scene();
+            this.scene.background = new THREE.Color(COLORS.SKY);
 
-        // Create camera (controlled by XR)
-        this.camera = new THREE.PerspectiveCamera(
-            75,
-            window.innerWidth / window.innerHeight,
-            0.01,
-            1000
-        );
+            // Create camera (controlled by XR)
+            this.camera = new THREE.PerspectiveCamera(
+                75,
+                window.innerWidth / window.innerHeight,
+                0.01,
+                1000
+            );
 
-        // Camera rig for VR (allows us to move the user)
-        this.cameraRig = new THREE.Group();
-        this.cameraRig.add(this.camera);
-        this.scene.add(this.cameraRig);
+            // Camera rig for VR (allows us to move the user)
+            this.cameraRig = new THREE.Group();
+            this.cameraRig.add(this.camera);
+            this.scene.add(this.cameraRig);
 
-        // Setup scene at VR scale (10x PC scale)
-        this.setupLighting();
-        this.setupGround();
-        this.setupReferenceBlocks();
+            // Setup scene at VR scale (10x PC scale)
+            this.setupLighting();
+            this.setupGround();
+            this.setupReferenceBlocks();
 
-        // Setup VR button
-        this.setupVRButton();
+            // Setup VR button
+            this.setupVRButton();
 
-        // Handle window resize
-        window.addEventListener('resize', () => this.onResize());
+            // Handle window resize (store reference for cleanup)
+            this.onResizeHandler = () => this.onResize();
+            window.addEventListener('resize', this.onResizeHandler);
+        } catch (err) {
+            console.error('[VRScene] Failed to initialize:', err);
+            throw err;
+        }
     }
 
     setupLighting() {
@@ -88,7 +94,7 @@ export class VRScene {
         this.ground.rotation.x = -Math.PI / 2;
         this.scene.add(this.ground);
 
-        // Grid helper - 10m with 10 divisions = 1m cells (reduced for Quest 2 performance)
+        // Grid helper - 10m with 10 divisions = 1m cells (reduced for VR performance)
         const grid = new THREE.GridHelper(groundSize, 10, 0x000000, 0x444444);
         grid.position.y = 0.001; // Slight offset to prevent z-fighting
         grid.material.opacity = 0.2;
@@ -132,7 +138,7 @@ export class VRScene {
             this.scene.add(block);
         });
 
-        // Scattered blocks - smaller toy-sized blocks (reduced count for Quest 2 performance)
+        // Scattered blocks - smaller toy-sized blocks (reduced count for VR performance)
         for (let i = 0; i < 5; i++) {
             const worldSize = 0.5 + Math.random() * 1.5; // 0.5-2m in world
             const vrSize = worldSize / GIANT_SCALE; // 0.05-0.2m in VR
@@ -281,5 +287,60 @@ export class VRScene {
 
     isInVR() {
         return this.renderer.xr.isPresenting;
+    }
+
+    /**
+     * Cleanup all resources to prevent memory leaks
+     * Must be called when VR session ends or scene is no longer needed
+     */
+    dispose() {
+        console.log('[VRScene] Disposing all resources...');
+
+        // Remove event listeners
+        if (this.onResizeHandler) {
+            window.removeEventListener('resize', this.onResizeHandler);
+            this.onResizeHandler = null;
+        }
+
+        // Dispose ground
+        if (this.ground) {
+            if (this.ground.geometry) this.ground.geometry.dispose();
+            if (this.ground.material) this.ground.material.dispose();
+            this.ground = null;
+        }
+
+        // Traverse scene and dispose all geometries and materials
+        this.scene.traverse((obj) => {
+            if (obj.geometry) {
+                obj.geometry.dispose();
+            }
+            if (obj.material) {
+                if (Array.isArray(obj.material)) {
+                    obj.material.forEach(m => {
+                        if (m.map) m.map.dispose();
+                        m.dispose();
+                    });
+                } else {
+                    if (obj.material.map) obj.material.map.dispose();
+                    obj.material.dispose();
+                }
+            }
+        });
+
+        // Dispose renderer
+        if (this.renderer) {
+            this.renderer.dispose();
+            if (this.renderer.domElement && this.renderer.domElement.parentNode) {
+                this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+            }
+            this.renderer = null;
+        }
+
+        // Clear scene
+        while (this.scene.children.length > 0) {
+            this.scene.remove(this.scene.children[0]);
+        }
+
+        console.log('[VRScene] All resources disposed');
     }
 }

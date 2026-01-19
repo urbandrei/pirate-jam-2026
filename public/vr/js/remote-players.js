@@ -160,4 +160,18 @@ export class RemotePlayers {
         }
         return positions;
     }
+
+    /**
+     * Cleanup all player meshes to prevent memory leaks
+     * Called when VR session ends
+     */
+    dispose() {
+        console.log('[RemotePlayers] Disposing all player meshes...');
+        for (const [playerId, data] of this.players) {
+            this.disposePlayerMesh(data.mesh);
+            this.scene.remove(data.mesh);
+        }
+        this.players.clear();
+        console.log('[RemotePlayers] All player meshes disposed');
+    }
 }
