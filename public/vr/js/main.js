@@ -195,6 +195,17 @@ class VRGame {
 
             // Update diagnostics display
             if (this.diagnostics) {
+                // Auto-attach and show diagnostics when hand tracking is active
+                // (since there's no squeeze button to toggle in hand tracking mode)
+                if (this.hands && this.hands.leftHandMode === 'hand-tracking') {
+                    if (!this.diagnostics.isAttachedToWrist()) {
+                        const leftWrist = this.hands.getLeftWristMesh();
+                        if (leftWrist) {
+                            this.diagnostics.attachToWrist(leftWrist);
+                            this.diagnostics.show();
+                        }
+                    }
+                }
                 this.diagnostics.update(time);
             }
 

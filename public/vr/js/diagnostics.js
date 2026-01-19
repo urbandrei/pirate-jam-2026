@@ -76,6 +76,14 @@ export class DiagnosticsDisplay {
     }
 
     /**
+     * Check if the display is attached to a wrist mesh
+     * @returns {boolean} True if attached to wrist
+     */
+    isAttachedToWrist() {
+        return this.attachedToWrist;
+    }
+
+    /**
      * Toggle visibility of the diagnostic display
      */
     toggle() {
