@@ -53,4 +53,4 @@ jobs:
       - name: Push to itch.io
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
-        run: ./butler push build/pc-client urbandrei/pirate-jam-2026:html5
+        run: ./butler push build/pc-client urbandrei/urban-world:html5
