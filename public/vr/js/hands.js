@@ -43,6 +43,7 @@ export class Hands {
         // Callbacks
         this.onPinchStart = null;
         this.onPinchEnd = null;
+        this.onLeftSqueeze = null; // For diagnostics toggle
 
         // Hand meshes
         this.leftHandMesh = this.createHandMesh('left');
@@ -98,6 +99,9 @@ export class Hands {
         this.lastVelocityUpdateTime = 0;
 
         // Pinch point positions (midpoint between thumb tip and index tip, in VR world coords)
+        // Pre-allocate to avoid per-frame allocation
+        this._leftPinchPointCache = { x: 0, y: 0, z: 0 };
+        this._rightPinchPointCache = { x: 0, y: 0, z: 0 };
         this.leftPinchPoint = null;
         this.rightPinchPoint = null;
 
@@ -213,6 +217,10 @@ export class Hands {
             squeezestart: () => {
                 if (this.leftHandMode === 'controller') {
                     this.handlePinchStart('left');
+                }
+                // Fire left squeeze callback for diagnostics toggle
+                if (this.onLeftSqueeze) {
+                    this.onLeftSqueeze();
                 }
             },
             squeezeend: () => {
@@ -514,10 +522,17 @@ export class Hands {
                     this._pinchPoint.copy(this._thumbTipPos).lerp(this._indexTipPos, 0.5);
 
                     // Store the pinch point in VR world coordinates (unscaled)
+                    // Use pre-allocated cache objects to avoid per-frame allocation
                     if (handName === 'left') {
-                        this.leftPinchPoint = { x: this._pinchPoint.x, y: this._pinchPoint.y, z: this._pinchPoint.z };
+                        this._leftPinchPointCache.x = this._pinchPoint.x;
+                        this._leftPinchPointCache.y = this._pinchPoint.y;
+                        this._leftPinchPointCache.z = this._pinchPoint.z;
+                        this.leftPinchPoint = this._leftPinchPointCache;
                     } else {
-                        this.rightPinchPoint = { x: this._pinchPoint.x, y: this._pinchPoint.y, z: this._pinchPoint.z };
+                        this._rightPinchPointCache.x = this._pinchPoint.x;
+                        this._rightPinchPointCache.y = this._pinchPoint.y;
+                        this._rightPinchPointCache.z = this._pinchPoint.z;
+                        this.rightPinchPoint = this._rightPinchPointCache;
                     }
 
                     // Convert to local space for the indicator (reusing _tempVec3)
@@ -663,7 +678,9 @@ export class Hands {
 
             // Include joint positions only in hand tracking mode - use flag to avoid Object.keys allocation
             if (this.leftHandMode === 'hand-tracking' && this._hasLeftJoints) {
-                for (const [jointName, pos] of Object.entries(this.leftJointPositions)) {
+                // Use for...in instead of Object.entries() to avoid per-frame array allocation
+                for (const jointName in this.leftJointPositions) {
+                    const pos = this.leftJointPositions[jointName];
                     if (!this._leftJointsData[jointName]) {
                         this._leftJointsData[jointName] = { x: 0, y: 0, z: 0 };
                     }
@@ -702,7 +719,9 @@ export class Hands {
 
             // Include joint positions only in hand tracking mode - use flag to avoid Object.keys allocation
             if (this.rightHandMode === 'hand-tracking' && this._hasRightJoints) {
-                for (const [jointName, pos] of Object.entries(this.rightJointPositions)) {
+                // Use for...in instead of Object.entries() to avoid per-frame array allocation
+                for (const jointName in this.rightJointPositions) {
+                    const pos = this.rightJointPositions[jointName];
                     if (!this._rightJointsData[jointName]) {
                         this._rightJointsData[jointName] = { x: 0, y: 0, z: 0 };
                     }
@@ -762,6 +781,14 @@ export class Hands {
             grabRange.material.color.setHex(isGrabbing ? 0xff0000 : 0x00ff00);
             grabRange.material.opacity = isGrabbing ? 0.5 : 0.3;
         }
+    }
+
+    /**
+     * Get the left wrist mesh for attaching objects (e.g., diagnostics display)
+     * @returns {THREE.Object3D|null} The left wrist mesh or null if not available
+     */
+    getLeftWristMesh() {
+        return this._leftWrist;
     }
 
     /**

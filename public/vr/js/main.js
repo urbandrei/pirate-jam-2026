@@ -14,6 +14,7 @@ import { Hands } from './hands.js';
 import { Network } from './network.js';
 import { RemotePlayers } from './remote-players.js';
 import { GrabController } from './grab-controller.js';
+import { DiagnosticsDisplay } from './diagnostics.js';
 import { NETWORK_RATE, GIANT_SCALE } from '../../pc/shared/constants.js';
 
 class VRGame {
@@ -23,6 +24,7 @@ class VRGame {
         this.network = null;
         this.remotePlayers = null;
         this.grabController = null;
+        this.diagnostics = null;
 
         // Player count HUD
         this.playerCountSprite = null;
@@ -36,6 +38,12 @@ class VRGame {
         // Reusable objects for sendPose() to avoid allocation each frame
         this._headPosition = new THREE.Vector3();
         this._headQuaternion = new THREE.Quaternion();
+
+        // Pre-allocated head data structure to avoid per-frame allocation
+        this._headData = {
+            position: { x: 0, y: 0, z: 0 },
+            rotation: { x: 0, y: 0, z: 0, w: 1 }
+        };
 
         this.init();
     }
@@ -62,6 +70,20 @@ class VRGame {
 
         // Setup grab controller
         this.grabController = new GrabController(this.hands, this.network);
+
+        // Setup diagnostics display
+        this.diagnostics = new DiagnosticsDisplay(this.scene.scene, this.scene.renderer);
+
+        // Attach diagnostics to left wrist when available
+        const leftWrist = this.hands.getLeftWristMesh();
+        if (leftWrist) {
+            this.diagnostics.attachToWrist(leftWrist);
+        }
+
+        // Wire up left squeeze button to toggle diagnostics
+        this.hands.onLeftSqueeze = () => {
+            this.diagnostics.toggle();
+        };
 
         // Connect to server
         try {
@@ -171,6 +193,11 @@ class VRGame {
                 }
             }
 
+            // Update diagnostics display
+            if (this.diagnostics) {
+                this.diagnostics.update(time);
+            }
+
             // Send pose to server at fixed rate
             if (time - this.lastNetworkTime >= this.networkInterval) {
                 if (this.network && this.network.isConnected && this.scene.isInVR()) {
@@ -196,7 +223,7 @@ class VRGame {
         const frame = this.currentFrame;
         const referenceSpace = this.scene.renderer.xr.getReferenceSpace();
 
-        let head = null;
+        let hasHead = false;
 
         if (frame && referenceSpace) {
             try {
@@ -206,14 +233,15 @@ class VRGame {
                     const rot = viewerPose.transform.orientation;
                     // Scale head position by GIANT_SCALE to convert VR meters to world units
                     // VR head at 1.6m -> 16m in world units (giant's eye height)
-                    head = {
-                        position: {
-                            x: pos.x * GIANT_SCALE,
-                            y: pos.y * GIANT_SCALE,
-                            z: pos.z * GIANT_SCALE
-                        },
-                        rotation: { x: rot.x, y: rot.y, z: rot.z, w: rot.w }
-                    };
+                    // Update pre-allocated structure in place to avoid GC pressure
+                    this._headData.position.x = pos.x * GIANT_SCALE;
+                    this._headData.position.y = pos.y * GIANT_SCALE;
+                    this._headData.position.z = pos.z * GIANT_SCALE;
+                    this._headData.rotation.x = rot.x;
+                    this._headData.rotation.y = rot.y;
+                    this._headData.rotation.z = rot.z;
+                    this._headData.rotation.w = rot.w;
+                    hasHead = true;
                 }
             } catch (e) {
                 console.debug('Could not get viewer pose:', e.message);
@@ -221,28 +249,27 @@ class VRGame {
         }
 
         // Fallback to camera if viewer pose unavailable
-        if (!head) {
+        if (!hasHead) {
             const camera = this.scene.renderer.xr.getCamera();
 
             // Reuse cached objects to avoid allocation each frame
             camera.getWorldPosition(this._headPosition);
             camera.getWorldQuaternion(this._headQuaternion);
 
-            // Scale head position by GIANT_SCALE
-            head = {
-                position: {
-                    x: this._headPosition.x * GIANT_SCALE,
-                    y: this._headPosition.y * GIANT_SCALE,
-                    z: this._headPosition.z * GIANT_SCALE
-                },
-                rotation: { x: this._headQuaternion.x, y: this._headQuaternion.y, z: this._headQuaternion.z, w: this._headQuaternion.w }
-            };
+            // Scale head position by GIANT_SCALE - update in place
+            this._headData.position.x = this._headPosition.x * GIANT_SCALE;
+            this._headData.position.y = this._headPosition.y * GIANT_SCALE;
+            this._headData.position.z = this._headPosition.z * GIANT_SCALE;
+            this._headData.rotation.x = this._headQuaternion.x;
+            this._headData.rotation.y = this._headQuaternion.y;
+            this._headData.rotation.z = this._headQuaternion.z;
+            this._headData.rotation.w = this._headQuaternion.w;
         }
 
         // Get hand data (already scaled by GIANT_SCALE in hands.js)
         const handData = this.hands.getHandData();
 
-        this.network.sendPose(head, handData.leftHand, handData.rightHand);
+        this.network.sendPose(this._headData, handData.leftHand, handData.rightHand);
     }
 }
 
