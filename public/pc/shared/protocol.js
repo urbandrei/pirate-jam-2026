@@ -19,11 +19,7 @@ export const MSG = {
     GRABBED: 'GRABBED',
     RELEASED: 'RELEASED',
     GRAB_SUCCESS: 'GRAB_SUCCESS',
-    RELEASE_SUCCESS: 'RELEASE_SUCCESS',
-
-    // Error reporting
-    ERROR_REPORT: 'ERROR_REPORT',       // Client -> Server
-    ERROR_BROADCAST: 'ERROR_BROADCAST'  // Server -> All Clients
+    RELEASE_SUCCESS: 'RELEASE_SUCCESS'
 };
 
 // Message creators for type safety

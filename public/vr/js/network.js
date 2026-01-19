@@ -131,10 +131,6 @@ export class Network {
                 console.log('Player left:', message.playerId);
                 if (this.onPlayerLeft) this.onPlayerLeft(message.playerId);
                 break;
-
-            case MSG.ERROR_BROADCAST:
-                console.log(`[ERROR from ${message.source}] ${message.errorType}: ${message.message}`);
-                break;
         }
     }
 
@@ -154,17 +150,6 @@ export class Network {
 
     sendGrabRelease(velocity = null) {
         this.send(createGrabReleaseMessage(velocity));
-    }
-
-    sendError(errorType, error) {
-        if (!this.isConnected) return;
-        this.socket.emit('message', {
-            type: 'ERROR_REPORT',
-            errorType: errorType,
-            message: error.message || String(error),
-            stack: error.stack || null,
-            timestamp: Date.now()
-        });
     }
 
     updateStatus(text) {
