@@ -27,6 +27,8 @@ export class HUD {
     updateNeeds(needs) {
         if (!needs) return;
 
+        console.log('[HUD] Updating needs:', JSON.stringify(needs));
+
         // Update hunger
         if (needs.hunger !== this._lastNeeds.hunger) {
             this._updateBar(this.hungerBar, this.hungerFill, needs.hunger);

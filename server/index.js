@@ -173,6 +173,13 @@ function gameLoop() {
         }
 
         if (gameState.getPlayerCount() > 0) {
+            // Debug: log needs for first PC player
+            const players = gameState.getAllPlayers();
+            const pcPlayer = players.find(p => p.type === 'pc');
+            if (pcPlayer) {
+                console.log('[NeedsDebug] Player needs:', JSON.stringify(pcPlayer.needs));
+            }
+
             io.emit('message', {
                 type: 'STATE_UPDATE',
                 state: gameState.getSerializableState()
