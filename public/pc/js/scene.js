@@ -17,9 +17,11 @@ export class Scene {
         this.wallMaterial = null;
 
         // Miniature replica (same as VR players see)
+        // VR uses miniatureScale = 0.005 at 1/10 world scale
+        // PC is at real-world scale, so we need 0.005 * GIANT_SCALE = 0.05
         this.miniatureGroup = null;
         this.miniatureMeshes = [];
-        this.miniatureScale = 0.02; // 2cm per 10m cell (larger than VR since viewing from distance)
+        this.miniatureScale = 0.05; // Matches VR: 0.005 * GIANT_SCALE (5cm per 10m cell)
 
         // Create renderer
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -67,8 +69,8 @@ export class Scene {
      */
     setupMiniature() {
         this.miniatureGroup = new THREE.Group();
-        // Position floating in spawn room at eye level
-        this.miniatureGroup.position.set(0, 1.2, 0);
+        // Position to match VR: pedestalHeight (0.7) * GIANT_SCALE (10) = 7.0m
+        this.miniatureGroup.position.set(0, 7.0, 0);
         this.scene.add(this.miniatureGroup);
 
         // Materials for miniature
