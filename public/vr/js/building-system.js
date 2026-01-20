@@ -5,8 +5,7 @@
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import {
-    GIANT_SCALE, SMALL_ROOM_SIZE, WALL_THICKNESS,
-    DOORWAY_HEIGHT, DOORWAY_WIDTH, COLORS
+    GIANT_SCALE, SMALL_ROOM_SIZE
 } from '../../pc/shared/constants.js';
 import { createPlaceBlockMessage } from '../../pc/shared/protocol.js';
 
@@ -17,14 +16,14 @@ export class BuildingSystem {
         this.network = network;
 
         // Miniature scale: world is already at 1/GIANT_SCALE in VR
-        // Additional 1/5 scale for comfortable tabletop manipulation
-        this.miniatureScale = 1 / GIANT_SCALE / 5; // = 0.02
+        // Additional 1/20 scale for quarter-size tabletop (0.5cm per 10m cell)
+        this.miniatureScale = 1 / GIANT_SCALE / 20; // = 0.005
 
         // Grid cell size in miniature space
         this.gridCellSize = SMALL_ROOM_SIZE * this.miniatureScale;
 
-        // Pedestal height (chest height in VR)
-        this.pedestalHeight = 1.0;
+        // Pedestal height (table height in VR)
+        this.pedestalHeight = 0.7;
 
         // Currently grabbed block
         this.grabbedBlock = null;
@@ -64,16 +63,18 @@ export class BuildingSystem {
     }
 
     createMaterials() {
-        this.wallMaterial = new THREE.MeshStandardMaterial({
-            color: 0x808080,
-            roughness: 0.9,
-            metalness: 0.1
+        // Translucent blue for room blocks
+        this.roomMaterial = new THREE.MeshBasicMaterial({
+            color: 0x4488ff,
+            transparent: true,
+            opacity: 0.4
         });
 
+        // Floor material for grid reference
         this.floorMaterial = new THREE.MeshBasicMaterial({
             color: 0x555555,
             transparent: true,
-            opacity: 0.5
+            opacity: 0.3
         });
     }
 
@@ -120,11 +121,11 @@ export class BuildingSystem {
     createPalette() {
         this.paletteGroup = new THREE.Group();
 
-        // Position palette to the right of pedestal, floating at chest height
-        this.paletteGroup.position.set(0.4, this.pedestalHeight + 0.1, 0);
+        // Position palette to the right of pedestal, floating at table height
+        this.paletteGroup.position.set(0.25, this.pedestalHeight + 0.05, 0);
 
-        // Backing plate for visibility
-        const backingGeom = new THREE.BoxGeometry(0.2, 0.15, 0.02);
+        // Backing plate for visibility (smaller to match new scale)
+        const backingGeom = new THREE.BoxGeometry(0.1, 0.08, 0.01);
         const backingMat = new THREE.MeshStandardMaterial({
             color: 0x222222,
             roughness: 0.8,
@@ -132,39 +133,39 @@ export class BuildingSystem {
             opacity: 0.7
         });
         const backing = new THREE.Mesh(backingGeom, backingMat);
-        backing.position.z = 0.015;
+        backing.position.z = 0.008;
         this.paletteGroup.add(backing);
 
-        // 1x1 block template
+        // 1x1 block template (80% scale for gap consistency)
         const block1x1Geom = new THREE.BoxGeometry(
-            this.gridCellSize * 0.9,
-            this.gridCellSize * 0.4,
-            this.gridCellSize * 0.9
+            this.gridCellSize * 0.8,
+            this.gridCellSize * 0.5,
+            this.gridCellSize * 0.8
         );
-        const block1x1Mat = new THREE.MeshStandardMaterial({
-            color: COLORS.BLOCK_BLUE,
-            roughness: 0.5,
-            metalness: 0.2
+        const block1x1Mat = new THREE.MeshBasicMaterial({
+            color: 0x4488ff,
+            transparent: true,
+            opacity: 0.6
         });
         const block1x1 = new THREE.Mesh(block1x1Geom, block1x1Mat);
         block1x1.userData = { blockType: '1x1', isTemplate: true };
-        block1x1.position.set(-0.05, 0.03, 0);
+        block1x1.position.set(-0.025, 0.015, 0);
         this.paletteGroup.add(block1x1);
 
-        // 1x2 block template
+        // 1x2 block template (~80% of 2 cells)
         const block1x2Geom = new THREE.BoxGeometry(
-            this.gridCellSize * 1.9,
-            this.gridCellSize * 0.4,
-            this.gridCellSize * 0.9
+            this.gridCellSize * 1.8,
+            this.gridCellSize * 0.5,
+            this.gridCellSize * 0.8
         );
-        const block1x2Mat = new THREE.MeshStandardMaterial({
-            color: COLORS.BLOCK_GREEN,
-            roughness: 0.5,
-            metalness: 0.2
+        const block1x2Mat = new THREE.MeshBasicMaterial({
+            color: 0x4488ff,
+            transparent: true,
+            opacity: 0.6
         });
         const block1x2 = new THREE.Mesh(block1x2Geom, block1x2Mat);
         block1x2.userData = { blockType: '1x2', isTemplate: true };
-        block1x2.position.set(0.05, -0.03, 0);
+        block1x2.position.set(0.025, -0.015, 0);
         this.paletteGroup.add(block1x2);
 
         this.scene.add(this.paletteGroup);
@@ -173,14 +174,14 @@ export class BuildingSystem {
     createGhostBlock() {
         // Semi-transparent preview of where block will be placed
         const geom = new THREE.BoxGeometry(
-            this.gridCellSize * 0.95,
-            this.gridCellSize * 0.3,
-            this.gridCellSize * 0.95
+            this.gridCellSize * 0.8,
+            this.gridCellSize * 0.5,
+            this.gridCellSize * 0.8
         );
         const mat = new THREE.MeshBasicMaterial({
             color: 0x00ff00,
             transparent: true,
-            opacity: 0.4,
+            opacity: 0.5,
             wireframe: true
         });
         this.ghostBlock = new THREE.Mesh(geom, mat);
@@ -213,19 +214,19 @@ export class BuildingSystem {
 
         if (rotation === 0) {
             // East-West
-            width = this.gridCellSize * 1.9;
-            depth = this.gridCellSize * 0.9;
+            width = this.gridCellSize * 1.8;
+            depth = this.gridCellSize * 0.8;
         } else {
             // North-South
-            width = this.gridCellSize * 0.9;
-            depth = this.gridCellSize * 1.9;
+            width = this.gridCellSize * 0.8;
+            depth = this.gridCellSize * 1.8;
         }
 
         // Dispose old geometry and create new
         this.grabbedBlock.geometry.dispose();
         this.grabbedBlock.geometry = new THREE.BoxGeometry(
             width,
-            this.gridCellSize * 0.4,
+            this.gridCellSize * 0.5,
             depth
         );
 
@@ -298,30 +299,28 @@ export class BuildingSystem {
         if (blockType === '1x2') {
             if (this.currentRotation === 0) {
                 // East-West
-                width = this.gridCellSize * 1.9;
-                depth = this.gridCellSize * 0.9;
+                width = this.gridCellSize * 1.8;
+                depth = this.gridCellSize * 0.8;
             } else {
                 // North-South
-                width = this.gridCellSize * 0.9;
-                depth = this.gridCellSize * 1.9;
+                width = this.gridCellSize * 0.8;
+                depth = this.gridCellSize * 1.8;
             }
         } else {
-            width = this.gridCellSize * 0.9;
-            depth = this.gridCellSize * 0.9;
+            width = this.gridCellSize * 0.8;
+            depth = this.gridCellSize * 0.8;
         }
 
         const geom = new THREE.BoxGeometry(
             width,
-            this.gridCellSize * 0.4,
+            this.gridCellSize * 0.5,
             depth
         );
 
-        const mat = new THREE.MeshStandardMaterial({
-            color: blockType === '1x2' ? COLORS.BLOCK_GREEN : COLORS.BLOCK_BLUE,
-            roughness: 0.5,
-            metalness: 0.2,
+        const mat = new THREE.MeshBasicMaterial({
+            color: 0x4488ff,
             transparent: true,
-            opacity: 0.9
+            opacity: 0.7
         });
 
         this.grabbedBlock = new THREE.Mesh(geom, mat);
@@ -509,7 +508,7 @@ export class BuildingSystem {
 
         this.ghostBlock.position.set(
             gridCoords.x * this.gridCellSize + offsetX,
-            this.gridCellSize * 0.15,
+            this.gridCellSize * 0.25,
             gridCoords.z * this.gridCellSize + offsetZ
         );
 
@@ -529,20 +528,20 @@ export class BuildingSystem {
 
         if (blockType === '1x2') {
             if (rotation === 0) {
-                width = this.gridCellSize * 1.95;
-                depth = this.gridCellSize * 0.95;
+                width = this.gridCellSize * 1.8;
+                depth = this.gridCellSize * 0.8;
             } else {
-                width = this.gridCellSize * 0.95;
-                depth = this.gridCellSize * 1.95;
+                width = this.gridCellSize * 0.8;
+                depth = this.gridCellSize * 1.8;
             }
         } else {
-            width = this.gridCellSize * 0.95;
-            depth = this.gridCellSize * 0.95;
+            width = this.gridCellSize * 0.8;
+            depth = this.gridCellSize * 0.8;
         }
 
         this.ghostBlock.geometry.dispose();
         this.ghostBlock.geometry = new THREE.BoxGeometry(
-            width, this.gridCellSize * 0.3, depth
+            width, this.gridCellSize * 0.5, depth
         );
     }
 
@@ -564,9 +563,10 @@ export class BuildingSystem {
 
     /**
      * Rebuild the miniature replica from world state
+     * Groups cells by mergeGroup and creates one translucent block per group
      */
     rebuildReplica() {
-        // Clear existing walls
+        // Clear existing meshes
         for (const mesh of this.wallMeshes) {
             this.replicaGroup.remove(mesh);
             if (mesh.geometry) mesh.geometry.dispose();
@@ -575,159 +575,50 @@ export class BuildingSystem {
 
         if (!this.worldState) return;
 
-        const wallHeight = this.gridCellSize * 0.8;
-        const wallThickness = WALL_THICKNESS * this.miniatureScale;
-
-        // Create floor and walls for each cell
+        // Group cells by mergeGroup
+        const roomGroups = new Map();
         for (const cell of this.worldState.grid) {
-            this.createCellVisuals(cell, wallHeight, wallThickness);
+            const group = cell.mergeGroup;
+            if (!roomGroups.has(group)) {
+                roomGroups.set(group, []);
+            }
+            roomGroups.get(group).push(cell);
+        }
+
+        // Create one block per mergeGroup
+        for (const [mergeGroup, cells] of roomGroups) {
+            this.createRoomBlock(cells);
         }
     }
 
     /**
-     * Create visual representation for a grid cell
-     * Uses mergeGroup to determine if walls should be skipped
+     * Create a translucent blue block for a room (group of cells with same mergeGroup)
+     * Uses 80% scale factor to create 20% gaps between separate rooms
      */
-    createCellVisuals(cell, wallHeight, wallThickness) {
-        const x = cell.x * this.gridCellSize;
-        const z = cell.z * this.gridCellSize;
-        const half = this.gridCellSize / 2;
+    createRoomBlock(cells) {
+        // Find bounding box of all cells in this room
+        const minX = Math.min(...cells.map(c => c.x));
+        const maxX = Math.max(...cells.map(c => c.x));
+        const minZ = Math.min(...cells.map(c => c.z));
+        const maxZ = Math.max(...cells.map(c => c.z));
 
-        // Floor indicator
-        const floorGeom = new THREE.BoxGeometry(
-            this.gridCellSize * 0.95,
-            0.002,
-            this.gridCellSize * 0.95
-        );
-        const floor = new THREE.Mesh(floorGeom, this.floorMaterial);
-        floor.position.set(x, 0.001, z);
-        this.replicaGroup.add(floor);
-        this.wallMeshes.push(floor);
+        // Calculate dimensions (with 20% gap = 80% of full size)
+        const gapFactor = 0.8;
+        const width = (maxX - minX + 1) * this.gridCellSize * gapFactor;
+        const depth = (maxZ - minZ + 1) * this.gridCellSize * gapFactor;
+        const height = this.gridCellSize * 0.5; // Half-height blocks
 
-        // Helper to check neighbor and merge status
-        const checkNeighbor = (dx, dz) => {
-            const neighbor = this.worldState.grid.find(c => c.x === cell.x + dx && c.z === cell.z + dz);
-            if (!neighbor) return { exists: false, merged: false };
-            // Same mergeGroup means no wall between them (open space)
-            const merged = neighbor.mergeGroup === cell.mergeGroup;
-            return { exists: true, merged };
-        };
+        // Calculate center position
+        const centerX = ((minX + maxX) / 2) * this.gridCellSize;
+        const centerZ = ((minZ + maxZ) / 2) * this.gridCellSize;
 
-        const neighbors = {
-            north: checkNeighbor(0, -1),
-            south: checkNeighbor(0, 1),
-            east: checkNeighbor(1, 0),
-            west: checkNeighbor(-1, 0)
-        };
+        // Create translucent blue block
+        const geom = new THREE.BoxGeometry(width, height, depth);
+        const mesh = new THREE.Mesh(geom, this.roomMaterial);
+        mesh.position.set(centerX, height / 2, centerZ);
 
-        // Wall logic:
-        // - No neighbor → solid wall
-        // - Neighbor with different mergeGroup → wall with doorway
-        // - Neighbor with same mergeGroup → no wall (skip)
-
-        // North wall
-        if (!neighbors.north.exists) {
-            this.createMiniWall(x, z - half, this.gridCellSize, wallHeight, wallThickness, 'z', false);
-        } else if (!neighbors.north.merged) {
-            this.createMiniWall(x, z - half, this.gridCellSize, wallHeight, wallThickness, 'z', true);
-        }
-
-        // South wall
-        if (!neighbors.south.exists) {
-            this.createMiniWall(x, z + half, this.gridCellSize, wallHeight, wallThickness, 'z', false);
-        } else if (!neighbors.south.merged) {
-            this.createMiniWall(x, z + half, this.gridCellSize, wallHeight, wallThickness, 'z', true);
-        }
-
-        // East wall
-        if (!neighbors.east.exists) {
-            this.createMiniWall(x + half, z, this.gridCellSize, wallHeight, wallThickness, 'x', false);
-        } else if (!neighbors.east.merged) {
-            this.createMiniWall(x + half, z, this.gridCellSize, wallHeight, wallThickness, 'x', true);
-        }
-
-        // West wall
-        if (!neighbors.west.exists) {
-            this.createMiniWall(x - half, z, this.gridCellSize, wallHeight, wallThickness, 'x', false);
-        } else if (!neighbors.west.merged) {
-            this.createMiniWall(x - half, z, this.gridCellSize, wallHeight, wallThickness, 'x', true);
-        }
-    }
-
-    /**
-     * Create a miniature wall segment
-     */
-    createMiniWall(x, z, length, height, thickness, axis, hasDoorway) {
-        if (hasDoorway) {
-            // Wall with doorway - create 3 segments
-            const doorwayWidth = DOORWAY_WIDTH * this.miniatureScale;
-            const doorwayHeight = DOORWAY_HEIGHT * this.miniatureScale;
-            const sideWidth = (length - doorwayWidth) / 2;
-            const aboveHeight = height - doorwayHeight;
-
-            if (axis === 'z') {
-                // Wall along X-axis
-                // Left segment
-                const leftGeom = new THREE.BoxGeometry(sideWidth, height, thickness);
-                const leftWall = new THREE.Mesh(leftGeom, this.wallMaterial);
-                leftWall.position.set(x - doorwayWidth / 2 - sideWidth / 2, height / 2, z);
-                this.replicaGroup.add(leftWall);
-                this.wallMeshes.push(leftWall);
-
-                // Right segment
-                const rightGeom = new THREE.BoxGeometry(sideWidth, height, thickness);
-                const rightWall = new THREE.Mesh(rightGeom, this.wallMaterial);
-                rightWall.position.set(x + doorwayWidth / 2 + sideWidth / 2, height / 2, z);
-                this.replicaGroup.add(rightWall);
-                this.wallMeshes.push(rightWall);
-
-                // Above doorway
-                if (aboveHeight > 0) {
-                    const aboveGeom = new THREE.BoxGeometry(doorwayWidth, aboveHeight, thickness);
-                    const aboveWall = new THREE.Mesh(aboveGeom, this.wallMaterial);
-                    aboveWall.position.set(x, doorwayHeight + aboveHeight / 2, z);
-                    this.replicaGroup.add(aboveWall);
-                    this.wallMeshes.push(aboveWall);
-                }
-            } else {
-                // Wall along Z-axis
-                // Left segment
-                const leftGeom = new THREE.BoxGeometry(thickness, height, sideWidth);
-                const leftWall = new THREE.Mesh(leftGeom, this.wallMaterial);
-                leftWall.position.set(x, height / 2, z - doorwayWidth / 2 - sideWidth / 2);
-                this.replicaGroup.add(leftWall);
-                this.wallMeshes.push(leftWall);
-
-                // Right segment
-                const rightGeom = new THREE.BoxGeometry(thickness, height, sideWidth);
-                const rightWall = new THREE.Mesh(rightGeom, this.wallMaterial);
-                rightWall.position.set(x, height / 2, z + doorwayWidth / 2 + sideWidth / 2);
-                this.replicaGroup.add(rightWall);
-                this.wallMeshes.push(rightWall);
-
-                // Above doorway
-                if (aboveHeight > 0) {
-                    const aboveGeom = new THREE.BoxGeometry(thickness, aboveHeight, doorwayWidth);
-                    const aboveWall = new THREE.Mesh(aboveGeom, this.wallMaterial);
-                    aboveWall.position.set(x, doorwayHeight + aboveHeight / 2, z);
-                    this.replicaGroup.add(aboveWall);
-                    this.wallMeshes.push(aboveWall);
-                }
-            }
-        } else {
-            // Solid wall
-            let geom;
-            if (axis === 'z') {
-                geom = new THREE.BoxGeometry(length, height, thickness);
-            } else {
-                geom = new THREE.BoxGeometry(thickness, height, length);
-            }
-
-            const wall = new THREE.Mesh(geom, this.wallMaterial);
-            wall.position.set(x, height / 2, z);
-            this.replicaGroup.add(wall);
-            this.wallMeshes.push(wall);
-        }
+        this.replicaGroup.add(mesh);
+        this.wallMeshes.push(mesh);
     }
 
     /**
@@ -747,7 +638,7 @@ export class BuildingSystem {
         this.wallMeshes = [];
 
         // Dispose materials
-        if (this.wallMaterial) this.wallMaterial.dispose();
+        if (this.roomMaterial) this.roomMaterial.dispose();
         if (this.floorMaterial) this.floorMaterial.dispose();
 
         // Remove groups from scene
