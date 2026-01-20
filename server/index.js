@@ -173,24 +173,9 @@ function gameLoop() {
         }
 
         if (gameState.getPlayerCount() > 0) {
-            // Debug: log needs for first PC player
-            const players = gameState.getAllPlayers();
-            const pcPlayer = players.find(p => p.type === 'pc');
-            if (pcPlayer) {
-                console.log('[NeedsDebug] Raw player needs:', JSON.stringify(pcPlayer.needs));
-            }
-
-            const stateToSend = gameState.getSerializableState();
-
-            // Debug: verify needs are in serialized state
-            if (pcPlayer) {
-                const serializedNeeds = stateToSend.players[pcPlayer.id]?.needs;
-                console.log('[NeedsDebug] Serialized needs:', JSON.stringify(serializedNeeds));
-            }
-
             io.emit('message', {
                 type: 'STATE_UPDATE',
-                state: stateToSend
+                state: gameState.getSerializableState()
             });
         }
         lastNetworkTime = now;
