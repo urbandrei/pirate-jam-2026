@@ -34,8 +34,7 @@ export class StatsPanel {
         this.sprite = new THREE.Sprite(material);
         this.sprite.scale.set(0.25, 0.15, 1);
 
-        // Add to scene (position will be updated each frame by main.js)
-        this.scene.add(this.sprite);
+        // Note: sprite is added to hudGroup by main.js, not directly to scene
 
         // Initial render
         this._render({
@@ -214,9 +213,7 @@ export class StatsPanel {
             if (this.sprite.geometry) {
                 this.sprite.geometry.dispose();
             }
-            if (this.scene) {
-                this.scene.remove(this.sprite);
-            }
+            // Note: sprite is removed from hudGroup by main.js dispose()
             this.sprite = null;
         }
         this.canvas = null;

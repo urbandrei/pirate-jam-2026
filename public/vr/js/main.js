@@ -33,6 +33,9 @@ class VRGame {
         this.playerCountCtx = null;
         this._lastPlayerCount = -1;
 
+        // HUD container group (parent for all HUD elements to prevent parallax)
+        this.hudGroup = null;
+
         this.lastNetworkTime = 0;
         this.networkInterval = 1000 / NETWORK_RATE;
         this.currentFrame = null;
@@ -65,6 +68,12 @@ class VRGame {
 
         // Setup stats panel (population needs overview)
         this.statsPanel = new StatsPanel(this.scene.scene);
+
+        // Add stats panel to hudGroup at lower position (local coordinates)
+        if (this.statsPanel && this.statsPanel.sprite) {
+            this.statsPanel.sprite.position.set(0, -0.05, 0);
+            this.hudGroup.add(this.statsPanel.sprite);
+        }
 
         // Setup hands
         this.hands = new Hands(this.scene.scene, this.scene.renderer);
@@ -157,6 +166,10 @@ class VRGame {
     }
 
     setupPlayerCountHUD() {
+        // Create HUD container group (positions all HUD elements together)
+        this.hudGroup = new THREE.Group();
+        this.scene.scene.add(this.hudGroup);
+
         // Create canvas for text rendering
         this.playerCountCanvas = document.createElement('canvas');
         this.playerCountCanvas.width = 256;
@@ -172,8 +185,9 @@ class VRGame {
         this.playerCountSprite = new THREE.Sprite(material);
         this.playerCountSprite.scale.set(0.2, 0.05, 1);
 
-        // Add to scene (will be positioned each frame to follow XR camera)
-        this.scene.scene.add(this.playerCountSprite);
+        // Add to hudGroup at upper position (local coordinates)
+        this.playerCountSprite.position.set(0, 0.05, 0);
+        this.hudGroup.add(this.playerCountSprite);
 
         // Initial render
         this.updatePlayerCountHUD(0);
@@ -256,10 +270,12 @@ class VRGame {
     }
 
     /**
-     * Update HUD sprite positions to float in front of the XR camera
+     * Update HUD group position to float in front of the XR camera
+     * All HUD elements are children of hudGroup, so they move together
      */
     updateHUDPositions() {
         if (!this.scene.isInVR()) return;
+        if (!this.hudGroup) return;
 
         const camera = this.scene.renderer.xr.getCamera();
         if (!camera) return;
@@ -274,23 +290,12 @@ class VRGame {
         // Calculate right direction (reuse pre-allocated vector)
         this._hudRight.set(1, 0, 0).applyQuaternion(this._headQuaternion);
 
-        // Position player count HUD: 0.5m in front, slightly up and right
-        if (this.playerCountSprite) {
-            this._hudOffset.copy(this._hudDirection).multiplyScalar(0.5);
-            this._hudOffset.addScaledVector(this._hudRight, 0.15);
-            this._hudOffset.y += 0.12;
+        // Position hudGroup: 0.5m in front, slightly up and right
+        this._hudOffset.copy(this._hudDirection).multiplyScalar(0.5);
+        this._hudOffset.addScaledVector(this._hudRight, 0.15);
+        this._hudOffset.y += 0.07; // Centered vertically between both HUD elements
 
-            this.playerCountSprite.position.copy(this._headPosition).add(this._hudOffset);
-        }
-
-        // Position stats panel: 0.5m in front, slightly up and right, below player count
-        if (this.statsPanel && this.statsPanel.sprite) {
-            this._hudOffset.copy(this._hudDirection).multiplyScalar(0.5);
-            this._hudOffset.addScaledVector(this._hudRight, 0.15);
-            this._hudOffset.y += 0.02;
-
-            this.statsPanel.sprite.position.copy(this._headPosition).add(this._hudOffset);
-        }
+        this.hudGroup.position.copy(this._headPosition).add(this._hudOffset);
     }
 
     sendPose() {
@@ -427,6 +432,16 @@ class VRGame {
                 this.playerCountSprite = null;
             } catch (err) {
                 console.warn('[VRGame] Error disposing HUD:', err);
+            }
+        }
+
+        // Remove hudGroup from scene
+        if (this.hudGroup && this.scene && this.scene.scene) {
+            try {
+                this.scene.scene.remove(this.hudGroup);
+                this.hudGroup = null;
+            } catch (err) {
+                console.warn('[VRGame] Error removing hudGroup:', err);
             }
         }
 
