@@ -47,10 +47,10 @@ export const WALL_THICKNESS = 0.2; // 0.2m thin walls
 export const DOORWAY_HEIGHT = PLAYER_HEIGHT * 1.3; // ~2.34m
 export const DOORWAY_WIDTH = 1.2; // 1.2m wide doorways
 
-// Needs system (fast rates for testing - TODO: restore slower rates for production)
-export const HUNGER_DECAY_RATE = 100 / 60;   // 0-100 over 60 seconds (testing)
-export const THIRST_DECAY_RATE = 100 / 45;   // 0-100 over 45 seconds (testing)
-export const REST_DECAY_RATE = 100 / 90;     // 0-100 over 90 seconds (testing)
+// Needs system
+export const HUNGER_DECAY_RATE = 100 / 600;  // 0-100 over 10 minutes
+export const THIRST_DECAY_RATE = 100 / 480;  // 0-100 over 8 minutes
+export const REST_DECAY_RATE = 100 / 900;    // 0-100 over 15 minutes
 export const REST_RESTORE_RATE = REST_DECAY_RATE * 5;  // 5x faster when sleeping
 export const NEED_MAX = 100;
 export const NEED_CRITICAL = 20;  // Red warning threshold

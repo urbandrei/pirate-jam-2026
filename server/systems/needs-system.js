@@ -11,10 +11,9 @@
 
 // Decay rates (units per second)
 // These match the constants in public/pc/shared/constants.js
-// Fast rates for testing - TODO: restore slower rates for production
-const HUNGER_DECAY_RATE = 100 / 60;   // 0-100 over 60 seconds (testing)
-const THIRST_DECAY_RATE = 100 / 45;   // 0-100 over 45 seconds (testing)
-const REST_DECAY_RATE = 100 / 90;     // 0-100 over 90 seconds (testing)
+const HUNGER_DECAY_RATE = 100 / 600;  // 0-100 over 10 minutes
+const THIRST_DECAY_RATE = 100 / 480;  // 0-100 over 8 minutes
+const REST_DECAY_RATE = 100 / 900;    // 0-100 over 15 minutes
 const REST_RESTORE_RATE = REST_DECAY_RATE * 5;  // 5x faster when sleeping
 
 /**
