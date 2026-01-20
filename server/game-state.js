@@ -1,12 +1,17 @@
 /**
  * Authoritative game state management
- * Maintains canonical state for all players
+ * Maintains canonical state for all players and world
  */
+
+const WorldState = require('./world-state');
 
 class GameState {
     constructor() {
         // Map of peerId -> player state
         this.players = new Map();
+
+        // World state for building system
+        this.worldState = new WorldState();
     }
 
     addPlayer(peerId, playerType) {
@@ -113,8 +118,28 @@ class GameState {
 
         return {
             players,
+            world: this.worldState.getSerializableState(),
             timestamp: Date.now()
         };
+    }
+
+    /**
+     * Place a block in the world
+     * @param {number} gridX - Grid X coordinate
+     * @param {number} gridZ - Grid Z coordinate
+     * @param {string} blockSize - '1x1' or '1x2'
+     * @param {string} playerId - ID of the player placing the block
+     * @returns {Object} Result with success flag and details
+     */
+    placeBlock(gridX, gridZ, blockSize, playerId) {
+        return this.worldState.placeBlock(gridX, gridZ, blockSize, playerId);
+    }
+
+    /**
+     * Get the current world state
+     */
+    getWorldState() {
+        return this.worldState.getSerializableState();
     }
 }
 

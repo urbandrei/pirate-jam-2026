@@ -77,6 +77,11 @@ class Game {
 
             // Update remote players
             this.remotePlayers.updatePlayers(state, this.network.playerId);
+
+            // Update world geometry from server state
+            if (state.world) {
+                this.scene.rebuildFromWorldState(state.world);
+            }
         };
 
         this.network.onGrabbed = (grabbedBy) => {

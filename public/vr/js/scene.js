@@ -10,7 +10,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, WORLD_SIZE, GIANT_SCALE, ROOM_SIZE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH } from '../../pc/shared/constants.js';
+import { COLORS, WORLD_SIZE, GIANT_SCALE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH } from '../../pc/shared/constants.js';
 
 export class VRScene {
     constructor(container) {
@@ -21,6 +21,16 @@ export class VRScene {
             // Session state callbacks
             this.onSessionStart = null;
             this.onSessionEnd = null;
+
+            // Dynamic wall meshes for cleanup
+            this.dynamicWalls = [];
+            this.lastWorldVersion = -1;
+
+            // VR scale factor
+            this.scale = 1 / GIANT_SCALE;
+
+            // Wall material (shared)
+            this.wallMaterial = null;
 
             // Create renderer with WebXR support
             this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -47,10 +57,11 @@ export class VRScene {
             this.cameraRig.add(this.camera);
             this.scene.add(this.cameraRig);
 
-            // Setup scene at VR scale (10x PC scale)
+            // Setup scene at VR scale
             this.setupLighting();
             this.setupGround();
-            this.setupReferenceBlocks();
+            this.setupWallMaterial();
+            // Don't setup static rooms - wait for world state from server
 
             // Setup VR button
             this.setupVRButton();
@@ -62,6 +73,14 @@ export class VRScene {
             console.error('[VRScene] Failed to initialize:', err);
             throw err;
         }
+    }
+
+    setupWallMaterial() {
+        this.wallMaterial = new THREE.MeshStandardMaterial({
+            map: this.createConcreteTexture(),
+            roughness: 0.95,
+            metalness: 0.05
+        });
     }
 
     setupLighting() {
@@ -134,206 +153,165 @@ export class VRScene {
         this.scene.add(grid);
     }
 
-    setupReferenceBlocks() {
-        // Replace colored blocks with concrete room
-        this.setupRoom();
-    }
-
     /**
-     * Create a concrete room with doorways around spawn point
+     * Rebuild world geometry from server world state
      * All dimensions scaled by 1/GIANT_SCALE for VR "tiny world" view
+     * @param {Object} worldState - World state from server
      */
-    setupRoom() {
-        const scale = 1 / GIANT_SCALE;
+    rebuildFromWorldState(worldState) {
+        if (!worldState) return;
 
-        // Room dimensions in VR scale
-        const roomSize = ROOM_SIZE * scale;        // 0.5m in VR
-        const wallHeight = ROOM_SIZE * scale;      // 0.5m in VR
-        const wallThickness = WALL_THICKNESS * scale; // 0.02m in VR
-        const doorwayHeight = DOORWAY_HEIGHT * scale; // ~0.234m in VR
-        const doorwayWidth = DOORWAY_WIDTH * scale;   // 0.12m in VR
+        // Skip if version hasn't changed
+        if (worldState.version === this.lastWorldVersion) return;
 
-        // Concrete material for walls
-        const wallMaterial = new THREE.MeshStandardMaterial({
-            map: this.createConcreteTexture(),
-            roughness: 0.95,
-            metalness: 0.05
-        });
+        console.log(`[VRScene] Rebuilding walls from world state, version=${worldState.version}`);
+        this.lastWorldVersion = worldState.version;
 
-        // Calculate wall segment dimensions
-        const sideSegmentWidth = (roomSize - doorwayWidth) / 2;
-        const aboveDoorHeight = wallHeight - doorwayHeight;
-        const halfRoom = roomSize / 2;
+        // Clear existing dynamic walls
+        this.clearDynamicWalls();
 
-        // Create wall segments for each side (with doorway cutouts)
-        // Each wall needs: left segment, right segment, above-door segment
-
-        // North wall (z = -halfRoom)
-        this.createWallWithDoorway(
-            wallMaterial,
-            { x: 0, z: -halfRoom },
-            'z',
-            wallHeight, wallThickness,
-            doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight
-        );
-
-        // South wall (z = +halfRoom)
-        this.createWallWithDoorway(
-            wallMaterial,
-            { x: 0, z: halfRoom },
-            'z',
-            wallHeight, wallThickness,
-            doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight
-        );
-
-        // East wall (x = +halfRoom)
-        this.createWallWithDoorway(
-            wallMaterial,
-            { x: halfRoom, z: 0 },
-            'x',
-            wallHeight, wallThickness,
-            doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight
-        );
-
-        // West wall (x = -halfRoom)
-        this.createWallWithDoorway(
-            wallMaterial,
-            { x: -halfRoom, z: 0 },
-            'x',
-            wallHeight, wallThickness,
-            doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight
-        );
-
-        // Add surrounding rooms
-        this.setupSurroundingRooms(wallMaterial, scale);
-    }
-
-    /**
-     * Create a wall with a doorway cutout
-     */
-    createWallWithDoorway(material, position, axis, wallHeight, wallThickness, doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight) {
-        const halfDoorway = doorwayWidth / 2;
-        const sideOffset = halfDoorway + sideSegmentWidth / 2;
-
-        if (axis === 'z') {
-            // Wall along X-axis (North/South walls)
-            // Left segment
-            const leftGeom = new THREE.BoxGeometry(sideSegmentWidth, wallHeight, wallThickness);
-            const leftWall = new THREE.Mesh(leftGeom, material);
-            leftWall.position.set(position.x - sideOffset, wallHeight / 2, position.z);
-            this.scene.add(leftWall);
-
-            // Right segment
-            const rightGeom = new THREE.BoxGeometry(sideSegmentWidth, wallHeight, wallThickness);
-            const rightWall = new THREE.Mesh(rightGeom, material);
-            rightWall.position.set(position.x + sideOffset, wallHeight / 2, position.z);
-            this.scene.add(rightWall);
-
-            // Above door segment
-            const aboveGeom = new THREE.BoxGeometry(doorwayWidth, aboveDoorHeight, wallThickness);
-            const aboveWall = new THREE.Mesh(aboveGeom, material);
-            aboveWall.position.set(position.x, doorwayHeight + aboveDoorHeight / 2, position.z);
-            this.scene.add(aboveWall);
-        } else {
-            // Wall along Z-axis (East/West walls)
-            // Left segment (negative Z)
-            const leftGeom = new THREE.BoxGeometry(wallThickness, wallHeight, sideSegmentWidth);
-            const leftWall = new THREE.Mesh(leftGeom, material);
-            leftWall.position.set(position.x, wallHeight / 2, position.z - sideOffset);
-            this.scene.add(leftWall);
-
-            // Right segment (positive Z)
-            const rightGeom = new THREE.BoxGeometry(wallThickness, wallHeight, sideSegmentWidth);
-            const rightWall = new THREE.Mesh(rightGeom, material);
-            rightWall.position.set(position.x, wallHeight / 2, position.z + sideOffset);
-            this.scene.add(rightWall);
-
-            // Above door segment
-            const aboveGeom = new THREE.BoxGeometry(wallThickness, aboveDoorHeight, doorwayWidth);
-            const aboveWall = new THREE.Mesh(aboveGeom, material);
-            aboveWall.position.set(position.x, doorwayHeight + aboveDoorHeight / 2, position.z);
-            this.scene.add(aboveWall);
+        // Build walls for each cell in the grid
+        for (const cell of worldState.grid) {
+            this.createCellWalls(cell, worldState);
         }
     }
 
     /**
-     * Create 16 surrounding rooms around the main room
-     * Layout: 5 rooms on top/bottom rows, 3 rooms on left/right sides
-     * All dimensions already in VR scale (1/GIANT_SCALE)
+     * Clear all dynamic wall meshes
      */
-    setupSurroundingRooms(wallMaterial, scale) {
-        const smallSize = SMALL_ROOM_SIZE * scale;    // ~0.667m in VR
-        const halfMain = ROOM_SIZE * scale / 2;      // 1m in VR
-        const halfSmall = smallSize / 2;             // ~0.333m in VR
-        const smallHeight = smallSize;               // Same height as width
-
-        // Positions for each small room center (in VR scale)
-        const positions = [
-            // Top row (5 rooms, z = -halfMain - halfSmall)
-            { x: -smallSize * 2, z: -halfMain - halfSmall },
-            { x: -smallSize, z: -halfMain - halfSmall },
-            { x: 0, z: -halfMain - halfSmall },
-            { x: smallSize, z: -halfMain - halfSmall },
-            { x: smallSize * 2, z: -halfMain - halfSmall },
-
-            // Left side (3 rooms, x = -halfMain - halfSmall)
-            { x: -halfMain - halfSmall, z: -smallSize },
-            { x: -halfMain - halfSmall, z: 0 },
-            { x: -halfMain - halfSmall, z: smallSize },
-
-            // Right side (3 rooms, x = halfMain + halfSmall)
-            { x: halfMain + halfSmall, z: -smallSize },
-            { x: halfMain + halfSmall, z: 0 },
-            { x: halfMain + halfSmall, z: smallSize },
-
-            // Bottom row (5 rooms, z = halfMain + halfSmall)
-            { x: -smallSize * 2, z: halfMain + halfSmall },
-            { x: -smallSize, z: halfMain + halfSmall },
-            { x: 0, z: halfMain + halfSmall },
-            { x: smallSize, z: halfMain + halfSmall },
-            { x: smallSize * 2, z: halfMain + halfSmall },
-        ];
-
-        // Create each small room (4 solid walls, no doorways)
-        positions.forEach(pos => {
-            this.createSmallRoom(wallMaterial, pos, smallSize, smallHeight, scale);
-        });
+    clearDynamicWalls() {
+        for (const mesh of this.dynamicWalls) {
+            this.scene.remove(mesh);
+            if (mesh.geometry) mesh.geometry.dispose();
+        }
+        this.dynamicWalls = [];
     }
 
     /**
-     * Create a small room with 4 solid walls (no doorways)
-     * All dimensions already in VR scale
+     * Create walls for a single grid cell (in VR scale)
      */
-    createSmallRoom(material, center, size, height, scale) {
-        const half = size / 2;
-        const thickness = WALL_THICKNESS * scale;
+    createCellWalls(cell, worldState) {
+        const cellSize = SMALL_ROOM_SIZE * this.scale;
+        const half = cellSize / 2;
+        const wallHeight = cellSize;
+        const x = cell.x * cellSize;
+        const z = cell.z * cellSize;
 
-        // North wall (z = center.z - half)
-        this.createSolidWall(material, center.x, center.z - half, size, height, thickness, 'z');
-        // South wall (z = center.z + half)
-        this.createSolidWall(material, center.x, center.z + half, size, height, thickness, 'z');
-        // East wall (x = center.x + half)
-        this.createSolidWall(material, center.x + half, center.z, size, height, thickness, 'x');
-        // West wall (x = center.x - half)
-        this.createSolidWall(material, center.x - half, center.z, size, height, thickness, 'x');
+        // Check which neighbors exist
+        const neighbors = {
+            north: worldState.grid.some(c => c.x === cell.x && c.z === cell.z - 1),
+            south: worldState.grid.some(c => c.x === cell.x && c.z === cell.z + 1),
+            east: worldState.grid.some(c => c.x === cell.x + 1 && c.z === cell.z),
+            west: worldState.grid.some(c => c.x === cell.x - 1 && c.z === cell.z)
+        };
+
+        const thickness = WALL_THICKNESS * this.scale;
+
+        // Create walls based on neighbors
+        // Outer walls (no neighbor) = solid wall
+        // Inner walls (has neighbor) = wall with doorway
+        if (!neighbors.north) {
+            this.addDynamicSolidWall(x, z - half, cellSize, wallHeight, thickness, 'z');
+        } else {
+            this.addDynamicWallWithDoorway(x, z - half, cellSize, wallHeight, thickness, 'z');
+        }
+
+        if (!neighbors.south) {
+            this.addDynamicSolidWall(x, z + half, cellSize, wallHeight, thickness, 'z');
+        } else {
+            this.addDynamicWallWithDoorway(x, z + half, cellSize, wallHeight, thickness, 'z');
+        }
+
+        if (!neighbors.east) {
+            this.addDynamicSolidWall(x + half, z, cellSize, wallHeight, thickness, 'x');
+        } else {
+            this.addDynamicWallWithDoorway(x + half, z, cellSize, wallHeight, thickness, 'x');
+        }
+
+        if (!neighbors.west) {
+            this.addDynamicSolidWall(x - half, z, cellSize, wallHeight, thickness, 'x');
+        } else {
+            this.addDynamicWallWithDoorway(x - half, z, cellSize, wallHeight, thickness, 'x');
+        }
     }
 
     /**
-     * Create a solid wall (no doorway)
+     * Add a solid wall (no doorway) and track for cleanup
      */
-    createSolidWall(material, x, z, length, height, thickness, axis) {
+    addDynamicSolidWall(x, z, length, height, thickness, axis) {
         let geometry;
         if (axis === 'z') {
-            // Wall along X-axis
             geometry = new THREE.BoxGeometry(length, height, thickness);
         } else {
-            // Wall along Z-axis
             geometry = new THREE.BoxGeometry(thickness, height, length);
         }
 
-        const wall = new THREE.Mesh(geometry, material);
+        const wall = new THREE.Mesh(geometry, this.wallMaterial);
         wall.position.set(x, height / 2, z);
         this.scene.add(wall);
+        this.dynamicWalls.push(wall);
+    }
+
+    /**
+     * Add a wall with doorway and track for cleanup
+     */
+    addDynamicWallWithDoorway(x, z, length, height, thickness, axis) {
+        const doorwayWidth = DOORWAY_WIDTH * this.scale;
+        const doorwayHeight = DOORWAY_HEIGHT * this.scale;
+        const sideWidth = (length - doorwayWidth) / 2;
+        const aboveHeight = height - doorwayHeight;
+        const halfDoorway = doorwayWidth / 2;
+        const sideOffset = halfDoorway + sideWidth / 2;
+
+        if (axis === 'z') {
+            // Wall along X-axis
+            // Left segment
+            const leftGeom = new THREE.BoxGeometry(sideWidth, height, thickness);
+            const leftWall = new THREE.Mesh(leftGeom, this.wallMaterial);
+            leftWall.position.set(x - sideOffset, height / 2, z);
+            this.scene.add(leftWall);
+            this.dynamicWalls.push(leftWall);
+
+            // Right segment
+            const rightGeom = new THREE.BoxGeometry(sideWidth, height, thickness);
+            const rightWall = new THREE.Mesh(rightGeom, this.wallMaterial);
+            rightWall.position.set(x + sideOffset, height / 2, z);
+            this.scene.add(rightWall);
+            this.dynamicWalls.push(rightWall);
+
+            // Above doorway
+            if (aboveHeight > 0) {
+                const aboveGeom = new THREE.BoxGeometry(doorwayWidth, aboveHeight, thickness);
+                const aboveWall = new THREE.Mesh(aboveGeom, this.wallMaterial);
+                aboveWall.position.set(x, doorwayHeight + aboveHeight / 2, z);
+                this.scene.add(aboveWall);
+                this.dynamicWalls.push(aboveWall);
+            }
+        } else {
+            // Wall along Z-axis
+            // Left segment
+            const leftGeom = new THREE.BoxGeometry(thickness, height, sideWidth);
+            const leftWall = new THREE.Mesh(leftGeom, this.wallMaterial);
+            leftWall.position.set(x, height / 2, z - sideOffset);
+            this.scene.add(leftWall);
+            this.dynamicWalls.push(leftWall);
+
+            // Right segment
+            const rightGeom = new THREE.BoxGeometry(thickness, height, sideWidth);
+            const rightWall = new THREE.Mesh(rightGeom, this.wallMaterial);
+            rightWall.position.set(x, height / 2, z + sideOffset);
+            this.scene.add(rightWall);
+            this.dynamicWalls.push(rightWall);
+
+            // Above doorway
+            if (aboveHeight > 0) {
+                const aboveGeom = new THREE.BoxGeometry(thickness, aboveHeight, doorwayWidth);
+                const aboveWall = new THREE.Mesh(aboveGeom, this.wallMaterial);
+                aboveWall.position.set(x, doorwayHeight + aboveHeight / 2, z);
+                this.scene.add(aboveWall);
+                this.dynamicWalls.push(aboveWall);
+            }
+        }
     }
 
     async setupVRButton() {

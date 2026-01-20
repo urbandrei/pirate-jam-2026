@@ -3,11 +3,18 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, WORLD_SIZE, ROOM_SIZE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH } from '../shared/constants.js';
+import { COLORS, WORLD_SIZE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH } from '../shared/constants.js';
 
 export class Scene {
     constructor(container) {
         this.container = container;
+
+        // Dynamic wall meshes for cleanup
+        this.dynamicWalls = [];
+        this.lastWorldVersion = -1;
+
+        // Wall material (shared)
+        this.wallMaterial = null;
 
         // Create renderer
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -34,10 +41,19 @@ export class Scene {
         // Setup scene elements
         this.setupLighting();
         this.setupGround();
-        this.setupReferenceBlocks();
+        this.setupWallMaterial();
+        // Don't setup static rooms - wait for world state from server
 
         // Handle window resize
         window.addEventListener('resize', () => this.onResize());
+    }
+
+    setupWallMaterial() {
+        this.wallMaterial = new THREE.MeshStandardMaterial({
+            map: this.createConcreteTexture(),
+            roughness: 0.95,
+            metalness: 0.05
+        });
     }
 
     setupLighting() {
@@ -115,214 +131,175 @@ export class Scene {
         this.scene.add(grid);
     }
 
-    setupReferenceBlocks() {
-        // Replace colored blocks with concrete room
-        this.setupRoom();
+    /**
+     * Rebuild world geometry from server world state
+     * @param {Object} worldState - World state from server
+     */
+    rebuildFromWorldState(worldState) {
+        if (!worldState) return;
+
+        // Skip if version hasn't changed
+        if (worldState.version === this.lastWorldVersion) return;
+
+        console.log(`[Scene] Rebuilding walls from world state, version=${worldState.version}`);
+        this.lastWorldVersion = worldState.version;
+
+        // Clear existing dynamic walls
+        this.clearDynamicWalls();
+
+        // Build walls for each cell in the grid
+        for (const cell of worldState.grid) {
+            this.createCellWalls(cell, worldState);
+        }
     }
 
     /**
-     * Create a concrete room with doorways around spawn point
-     * All dimensions at full PC scale (1:1 meters)
+     * Clear all dynamic wall meshes
      */
-    setupRoom() {
-        // Room dimensions at PC scale (full meters)
-        const roomSize = ROOM_SIZE;           // 5m
-        const wallHeight = ROOM_SIZE;         // 5m
-        const wallThickness = WALL_THICKNESS; // 0.2m
-        const doorwayHeight = DOORWAY_HEIGHT; // ~2.34m
-        const doorwayWidth = DOORWAY_WIDTH;   // 1.2m
-
-        // Concrete material for walls
-        const wallMaterial = new THREE.MeshStandardMaterial({
-            map: this.createConcreteTexture(),
-            roughness: 0.95,
-            metalness: 0.05
-        });
-
-        // Calculate wall segment dimensions
-        const sideSegmentWidth = (roomSize - doorwayWidth) / 2;
-        const aboveDoorHeight = wallHeight - doorwayHeight;
-        const halfRoom = roomSize / 2;
-
-        // Create wall segments for each side (with doorway cutouts)
-
-        // North wall (z = -halfRoom)
-        this.createWallWithDoorway(
-            wallMaterial,
-            { x: 0, z: -halfRoom },
-            'z',
-            wallHeight, wallThickness,
-            doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight
-        );
-
-        // South wall (z = +halfRoom)
-        this.createWallWithDoorway(
-            wallMaterial,
-            { x: 0, z: halfRoom },
-            'z',
-            wallHeight, wallThickness,
-            doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight
-        );
-
-        // East wall (x = +halfRoom)
-        this.createWallWithDoorway(
-            wallMaterial,
-            { x: halfRoom, z: 0 },
-            'x',
-            wallHeight, wallThickness,
-            doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight
-        );
-
-        // West wall (x = -halfRoom)
-        this.createWallWithDoorway(
-            wallMaterial,
-            { x: -halfRoom, z: 0 },
-            'x',
-            wallHeight, wallThickness,
-            doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight
-        );
-
-        // Add surrounding rooms
-        this.setupSurroundingRooms(wallMaterial);
+    clearDynamicWalls() {
+        for (const mesh of this.dynamicWalls) {
+            this.scene.remove(mesh);
+            if (mesh.geometry) mesh.geometry.dispose();
+        }
+        this.dynamicWalls = [];
     }
 
     /**
-     * Create 16 surrounding rooms around the main room
-     * Layout: 5 rooms on top/bottom rows, 3 rooms on left/right sides
+     * Create walls for a single grid cell
      */
-    setupSurroundingRooms(wallMaterial) {
-        const smallSize = SMALL_ROOM_SIZE;    // ~6.67m
-        const halfMain = ROOM_SIZE / 2;       // 10m
-        const halfSmall = smallSize / 2;      // ~3.33m
-        const smallHeight = smallSize;        // Same height as width
+    createCellWalls(cell, worldState) {
+        const cellSize = SMALL_ROOM_SIZE;
+        const half = cellSize / 2;
+        const wallHeight = cellSize;
+        const x = cell.x * cellSize;
+        const z = cell.z * cellSize;
 
-        // Positions for each small room center
-        const positions = [
-            // Top row (5 rooms, z = -halfMain - halfSmall)
-            { x: -smallSize * 2, z: -halfMain - halfSmall },
-            { x: -smallSize, z: -halfMain - halfSmall },
-            { x: 0, z: -halfMain - halfSmall },
-            { x: smallSize, z: -halfMain - halfSmall },
-            { x: smallSize * 2, z: -halfMain - halfSmall },
+        // Check which neighbors exist
+        const neighbors = {
+            north: worldState.grid.some(c => c.x === cell.x && c.z === cell.z - 1),
+            south: worldState.grid.some(c => c.x === cell.x && c.z === cell.z + 1),
+            east: worldState.grid.some(c => c.x === cell.x + 1 && c.z === cell.z),
+            west: worldState.grid.some(c => c.x === cell.x - 1 && c.z === cell.z)
+        };
 
-            // Left side (3 rooms, x = -halfMain - halfSmall)
-            { x: -halfMain - halfSmall, z: -smallSize },
-            { x: -halfMain - halfSmall, z: 0 },
-            { x: -halfMain - halfSmall, z: smallSize },
+        // Create walls based on neighbors
+        // Outer walls (no neighbor) = solid wall
+        // Inner walls (has neighbor) = wall with doorway
+        if (!neighbors.north) {
+            this.addDynamicSolidWall(x, z - half, cellSize, wallHeight, WALL_THICKNESS, 'z');
+        } else {
+            this.addDynamicWallWithDoorway(x, z - half, cellSize, wallHeight, WALL_THICKNESS, 'z');
+        }
 
-            // Right side (3 rooms, x = halfMain + halfSmall)
-            { x: halfMain + halfSmall, z: -smallSize },
-            { x: halfMain + halfSmall, z: 0 },
-            { x: halfMain + halfSmall, z: smallSize },
+        if (!neighbors.south) {
+            this.addDynamicSolidWall(x, z + half, cellSize, wallHeight, WALL_THICKNESS, 'z');
+        } else {
+            this.addDynamicWallWithDoorway(x, z + half, cellSize, wallHeight, WALL_THICKNESS, 'z');
+        }
 
-            // Bottom row (5 rooms, z = halfMain + halfSmall)
-            { x: -smallSize * 2, z: halfMain + halfSmall },
-            { x: -smallSize, z: halfMain + halfSmall },
-            { x: 0, z: halfMain + halfSmall },
-            { x: smallSize, z: halfMain + halfSmall },
-            { x: smallSize * 2, z: halfMain + halfSmall },
-        ];
+        if (!neighbors.east) {
+            this.addDynamicSolidWall(x + half, z, cellSize, wallHeight, WALL_THICKNESS, 'x');
+        } else {
+            this.addDynamicWallWithDoorway(x + half, z, cellSize, wallHeight, WALL_THICKNESS, 'x');
+        }
 
-        // Create each small room (4 solid walls, no doorways)
-        positions.forEach(pos => {
-            this.createSmallRoom(wallMaterial, pos, smallSize, smallHeight);
-        });
+        if (!neighbors.west) {
+            this.addDynamicSolidWall(x - half, z, cellSize, wallHeight, WALL_THICKNESS, 'x');
+        } else {
+            this.addDynamicWallWithDoorway(x - half, z, cellSize, wallHeight, WALL_THICKNESS, 'x');
+        }
     }
 
     /**
-     * Create a small room with 4 solid walls (no doorways)
+     * Add a solid wall (no doorway) and track for cleanup
      */
-    createSmallRoom(material, center, size, height) {
-        const half = size / 2;
-        const thickness = WALL_THICKNESS;
-
-        // North wall (z = center.z - half)
-        this.createSolidWall(material, center.x, center.z - half, size, height, thickness, 'z');
-        // South wall (z = center.z + half)
-        this.createSolidWall(material, center.x, center.z + half, size, height, thickness, 'z');
-        // East wall (x = center.x + half)
-        this.createSolidWall(material, center.x + half, center.z, size, height, thickness, 'x');
-        // West wall (x = center.x - half)
-        this.createSolidWall(material, center.x - half, center.z, size, height, thickness, 'x');
-    }
-
-    /**
-     * Create a solid wall (no doorway)
-     */
-    createSolidWall(material, x, z, length, height, thickness, axis) {
+    addDynamicSolidWall(x, z, length, height, thickness, axis) {
         let geometry;
         if (axis === 'z') {
-            // Wall along X-axis
             geometry = new THREE.BoxGeometry(length, height, thickness);
         } else {
-            // Wall along Z-axis
             geometry = new THREE.BoxGeometry(thickness, height, length);
         }
 
-        const wall = new THREE.Mesh(geometry, material);
+        const wall = new THREE.Mesh(geometry, this.wallMaterial);
         wall.position.set(x, height / 2, z);
         wall.castShadow = true;
         wall.receiveShadow = true;
         this.scene.add(wall);
+        this.dynamicWalls.push(wall);
     }
 
     /**
-     * Create a wall with a doorway cutout
+     * Add a wall with doorway and track for cleanup
      */
-    createWallWithDoorway(material, position, axis, wallHeight, wallThickness, doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight) {
+    addDynamicWallWithDoorway(x, z, length, height, thickness, axis) {
+        const doorwayWidth = DOORWAY_WIDTH;
+        const doorwayHeight = DOORWAY_HEIGHT;
+        const sideWidth = (length - doorwayWidth) / 2;
+        const aboveHeight = height - doorwayHeight;
         const halfDoorway = doorwayWidth / 2;
-        const sideOffset = halfDoorway + sideSegmentWidth / 2;
+        const sideOffset = halfDoorway + sideWidth / 2;
 
         if (axis === 'z') {
-            // Wall along X-axis (North/South walls)
+            // Wall along X-axis
             // Left segment
-            const leftGeom = new THREE.BoxGeometry(sideSegmentWidth, wallHeight, wallThickness);
-            const leftWall = new THREE.Mesh(leftGeom, material);
-            leftWall.position.set(position.x - sideOffset, wallHeight / 2, position.z);
+            const leftGeom = new THREE.BoxGeometry(sideWidth, height, thickness);
+            const leftWall = new THREE.Mesh(leftGeom, this.wallMaterial);
+            leftWall.position.set(x - sideOffset, height / 2, z);
             leftWall.castShadow = true;
             leftWall.receiveShadow = true;
             this.scene.add(leftWall);
+            this.dynamicWalls.push(leftWall);
 
             // Right segment
-            const rightGeom = new THREE.BoxGeometry(sideSegmentWidth, wallHeight, wallThickness);
-            const rightWall = new THREE.Mesh(rightGeom, material);
-            rightWall.position.set(position.x + sideOffset, wallHeight / 2, position.z);
+            const rightGeom = new THREE.BoxGeometry(sideWidth, height, thickness);
+            const rightWall = new THREE.Mesh(rightGeom, this.wallMaterial);
+            rightWall.position.set(x + sideOffset, height / 2, z);
             rightWall.castShadow = true;
             rightWall.receiveShadow = true;
             this.scene.add(rightWall);
+            this.dynamicWalls.push(rightWall);
 
-            // Above door segment
-            const aboveGeom = new THREE.BoxGeometry(doorwayWidth, aboveDoorHeight, wallThickness);
-            const aboveWall = new THREE.Mesh(aboveGeom, material);
-            aboveWall.position.set(position.x, doorwayHeight + aboveDoorHeight / 2, position.z);
-            aboveWall.castShadow = true;
-            aboveWall.receiveShadow = true;
-            this.scene.add(aboveWall);
+            // Above doorway
+            if (aboveHeight > 0) {
+                const aboveGeom = new THREE.BoxGeometry(doorwayWidth, aboveHeight, thickness);
+                const aboveWall = new THREE.Mesh(aboveGeom, this.wallMaterial);
+                aboveWall.position.set(x, doorwayHeight + aboveHeight / 2, z);
+                aboveWall.castShadow = true;
+                aboveWall.receiveShadow = true;
+                this.scene.add(aboveWall);
+                this.dynamicWalls.push(aboveWall);
+            }
         } else {
-            // Wall along Z-axis (East/West walls)
-            // Left segment (negative Z)
-            const leftGeom = new THREE.BoxGeometry(wallThickness, wallHeight, sideSegmentWidth);
-            const leftWall = new THREE.Mesh(leftGeom, material);
-            leftWall.position.set(position.x, wallHeight / 2, position.z - sideOffset);
+            // Wall along Z-axis
+            // Left segment
+            const leftGeom = new THREE.BoxGeometry(thickness, height, sideWidth);
+            const leftWall = new THREE.Mesh(leftGeom, this.wallMaterial);
+            leftWall.position.set(x, height / 2, z - sideOffset);
             leftWall.castShadow = true;
             leftWall.receiveShadow = true;
             this.scene.add(leftWall);
+            this.dynamicWalls.push(leftWall);
 
-            // Right segment (positive Z)
-            const rightGeom = new THREE.BoxGeometry(wallThickness, wallHeight, sideSegmentWidth);
-            const rightWall = new THREE.Mesh(rightGeom, material);
-            rightWall.position.set(position.x, wallHeight / 2, position.z + sideOffset);
+            // Right segment
+            const rightGeom = new THREE.BoxGeometry(thickness, height, sideWidth);
+            const rightWall = new THREE.Mesh(rightGeom, this.wallMaterial);
+            rightWall.position.set(x, height / 2, z + sideOffset);
             rightWall.castShadow = true;
             rightWall.receiveShadow = true;
             this.scene.add(rightWall);
+            this.dynamicWalls.push(rightWall);
 
-            // Above door segment
-            const aboveGeom = new THREE.BoxGeometry(wallThickness, aboveDoorHeight, doorwayWidth);
-            const aboveWall = new THREE.Mesh(aboveGeom, material);
-            aboveWall.position.set(position.x, doorwayHeight + aboveDoorHeight / 2, position.z);
-            aboveWall.castShadow = true;
-            aboveWall.receiveShadow = true;
-            this.scene.add(aboveWall);
+            // Above doorway
+            if (aboveHeight > 0) {
+                const aboveGeom = new THREE.BoxGeometry(thickness, aboveHeight, doorwayWidth);
+                const aboveWall = new THREE.Mesh(aboveGeom, this.wallMaterial);
+                aboveWall.position.set(x, doorwayHeight + aboveHeight / 2, z);
+                aboveWall.castShadow = true;
+                aboveWall.receiveShadow = true;
+                this.scene.add(aboveWall);
+                this.dynamicWalls.push(aboveWall);
+            }
         }
     }
 

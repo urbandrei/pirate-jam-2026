@@ -13,6 +13,7 @@ import { VRScene } from './scene.js';
 import { Hands } from './hands.js';
 import { Network } from './network.js';
 import { RemotePlayers } from './remote-players.js';
+import { BuildingSystem } from './building-system.js';
 import { NETWORK_RATE, GIANT_SCALE } from '../../pc/shared/constants.js';
 
 class VRGame {
@@ -21,6 +22,7 @@ class VRGame {
         this.hands = null;
         this.network = null;
         this.remotePlayers = null;
+        this.buildingSystem = null;
         this.disposed = false;
 
         // Player count HUD
@@ -66,6 +68,10 @@ class VRGame {
         this.network = new Network();
         this.setupNetworkCallbacks();
 
+        // Setup building system (after network is ready)
+        this.buildingSystem = new BuildingSystem(this.scene.scene, this.hands, this.network);
+        this.setupBuildingCallbacks();
+
         // Hook cleanup to VR session end
         this.scene.onSessionEnd = () => {
             console.log('[VRGame] VR session ended, cleaning up...');
@@ -92,10 +98,48 @@ class VRGame {
             // Update player count HUD
             const playerCount = Object.keys(state.players).length;
             this.updatePlayerCountHUD(playerCount);
+
+            // Update building system with world state (miniature replica)
+            if (state.world && this.buildingSystem) {
+                this.buildingSystem.onWorldStateUpdate(state.world);
+            }
+
+            // Update VR scene world geometry (full-size walls)
+            if (state.world && this.scene) {
+                this.scene.rebuildFromWorldState(state.world);
+            }
         };
 
         this.network.onPlayerLeft = (playerId) => {
             this.remotePlayers.removePlayer(playerId);
+        };
+    }
+
+    setupBuildingCallbacks() {
+        // Hook into hands for pinch events
+        const originalOnPinchStart = this.hands.onPinchStart;
+        const originalOnPinchEnd = this.hands.onPinchEnd;
+
+        this.hands.onPinchStart = (hand) => {
+            // Try building system first
+            if (this.buildingSystem && this.buildingSystem.handlePinchStart(hand)) {
+                return; // Building system handled it
+            }
+            // Otherwise, call original handler if exists
+            if (originalOnPinchStart) {
+                originalOnPinchStart(hand);
+            }
+        };
+
+        this.hands.onPinchEnd = (hand) => {
+            // Try building system first
+            if (this.buildingSystem && this.buildingSystem.handlePinchEnd(hand)) {
+                return; // Building system handled it
+            }
+            // Otherwise, call original handler if exists
+            if (originalOnPinchEnd) {
+                originalOnPinchEnd(hand);
+            }
         };
     }
 
@@ -171,6 +215,11 @@ class VRGame {
                     // Log but don't crash - hands may not be ready yet
                     console.debug('Hand update skipped:', handError.message);
                 }
+            }
+
+            // Update building system
+            if (this.buildingSystem) {
+                this.buildingSystem.update();
             }
 
             // Send pose to server at fixed rate
@@ -291,6 +340,15 @@ class VRGame {
                 this.remotePlayers = null;
             } catch (err) {
                 console.warn('[VRGame] Error disposing remote players:', err);
+            }
+        }
+
+        if (this.buildingSystem) {
+            try {
+                this.buildingSystem.dispose();
+                this.buildingSystem = null;
+            } catch (err) {
+                console.warn('[VRGame] Error disposing building system:', err);
             }
         }
 
