@@ -3,7 +3,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, WORLD_SIZE, ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH } from '../shared/constants.js';
+import { COLORS, WORLD_SIZE, ROOM_SIZE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH } from '../shared/constants.js';
 
 export class Scene {
     constructor(container) {
@@ -181,6 +181,89 @@ export class Scene {
             wallHeight, wallThickness,
             doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight
         );
+
+        // Add surrounding rooms
+        this.setupSurroundingRooms(wallMaterial);
+    }
+
+    /**
+     * Create 16 surrounding rooms around the main room
+     * Layout: 5 rooms on top/bottom rows, 3 rooms on left/right sides
+     */
+    setupSurroundingRooms(wallMaterial) {
+        const smallSize = SMALL_ROOM_SIZE;    // ~6.67m
+        const halfMain = ROOM_SIZE / 2;       // 10m
+        const halfSmall = smallSize / 2;      // ~3.33m
+        const smallHeight = smallSize;        // Same height as width
+
+        // Positions for each small room center
+        const positions = [
+            // Top row (5 rooms, z = -halfMain - halfSmall)
+            { x: -smallSize * 2, z: -halfMain - halfSmall },
+            { x: -smallSize, z: -halfMain - halfSmall },
+            { x: 0, z: -halfMain - halfSmall },
+            { x: smallSize, z: -halfMain - halfSmall },
+            { x: smallSize * 2, z: -halfMain - halfSmall },
+
+            // Left side (3 rooms, x = -halfMain - halfSmall)
+            { x: -halfMain - halfSmall, z: -smallSize },
+            { x: -halfMain - halfSmall, z: 0 },
+            { x: -halfMain - halfSmall, z: smallSize },
+
+            // Right side (3 rooms, x = halfMain + halfSmall)
+            { x: halfMain + halfSmall, z: -smallSize },
+            { x: halfMain + halfSmall, z: 0 },
+            { x: halfMain + halfSmall, z: smallSize },
+
+            // Bottom row (5 rooms, z = halfMain + halfSmall)
+            { x: -smallSize * 2, z: halfMain + halfSmall },
+            { x: -smallSize, z: halfMain + halfSmall },
+            { x: 0, z: halfMain + halfSmall },
+            { x: smallSize, z: halfMain + halfSmall },
+            { x: smallSize * 2, z: halfMain + halfSmall },
+        ];
+
+        // Create each small room (4 solid walls, no doorways)
+        positions.forEach(pos => {
+            this.createSmallRoom(wallMaterial, pos, smallSize, smallHeight);
+        });
+    }
+
+    /**
+     * Create a small room with 4 solid walls (no doorways)
+     */
+    createSmallRoom(material, center, size, height) {
+        const half = size / 2;
+        const thickness = WALL_THICKNESS;
+
+        // North wall (z = center.z - half)
+        this.createSolidWall(material, center.x, center.z - half, size, height, thickness, 'z');
+        // South wall (z = center.z + half)
+        this.createSolidWall(material, center.x, center.z + half, size, height, thickness, 'z');
+        // East wall (x = center.x + half)
+        this.createSolidWall(material, center.x + half, center.z, size, height, thickness, 'x');
+        // West wall (x = center.x - half)
+        this.createSolidWall(material, center.x - half, center.z, size, height, thickness, 'x');
+    }
+
+    /**
+     * Create a solid wall (no doorway)
+     */
+    createSolidWall(material, x, z, length, height, thickness, axis) {
+        let geometry;
+        if (axis === 'z') {
+            // Wall along X-axis
+            geometry = new THREE.BoxGeometry(length, height, thickness);
+        } else {
+            // Wall along Z-axis
+            geometry = new THREE.BoxGeometry(thickness, height, length);
+        }
+
+        const wall = new THREE.Mesh(geometry, material);
+        wall.position.set(x, height / 2, z);
+        wall.castShadow = true;
+        wall.receiveShadow = true;
+        this.scene.add(wall);
     }
 
     /**

@@ -41,7 +41,8 @@ export const WORLD_SIZE = 100; // Total size of the play area
 export const WORLD_HALF = 50;
 
 // Room constants
-export const ROOM_SIZE = 5; // 5m × 5m × 5m
+export const ROOM_SIZE = 20; // 20m × 20m × 20m (4x original size)
+export const SMALL_ROOM_SIZE = ROOM_SIZE / 3; // ~6.67m for surrounding rooms
 export const WALL_THICKNESS = 0.2; // 0.2m thin walls
 export const DOORWAY_HEIGHT = PLAYER_HEIGHT * 1.3; // ~2.34m
 export const DOORWAY_WIDTH = 1.2; // 1.2m wide doorways

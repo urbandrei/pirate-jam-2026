@@ -10,7 +10,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, WORLD_SIZE, GIANT_SCALE, ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH } from '../../pc/shared/constants.js';
+import { COLORS, WORLD_SIZE, GIANT_SCALE, ROOM_SIZE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH } from '../../pc/shared/constants.js';
 
 export class VRScene {
     constructor(container) {
@@ -203,6 +203,9 @@ export class VRScene {
             wallHeight, wallThickness,
             doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight
         );
+
+        // Add surrounding rooms
+        this.setupSurroundingRooms(wallMaterial, scale);
     }
 
     /**
@@ -251,6 +254,86 @@ export class VRScene {
             aboveWall.position.set(position.x, doorwayHeight + aboveDoorHeight / 2, position.z);
             this.scene.add(aboveWall);
         }
+    }
+
+    /**
+     * Create 16 surrounding rooms around the main room
+     * Layout: 5 rooms on top/bottom rows, 3 rooms on left/right sides
+     * All dimensions already in VR scale (1/GIANT_SCALE)
+     */
+    setupSurroundingRooms(wallMaterial, scale) {
+        const smallSize = SMALL_ROOM_SIZE * scale;    // ~0.667m in VR
+        const halfMain = ROOM_SIZE * scale / 2;      // 1m in VR
+        const halfSmall = smallSize / 2;             // ~0.333m in VR
+        const smallHeight = smallSize;               // Same height as width
+
+        // Positions for each small room center (in VR scale)
+        const positions = [
+            // Top row (5 rooms, z = -halfMain - halfSmall)
+            { x: -smallSize * 2, z: -halfMain - halfSmall },
+            { x: -smallSize, z: -halfMain - halfSmall },
+            { x: 0, z: -halfMain - halfSmall },
+            { x: smallSize, z: -halfMain - halfSmall },
+            { x: smallSize * 2, z: -halfMain - halfSmall },
+
+            // Left side (3 rooms, x = -halfMain - halfSmall)
+            { x: -halfMain - halfSmall, z: -smallSize },
+            { x: -halfMain - halfSmall, z: 0 },
+            { x: -halfMain - halfSmall, z: smallSize },
+
+            // Right side (3 rooms, x = halfMain + halfSmall)
+            { x: halfMain + halfSmall, z: -smallSize },
+            { x: halfMain + halfSmall, z: 0 },
+            { x: halfMain + halfSmall, z: smallSize },
+
+            // Bottom row (5 rooms, z = halfMain + halfSmall)
+            { x: -smallSize * 2, z: halfMain + halfSmall },
+            { x: -smallSize, z: halfMain + halfSmall },
+            { x: 0, z: halfMain + halfSmall },
+            { x: smallSize, z: halfMain + halfSmall },
+            { x: smallSize * 2, z: halfMain + halfSmall },
+        ];
+
+        // Create each small room (4 solid walls, no doorways)
+        positions.forEach(pos => {
+            this.createSmallRoom(wallMaterial, pos, smallSize, smallHeight, scale);
+        });
+    }
+
+    /**
+     * Create a small room with 4 solid walls (no doorways)
+     * All dimensions already in VR scale
+     */
+    createSmallRoom(material, center, size, height, scale) {
+        const half = size / 2;
+        const thickness = WALL_THICKNESS * scale;
+
+        // North wall (z = center.z - half)
+        this.createSolidWall(material, center.x, center.z - half, size, height, thickness, 'z');
+        // South wall (z = center.z + half)
+        this.createSolidWall(material, center.x, center.z + half, size, height, thickness, 'z');
+        // East wall (x = center.x + half)
+        this.createSolidWall(material, center.x + half, center.z, size, height, thickness, 'x');
+        // West wall (x = center.x - half)
+        this.createSolidWall(material, center.x - half, center.z, size, height, thickness, 'x');
+    }
+
+    /**
+     * Create a solid wall (no doorway)
+     */
+    createSolidWall(material, x, z, length, height, thickness, axis) {
+        let geometry;
+        if (axis === 'z') {
+            // Wall along X-axis
+            geometry = new THREE.BoxGeometry(length, height, thickness);
+        } else {
+            // Wall along Z-axis
+            geometry = new THREE.BoxGeometry(thickness, height, length);
+        }
+
+        const wall = new THREE.Mesh(geometry, material);
+        wall.position.set(x, height / 2, z);
+        this.scene.add(wall);
     }
 
     async setupVRButton() {
