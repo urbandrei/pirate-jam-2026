@@ -16,6 +16,11 @@ export class HUD {
         this.thirstFill = document.getElementById('thirst-fill');
         this.restFill = document.getElementById('rest-fill');
 
+        // Debug: verify DOM elements exist
+        console.log('[HUD] Constructor - hungerFill:', this.hungerFill);
+        console.log('[HUD] Constructor - thirstFill:', this.thirstFill);
+        console.log('[HUD] Constructor - restFill:', this.restFill);
+
         // Track last values to avoid unnecessary DOM updates
         this._lastNeeds = { hunger: -1, thirst: -1, rest: -1 };
     }

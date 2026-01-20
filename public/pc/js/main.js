@@ -71,8 +71,11 @@ class Game {
                 this.player.updateFromServer(myState);
 
                 // Update HUD with player needs
+                console.log('[Main] myState.needs:', myState.needs);
                 if (myState.needs) {
                     this.hud.updateNeeds(myState.needs);
+                } else {
+                    console.warn('[Main] No needs in player state!');
                 }
 
                 // Check if we're grabbed

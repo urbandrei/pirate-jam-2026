@@ -177,12 +177,20 @@ function gameLoop() {
             const players = gameState.getAllPlayers();
             const pcPlayer = players.find(p => p.type === 'pc');
             if (pcPlayer) {
-                console.log('[NeedsDebug] Player needs:', JSON.stringify(pcPlayer.needs));
+                console.log('[NeedsDebug] Raw player needs:', JSON.stringify(pcPlayer.needs));
+            }
+
+            const stateToSend = gameState.getSerializableState();
+
+            // Debug: verify needs are in serialized state
+            if (pcPlayer) {
+                const serializedNeeds = stateToSend.players[pcPlayer.id]?.needs;
+                console.log('[NeedsDebug] Serialized needs:', JSON.stringify(serializedNeeds));
             }
 
             io.emit('message', {
                 type: 'STATE_UPDATE',
-                state: gameState.getSerializableState()
+                state: stateToSend
             });
         }
         lastNetworkTime = now;
