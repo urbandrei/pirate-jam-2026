@@ -156,17 +156,59 @@ class WorldState {
     }
 
     /**
-     * Regenerate all doorways based on current grid state
-     * Doorways are created between adjacent cells with DIFFERENT mergeGroups
+     * Regenerate doorways using minimum spanning tree algorithm
+     * This ensures all rooms are connected with the minimum number of doorways
      */
     regenerateDoorways() {
         this.doorways = [];
+
+        // Get unique mergeGroups (rooms)
+        const mergeGroups = new Set();
+        for (const [key, cell] of this.grid) {
+            mergeGroups.add(cell.mergeGroup);
+        }
+        const rooms = Array.from(mergeGroups);
+
+        // If only one room, no doorways needed
+        if (rooms.length <= 1) return;
+
+        // Find all possible edges (adjacent rooms with different mergeGroups)
+        const edges = this.findAllPossibleDoorways();
+
+        // Shuffle edges for random MST
+        this.shuffleArray(edges);
+
+        // Use Kruskal's algorithm with Union-Find
+        const parent = new Map();
+        rooms.forEach(r => parent.set(r, r));
+
+        const find = (x) => {
+            if (parent.get(x) !== x) parent.set(x, find(parent.get(x)));
+            return parent.get(x);
+        };
+
+        const union = (a, b) => {
+            parent.set(find(a), find(b));
+        };
+
+        // Add edges until all rooms connected (MST has n-1 edges for n nodes)
+        for (const edge of edges) {
+            if (find(edge.room1) !== find(edge.room2)) {
+                union(edge.room1, edge.room2);
+                this.doorways.push(edge);
+            }
+        }
+    }
+
+    /**
+     * Find all possible doorway locations between adjacent cells with different mergeGroups
+     */
+    findAllPossibleDoorways() {
+        const edges = [];
         const processed = new Set();
 
         for (const [key, cell] of this.grid) {
             const [x, z] = key.split(',').map(Number);
-
-            // Check all four directions
             const directions = [
                 { dx: 0, dz: -1, wall: 'north' },
                 { dx: 0, dz: 1, wall: 'south' },
@@ -179,32 +221,35 @@ class WorldState {
                 const nz = z + dir.dz;
                 const neighborKey = `${nx},${nz}`;
 
-                // Skip if neighbor doesn't exist
                 if (!this.grid.has(neighborKey)) continue;
-
                 const neighbor = this.grid.get(neighborKey);
-
-                // Skip if same mergeGroup (no doorway needed - open space)
                 if (cell.mergeGroup === neighbor.mergeGroup) continue;
 
-                // Create unique doorway ID (smaller coordinates first for consistency)
                 const doorId = this.getDoorwayKey(x, z, nx, nz);
-
-                // Skip if already processed
                 if (processed.has(doorId)) continue;
                 processed.add(doorId);
 
-                // Calculate doorway world position (on the shared wall)
-                const position = this.calculateDoorwayPosition(x, z, dir.wall);
-
-                this.doorways.push({
+                edges.push({
                     id: doorId,
-                    room1: { x, z },
-                    room2: { x: nx, z: nz },
+                    room1: cell.mergeGroup,
+                    room2: neighbor.mergeGroup,
+                    cell1: { x, z },
+                    cell2: { x: nx, z: nz },
                     wall: dir.wall,
-                    position: position
+                    position: this.calculateDoorwayPosition(x, z, dir.wall)
                 });
             }
+        }
+        return edges;
+    }
+
+    /**
+     * Fisher-Yates shuffle for random MST
+     */
+    shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
         }
     }
 

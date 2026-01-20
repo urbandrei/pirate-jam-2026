@@ -70,6 +70,13 @@ export class BuildingSystem {
             opacity: 0.4
         });
 
+        // Red material for doorway indicators
+        this.doorwayMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff0000,
+            transparent: true,
+            opacity: 0.8
+        });
+
         // Floor material for grid reference
         this.floorMaterial = new THREE.MeshBasicMaterial({
             color: 0x555555,
@@ -82,26 +89,11 @@ export class BuildingSystem {
         this.pedestalGroup = new THREE.Group();
         this.pedestalGroup.position.set(0, 0, 0); // Center of VR space
 
-        // Pedestal base (circular platform)
-        const pedestalGeom = new THREE.CylinderGeometry(0.3, 0.35, 0.03, 32);
-        const pedestalMat = new THREE.MeshStandardMaterial({
-            color: 0x333333,
-            roughness: 0.3,
-            metalness: 0.7
-        });
-        const pedestal = new THREE.Mesh(pedestalGeom, pedestalMat);
-        pedestal.position.y = this.pedestalHeight;
-        this.pedestalGroup.add(pedestal);
+        // NO pedestal base or stem - replica floats at table height
 
-        // Pedestal stem
-        const stemGeom = new THREE.CylinderGeometry(0.05, 0.08, this.pedestalHeight - 0.03, 16);
-        const stem = new THREE.Mesh(stemGeom, pedestalMat);
-        stem.position.y = this.pedestalHeight / 2;
-        this.pedestalGroup.add(stem);
-
-        // Replica container (sits on top of pedestal)
+        // Replica container (floats at table height)
         this.replicaGroup = new THREE.Group();
-        this.replicaGroup.position.y = this.pedestalHeight + 0.02;
+        this.replicaGroup.position.y = this.pedestalHeight;
         this.pedestalGroup.add(this.replicaGroup);
 
         // Grid reference lines
@@ -589,6 +581,45 @@ export class BuildingSystem {
         for (const [mergeGroup, cells] of roomGroups) {
             this.createRoomBlock(cells);
         }
+
+        // Create doorway indicators (red rods)
+        if (this.worldState.doorways) {
+            for (const doorway of this.worldState.doorways) {
+                this.createDoorwayIndicator(doorway);
+            }
+        }
+    }
+
+    /**
+     * Create a horizontal red rod between two rooms to indicate a doorway
+     */
+    createDoorwayIndicator(doorway) {
+        const x1 = doorway.cell1.x * this.gridCellSize;
+        const z1 = doorway.cell1.z * this.gridCellSize;
+        const x2 = doorway.cell2.x * this.gridCellSize;
+        const z2 = doorway.cell2.z * this.gridCellSize;
+
+        const centerX = (x1 + x2) / 2;
+        const centerZ = (z1 + z2) / 2;
+
+        // Determine rod orientation based on wall direction
+        const isHorizontal = doorway.wall === 'east' || doorway.wall === 'west';
+        const rodLength = this.gridCellSize * 0.3; // Short rod
+        const rodRadius = this.gridCellSize * 0.05; // Thin
+
+        const geom = new THREE.CylinderGeometry(rodRadius, rodRadius, rodLength, 8);
+        const rod = new THREE.Mesh(geom, this.doorwayMaterial);
+
+        // Rotate to lie flat and orient correctly
+        rod.rotation.x = Math.PI / 2; // Lay flat
+        if (isHorizontal) {
+            rod.rotation.z = Math.PI / 2; // Point along X-axis
+        }
+
+        rod.position.set(centerX, this.gridCellSize * 0.25, centerZ);
+
+        this.replicaGroup.add(rod);
+        this.wallMeshes.push(rod);
     }
 
     /**
@@ -639,6 +670,7 @@ export class BuildingSystem {
 
         // Dispose materials
         if (this.roomMaterial) this.roomMaterial.dispose();
+        if (this.doorwayMaterial) this.doorwayMaterial.dispose();
         if (this.floorMaterial) this.floorMaterial.dispose();
 
         // Remove groups from scene
