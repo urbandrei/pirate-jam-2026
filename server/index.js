@@ -16,11 +16,16 @@ const PlayerManager = require('./player-manager');
 const PhysicsValidator = require('./physics-validator');
 const MessageHandler = require('./message-handler');
 const NeedsSystem = require('./systems/needs-system');
+const RoomManager = require('./systems/room-manager');
 
 // Configuration
 const PORT = process.env.PORT || 443;
 const TICK_RATE = 60; // Physics ticks per second
 const NETWORK_RATE = 20; // State updates per second
+
+// Dev server configuration (in-memory, resets on restart)
+let devServerUrl = null;
+const DEV_SERVER_PASSWORD = process.env.DEV_SERVER_PASSWORD || 'dev123';
 
 // SSL Configuration (for production with Let's Encrypt)
 const SSL_CERT_PATH = process.env.SSL_CERT_PATH || '/etc/letsencrypt/live/urbandrei.com/fullchain.pem';
@@ -66,19 +71,92 @@ app.get('/', (req, res) => {
         <!DOCTYPE html>
         <html>
         <head><title>Pirate Jam 2026</title></head>
-        <body style="font-family: sans-serif; padding: 20px;">
+        <body style="font-family: sans-serif; padding: 20px; background: #1a1a2e; color: #eee;">
             <h1>Pirate Jam 2026 - Giants vs Tiny</h1>
             <ul>
-                <li><a href="/pc/">PC Client</a> - WASD + Mouse controls</li>
-                <li><a href="/vr/">VR Client</a> - Meta Quest WebXR</li>
+                <li><a href="/pc/" style="color: #4fc3f7;">PC Client</a> - WASD + Mouse controls</li>
+                <li><a href="/vr/" style="color: #4fc3f7;">VR Client</a> - Meta Quest WebXR</li>
             </ul>
             <p>Players connected: <span id="count">0</span></p>
+
+            <hr style="margin: 20px 0; border-color: #444;">
+            <div id="dev-server-section" style="display: none;">
+                <h3>Development Server</h3>
+                <p>
+                    <span id="dev-status" style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: gray; margin-right: 8px;"></span>
+                    <a id="dev-link" href="#" target="_blank" style="color: #4fc3f7;">Dev Server</a>
+                    <span id="dev-status-text" style="color: #888; margin-left: 10px;">(checking...)</span>
+                </p>
+            </div>
+
             <script>
+                // Update player count
                 setInterval(() => {
                     fetch('/api/status').then(r => r.json()).then(d => {
                         document.getElementById('count').textContent = d.playerCount;
                     });
                 }, 1000);
+
+                // Check dev server configuration and status
+                let devServerUrl = null;
+
+                async function checkDevServer() {
+                    try {
+                        const response = await fetch('/api/dev-server');
+                        const data = await response.json();
+
+                        if (data.configured && data.url) {
+                            devServerUrl = data.url;
+                            document.getElementById('dev-server-section').style.display = 'block';
+                            document.getElementById('dev-link').href = devServerUrl;
+                            document.getElementById('dev-link').textContent = devServerUrl;
+                            checkDevServerHealth();
+                        } else {
+                            document.getElementById('dev-server-section').style.display = 'none';
+                        }
+                    } catch (e) {
+                        console.error('Failed to check dev server config:', e);
+                    }
+                }
+
+                async function checkDevServerHealth() {
+                    if (!devServerUrl) return;
+
+                    const statusDot = document.getElementById('dev-status');
+                    const statusText = document.getElementById('dev-status-text');
+
+                    try {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+                        const response = await fetch(devServerUrl + '/health', {
+                            signal: controller.signal,
+                            mode: 'cors'
+                        });
+                        clearTimeout(timeoutId);
+
+                        if (response.ok) {
+                            statusDot.style.background = '#4caf50';
+                            statusText.textContent = '(online)';
+                            statusText.style.color = '#4caf50';
+                        } else {
+                            statusDot.style.background = '#f44336';
+                            statusText.textContent = '(offline)';
+                            statusText.style.color = '#f44336';
+                        }
+                    } catch (e) {
+                        statusDot.style.background = '#f44336';
+                        statusText.textContent = '(offline)';
+                        statusText.style.color = '#f44336';
+                    }
+                }
+
+                // Initial check
+                checkDevServer();
+
+                // Poll dev server config every 30 seconds, health every 5 seconds
+                setInterval(checkDevServer, 30000);
+                setInterval(checkDevServerHealth, 5000);
             </script>
         </body>
         </html>
@@ -93,11 +171,51 @@ app.get('/api/status', (req, res) => {
     });
 });
 
+// Healthcheck endpoint
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        uptime: process.uptime()
+    });
+});
+
+// Get dev server URL
+app.get('/api/dev-server', (req, res) => {
+    res.json({
+        url: devServerUrl,
+        configured: devServerUrl !== null
+    });
+});
+
+// Set dev server URL (password protected)
+app.post('/api/dev-server', express.json(), (req, res) => {
+    const password = req.query.password || req.headers['x-dev-password'];
+
+    if (password !== DEV_SERVER_PASSWORD) {
+        return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    const { url } = req.body;
+
+    if (url && typeof url === 'string') {
+        devServerUrl = url.trim() || null;
+        console.log(`[Server] Dev server URL set to: ${devServerUrl}`);
+        res.json({ success: true, url: devServerUrl });
+    } else if (url === null || url === '') {
+        devServerUrl = null;
+        console.log('[Server] Dev server URL cleared');
+        res.json({ success: true, url: null });
+    } else {
+        res.status(400).json({ error: 'Invalid URL format' });
+    }
+});
+
 // Initialize game systems
 const gameState = new GameState();
 const playerManager = new PlayerManager(gameState);
 const physicsValidator = new PhysicsValidator(gameState);
 const messageHandler = new MessageHandler(gameState, playerManager);
+const roomManager = new RoomManager(gameState.worldState, gameState);
 
 // Socket.IO event handling
 io.on('connection', (socket) => {

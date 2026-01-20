@@ -10,7 +10,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, WORLD_SIZE, GIANT_SCALE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH } from '../../pc/shared/constants.js';
+import { COLORS, WORLD_SIZE, GIANT_SCALE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH, ROOM_TYPES, DEFAULT_ROOM_TYPE } from '../../pc/shared/constants.js';
 
 export class VRScene {
     constructor(container) {
@@ -24,6 +24,7 @@ export class VRScene {
 
             // Dynamic wall meshes for cleanup
             this.dynamicWalls = [];
+            this.dynamicFloors = [];
             this.lastWorldVersion = -1;
 
             // VR scale factor
@@ -167,12 +168,14 @@ export class VRScene {
         console.log(`[VRScene] Rebuilding walls from world state, version=${worldState.version}`);
         this.lastWorldVersion = worldState.version;
 
-        // Clear existing dynamic walls
+        // Clear existing dynamic elements
         this.clearDynamicWalls();
+        this.clearDynamicFloors();
 
-        // Build walls for each cell in the grid
+        // Build walls and floors for each cell in the grid
         for (const cell of worldState.grid) {
             this.createCellWalls(cell, worldState);
+            this.createCellFloor(cell);
         }
     }
 
@@ -185,6 +188,45 @@ export class VRScene {
             if (mesh.geometry) mesh.geometry.dispose();
         }
         this.dynamicWalls = [];
+    }
+
+    /**
+     * Clear all dynamic floor meshes
+     */
+    clearDynamicFloors() {
+        for (const mesh of this.dynamicFloors) {
+            this.scene.remove(mesh);
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) mesh.material.dispose();
+        }
+        this.dynamicFloors = [];
+    }
+
+    /**
+     * Create a colored floor for a single cell based on room type (VR scale)
+     */
+    createCellFloor(cell) {
+        const cellSize = SMALL_ROOM_SIZE * this.scale;
+        const x = cell.x * cellSize;
+        const z = cell.z * cellSize;
+
+        const roomType = cell.roomType || DEFAULT_ROOM_TYPE;
+        const roomConfig = ROOM_TYPES[roomType] || ROOM_TYPES[DEFAULT_ROOM_TYPE];
+
+        const geometry = new THREE.PlaneGeometry(cellSize * 0.95, cellSize * 0.95);
+        const material = new THREE.MeshBasicMaterial({
+            color: roomConfig.color,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide
+        });
+
+        const floor = new THREE.Mesh(geometry, material);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.set(x, 0.002, z); // Scaled y offset
+
+        this.scene.add(floor);
+        this.dynamicFloors.push(floor);
     }
 
     /**

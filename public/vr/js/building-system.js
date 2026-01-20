@@ -5,9 +5,9 @@
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import {
-    GIANT_SCALE, SMALL_ROOM_SIZE
+    GIANT_SCALE, SMALL_ROOM_SIZE, ROOM_TYPES, DEFAULT_ROOM_TYPE
 } from '../../pc/shared/constants.js';
-import { createPlaceBlockMessage } from '../../pc/shared/protocol.js';
+import { createPlaceBlockMessage, createConvertRoomMessage } from '../../pc/shared/protocol.js';
 
 export class BuildingSystem {
     constructor(scene, hands, network) {
@@ -33,6 +33,11 @@ export class BuildingSystem {
         // 0 = east-west (X-axis), 1 = north-south (Z-axis)
         this.currentRotation = 0;
 
+        // Room type selection
+        this.selectedRoomType = 'generic';
+        this.roomTypePaletteGroup = null;
+        this.roomTypeSwatches = [];
+
         // World state cache
         this.worldState = null;
         this.lastWorldVersion = -1;
@@ -57,6 +62,7 @@ export class BuildingSystem {
         this.createMaterials();
         this.createPedestal();
         this.createPalette();
+        this.createRoomTypePalette();
         this.createGhostBlock();
 
         console.log('[BuildingSystem] Initialized');
@@ -163,6 +169,60 @@ export class BuildingSystem {
         this.scene.add(this.paletteGroup);
     }
 
+    /**
+     * Create the room type selection palette (left of pedestal)
+     */
+    createRoomTypePalette() {
+        this.roomTypePaletteGroup = new THREE.Group();
+
+        // Position to the left of pedestal
+        this.roomTypePaletteGroup.position.set(-0.25, this.pedestalHeight + 0.05, 0);
+
+        // Backing plate
+        const backingGeom = new THREE.BoxGeometry(0.12, 0.18, 0.01);
+        const backingMat = new THREE.MeshStandardMaterial({
+            color: 0x222222,
+            roughness: 0.8,
+            transparent: true,
+            opacity: 0.7
+        });
+        const backing = new THREE.Mesh(backingGeom, backingMat);
+        backing.position.z = 0.008;
+        this.roomTypePaletteGroup.add(backing);
+
+        // Create swatches for each room type
+        const roomTypes = ['generic', 'farming', 'processing', 'cafeteria', 'dorm', 'waiting'];
+        const swatchSize = 0.025;
+        const padding = 0.005;
+        const startY = (roomTypes.length - 1) * (swatchSize + padding) / 2;
+
+        roomTypes.forEach((type, index) => {
+            const config = ROOM_TYPES[type];
+            const geom = new THREE.BoxGeometry(swatchSize, swatchSize, 0.008);
+            const mat = new THREE.MeshBasicMaterial({ color: config.color });
+            const swatch = new THREE.Mesh(geom, mat);
+
+            swatch.position.set(0, startY - index * (swatchSize + padding), 0.01);
+            swatch.userData = { roomType: type, isSwatch: true };
+
+            this.roomTypePaletteGroup.add(swatch);
+            this.roomTypeSwatches.push(swatch);
+        });
+
+        this.scene.add(this.roomTypePaletteGroup);
+        this.updateSwatchHighlight();
+    }
+
+    /**
+     * Update visual highlight on selected room type swatch
+     */
+    updateSwatchHighlight() {
+        for (const swatch of this.roomTypeSwatches) {
+            const isSelected = swatch.userData.roomType === this.selectedRoomType;
+            swatch.scale.set(isSelected ? 1.4 : 1.0, isSelected ? 1.4 : 1.0, 1.0);
+        }
+    }
+
     createGhostBlock() {
         // Semi-transparent preview of where block will be placed
         const geom = new THREE.BoxGeometry(
@@ -227,7 +287,7 @@ export class BuildingSystem {
     }
 
     /**
-     * Handle pinch start - check if grabbing a palette block
+     * Handle pinch start - check if grabbing a palette block or selecting room type
      */
     handlePinchStart(hand) {
         const pinchPoint = this.hands.getPinchPointPosition(hand);
@@ -240,10 +300,26 @@ export class BuildingSystem {
             pinchPoint.z / GIANT_SCALE
         );
 
-        // Check if pinching a palette block
+        // Check if pinching a room type swatch
+        const selectedType = this.checkRoomTypePaletteHit(pinchVR);
+        if (selectedType) {
+            this.selectedRoomType = selectedType;
+            this.updateSwatchHighlight();
+            console.log(`[BuildingSystem] Selected room type: ${selectedType}`);
+            return true;
+        }
+
+        // Check if pinching a palette block (for new placement)
         const blockType = this.checkPaletteHit(pinchVR);
         if (blockType) {
             this.grabBlockFromPalette(blockType, hand);
+            return true;
+        }
+
+        // Check if pinching an existing room in replica (for conversion)
+        const hitCell = this.checkReplicaRoomHit(pinchVR);
+        if (hitCell && this.selectedRoomType !== 'generic') {
+            this.requestRoomConversion(hitCell.x, hitCell.z);
             return true;
         }
 
@@ -280,6 +356,56 @@ export class BuildingSystem {
             }
         }
         return null;
+    }
+
+    /**
+     * Check if a point is near any room type swatch
+     */
+    checkRoomTypePaletteHit(point) {
+        for (const swatch of this.roomTypeSwatches) {
+            const worldPos = new THREE.Vector3();
+            swatch.getWorldPosition(worldPos);
+
+            if (point.distanceTo(worldPos) < 0.04) { // 4cm grab radius
+                return swatch.userData.roomType;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Check if a point is hitting an existing room in the miniature replica
+     */
+    checkReplicaRoomHit(point) {
+        if (!this.worldState) return null;
+
+        // Get replica group world position
+        const replicaWorldPos = new THREE.Vector3();
+        this.replicaGroup.getWorldPosition(replicaWorldPos);
+
+        // Calculate relative position
+        const relX = point.x - replicaWorldPos.x;
+        const relZ = point.z - replicaWorldPos.z;
+        const relY = point.y - replicaWorldPos.y;
+
+        // Check if within replica height
+        if (relY < 0 || relY > this.gridCellSize * 0.6) return null;
+
+        // Convert to grid coordinates
+        const gridX = Math.round(relX / this.gridCellSize);
+        const gridZ = Math.round(relZ / this.gridCellSize);
+
+        // Check if this cell exists
+        const cell = this.worldState.grid.find(c => c.x === gridX && c.z === gridZ);
+        return cell || null;
+    }
+
+    /**
+     * Request room type conversion from server
+     */
+    requestRoomConversion(gridX, gridZ) {
+        console.log(`[BuildingSystem] Requesting room conversion at (${gridX}, ${gridZ}) to ${this.selectedRoomType}`);
+        this.network.send(createConvertRoomMessage(gridX, gridZ, this.selectedRoomType));
     }
 
     /**
@@ -348,8 +474,8 @@ export class BuildingSystem {
         }
 
         // Send placement request to server
-        console.log(`[BuildingSystem] Requesting placement at (${gridCoords.x}, ${gridCoords.z}), type=${blockType}, rotation=${rotation}`);
-        this.network.send(createPlaceBlockMessage(gridCoords.x, gridCoords.z, blockType, rotation));
+        console.log(`[BuildingSystem] Requesting placement at (${gridCoords.x}, ${gridCoords.z}), type=${blockType}, rotation=${rotation}, roomType=${this.selectedRoomType}`);
+        this.network.send(createPlaceBlockMessage(gridCoords.x, gridCoords.z, blockType, rotation, this.selectedRoomType));
     }
 
     /**
@@ -623,10 +749,14 @@ export class BuildingSystem {
     }
 
     /**
-     * Create a translucent blue block for a room (group of cells with same mergeGroup)
-     * Uses 80% scale factor to create 20% gaps between separate rooms
+     * Create a translucent block for a room (group of cells with same mergeGroup)
+     * Uses room type color and 80% scale factor to create 20% gaps between separate rooms
      */
     createRoomBlock(cells) {
+        // Get room type from first cell (all cells in same mergeGroup have same type)
+        const roomType = cells[0].roomType || DEFAULT_ROOM_TYPE;
+        const roomConfig = ROOM_TYPES[roomType] || ROOM_TYPES[DEFAULT_ROOM_TYPE];
+
         // Find bounding box of all cells in this room
         const minX = Math.min(...cells.map(c => c.x));
         const maxX = Math.max(...cells.map(c => c.x));
@@ -643,9 +773,16 @@ export class BuildingSystem {
         const centerX = ((minX + maxX) / 2) * this.gridCellSize;
         const centerZ = ((minZ + maxZ) / 2) * this.gridCellSize;
 
-        // Create translucent blue block
+        // Create material with room type color
+        const material = new THREE.MeshBasicMaterial({
+            color: roomConfig.color,
+            transparent: true,
+            opacity: 0.5
+        });
+
+        // Create block
         const geom = new THREE.BoxGeometry(width, height, depth);
-        const mesh = new THREE.Mesh(geom, this.roomMaterial);
+        const mesh = new THREE.Mesh(geom, material);
         mesh.position.set(centerX, height / 2, centerZ);
 
         this.replicaGroup.add(mesh);
@@ -680,6 +817,12 @@ export class BuildingSystem {
         if (this.paletteGroup) {
             this.scene.remove(this.paletteGroup);
         }
+        if (this.roomTypePaletteGroup) {
+            this.scene.remove(this.roomTypePaletteGroup);
+        }
+
+        // Clear room type swatches
+        this.roomTypeSwatches = [];
 
         console.log('[BuildingSystem] Disposed');
     }

@@ -32,6 +32,9 @@ class MessageHandler {
             case 'PLACE_BLOCK':
                 this.handlePlaceBlock(peerId, message);
                 break;
+            case 'CONVERT_ROOM':
+                this.handleConvertRoom(peerId, message);
+                break;
             default:
                 console.warn(`Unknown message type from ${peerId}:`, message.type);
         }
@@ -102,6 +105,7 @@ class MessageHandler {
         const gridZ = parseInt(message.gridZ, 10);
         const blockSize = message.blockSize || '1x1';
         const rotation = parseInt(message.rotation, 10) || 0;
+        const roomType = message.roomType || 'generic';
 
         // Validate block size
         if (blockSize !== '1x1' && blockSize !== '1x2') {
@@ -115,9 +119,16 @@ class MessageHandler {
             return;
         }
 
-        console.log(`[MessageHandler] PLACE_BLOCK from ${peerId}: grid(${gridX}, ${gridZ}), size=${blockSize}, rotation=${rotation}`);
+        // Validate room type
+        const validRoomTypes = ['generic', 'farming', 'processing', 'cafeteria', 'dorm', 'waiting'];
+        if (!validRoomTypes.includes(roomType)) {
+            console.warn(`[MessageHandler] PLACE_BLOCK rejected: invalid roomType (${roomType})`);
+            return;
+        }
 
-        const result = this.gameState.placeBlock(gridX, gridZ, blockSize, peerId, rotation);
+        console.log(`[MessageHandler] PLACE_BLOCK from ${peerId}: grid(${gridX}, ${gridZ}), size=${blockSize}, rotation=${rotation}, roomType=${roomType}`);
+
+        const result = this.gameState.placeBlock(gridX, gridZ, blockSize, peerId, rotation, roomType);
 
         if (result.success) {
             console.log(`[MessageHandler] Block placed successfully, version=${result.version}`);
@@ -137,6 +148,57 @@ class MessageHandler {
             // Send failure notification to requesting player only
             this.playerManager.sendTo(peerId, {
                 type: 'PLACE_BLOCK_FAILED',
+                reason: result.reason,
+                gridX: gridX,
+                gridZ: gridZ
+            });
+        }
+    }
+
+    /**
+     * Handle room type conversion request from VR player
+     */
+    handleConvertRoom(peerId, message) {
+        // Only accept conversion from VR players
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'vr') {
+            console.warn(`[MessageHandler] CONVERT_ROOM rejected: not a VR player (${peerId})`);
+            return;
+        }
+
+        const gridX = parseInt(message.gridX, 10);
+        const gridZ = parseInt(message.gridZ, 10);
+        const roomType = message.roomType;
+
+        // Validate room type
+        const validRoomTypes = ['generic', 'farming', 'processing', 'cafeteria', 'dorm', 'waiting'];
+        if (!validRoomTypes.includes(roomType)) {
+            console.warn(`[MessageHandler] CONVERT_ROOM rejected: invalid roomType (${roomType})`);
+            return;
+        }
+
+        console.log(`[MessageHandler] CONVERT_ROOM from ${peerId}: grid(${gridX}, ${gridZ}), roomType=${roomType}`);
+
+        const result = this.gameState.worldState.setRoomType(gridX, gridZ, roomType);
+
+        if (result.success) {
+            console.log(`[MessageHandler] Room converted successfully, version=${result.version}`);
+
+            // Broadcast to all clients
+            this.playerManager.broadcast({
+                type: 'ROOM_CONVERTED',
+                gridX: gridX,
+                gridZ: gridZ,
+                roomType: roomType,
+                convertedBy: peerId,
+                world: this.gameState.getWorldState()
+            });
+        } else {
+            console.log(`[MessageHandler] Room conversion failed: ${result.reason}`);
+
+            // Send failure notification to requesting player only
+            this.playerManager.sendTo(peerId, {
+                type: 'CONVERT_ROOM_FAILED',
                 reason: result.reason,
                 gridX: gridX,
                 gridZ: gridZ

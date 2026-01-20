@@ -3,7 +3,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, WORLD_SIZE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH } from '../shared/constants.js';
+import { COLORS, WORLD_SIZE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH, ROOM_TYPES, DEFAULT_ROOM_TYPE } from '../shared/constants.js';
 
 export class Scene {
     constructor(container) {
@@ -11,6 +11,8 @@ export class Scene {
 
         // Dynamic wall meshes for cleanup
         this.dynamicWalls = [];
+        this.dynamicFloors = [];
+        this.roomLabels = [];
         this.lastWorldVersion = -1;
 
         // Wall material (shared)
@@ -174,13 +176,19 @@ export class Scene {
         console.log(`[Scene] Rebuilding walls from world state, version=${worldState.version}`);
         this.lastWorldVersion = worldState.version;
 
-        // Clear existing dynamic walls
+        // Clear existing dynamic elements
         this.clearDynamicWalls();
+        this.clearDynamicFloors();
+        this.clearRoomLabels();
 
-        // Build walls for each cell in the grid
+        // Build walls and floors for each cell in the grid
         for (const cell of worldState.grid) {
             this.createCellWalls(cell, worldState);
+            this.createCellFloor(cell);
         }
+
+        // Create room labels (one per mergeGroup)
+        this.createRoomLabels(worldState);
 
         // Rebuild miniature replica
         this.rebuildMiniature(worldState);
@@ -195,6 +203,123 @@ export class Scene {
             if (mesh.geometry) mesh.geometry.dispose();
         }
         this.dynamicWalls = [];
+    }
+
+    /**
+     * Clear all dynamic floor meshes
+     */
+    clearDynamicFloors() {
+        for (const mesh of this.dynamicFloors) {
+            this.scene.remove(mesh);
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) mesh.material.dispose();
+        }
+        this.dynamicFloors = [];
+    }
+
+    /**
+     * Clear all room label sprites
+     */
+    clearRoomLabels() {
+        for (const sprite of this.roomLabels) {
+            this.scene.remove(sprite);
+            if (sprite.material.map) sprite.material.map.dispose();
+            if (sprite.material) sprite.material.dispose();
+        }
+        this.roomLabels = [];
+    }
+
+    /**
+     * Create a colored floor for a single cell based on room type
+     */
+    createCellFloor(cell) {
+        const cellSize = SMALL_ROOM_SIZE;
+        const x = cell.x * cellSize;
+        const z = cell.z * cellSize;
+
+        const roomType = cell.roomType || DEFAULT_ROOM_TYPE;
+        const roomConfig = ROOM_TYPES[roomType] || ROOM_TYPES[DEFAULT_ROOM_TYPE];
+
+        const geometry = new THREE.PlaneGeometry(cellSize * 0.95, cellSize * 0.95);
+        const material = new THREE.MeshBasicMaterial({
+            color: roomConfig.color,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide
+        });
+
+        const floor = new THREE.Mesh(geometry, material);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.set(x, 0.02, z);
+
+        this.scene.add(floor);
+        this.dynamicFloors.push(floor);
+    }
+
+    /**
+     * Create room type labels (one per mergeGroup, positioned at center)
+     */
+    createRoomLabels(worldState) {
+        if (!worldState || !worldState.grid) return;
+
+        // Group cells by mergeGroup to find room centers
+        const roomGroups = new Map();
+        for (const cell of worldState.grid) {
+            const group = cell.mergeGroup;
+            if (!roomGroups.has(group)) roomGroups.set(group, []);
+            roomGroups.get(group).push(cell);
+        }
+
+        const cellSize = SMALL_ROOM_SIZE;
+
+        for (const [mergeGroup, cells] of roomGroups) {
+            // Get room type from first cell (all cells in same mergeGroup have same type)
+            const roomType = cells[0].roomType || DEFAULT_ROOM_TYPE;
+
+            // Skip labels for generic rooms
+            if (roomType === 'generic') continue;
+
+            const roomConfig = ROOM_TYPES[roomType];
+            if (!roomConfig) continue;
+
+            // Calculate center of room
+            const centerX = cells.reduce((sum, c) => sum + c.x, 0) / cells.length * cellSize;
+            const centerZ = cells.reduce((sum, c) => sum + c.z, 0) / cells.length * cellSize;
+
+            // Create canvas for text
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+
+            // Semi-transparent background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+            ctx.beginPath();
+            ctx.roundRect(8, 8, 240, 48, 8);
+            ctx.fill();
+
+            // Text
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 28px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(roomConfig.name, 128, 32);
+
+            // Create sprite
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.SpriteMaterial({
+                map: texture,
+                transparent: true
+            });
+            const sprite = new THREE.Sprite(material);
+
+            // Position above room center
+            sprite.position.set(centerX, 3.5, centerZ);
+            sprite.scale.set(3, 0.75, 1);
+
+            this.scene.add(sprite);
+            this.roomLabels.push(sprite);
+        }
     }
 
     /**
@@ -239,6 +364,10 @@ export class Scene {
      * Create a room block in the miniature
      */
     createMiniRoomBlock(cells, gridCellSize, gapFactor) {
+        // Get room type from first cell (all cells in same mergeGroup have same type)
+        const roomType = cells[0].roomType || DEFAULT_ROOM_TYPE;
+        const roomConfig = ROOM_TYPES[roomType] || ROOM_TYPES[DEFAULT_ROOM_TYPE];
+
         // Find bounding box of this room
         const minX = Math.min(...cells.map(c => c.x));
         const maxX = Math.max(...cells.map(c => c.x));
@@ -252,8 +381,15 @@ export class Scene {
         const centerX = ((minX + maxX) / 2) * gridCellSize;
         const centerZ = ((minZ + maxZ) / 2) * gridCellSize;
 
+        // Use room type color instead of fixed blue
+        const material = new THREE.MeshBasicMaterial({
+            color: roomConfig.color,
+            transparent: true,
+            opacity: 0.5
+        });
+
         const geometry = new THREE.BoxGeometry(width, height, depth);
-        const mesh = new THREE.Mesh(geometry, this.miniRoomMaterial);
+        const mesh = new THREE.Mesh(geometry, material);
         mesh.position.set(centerX, height / 2, centerZ);
         this.miniatureGroup.add(mesh);
         this.miniatureMeshes.push(mesh);

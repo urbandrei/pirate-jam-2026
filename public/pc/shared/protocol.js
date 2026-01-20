@@ -9,6 +9,7 @@ export const MSG = {
     INPUT: 'INPUT',
     VR_POSE: 'VR_POSE',
     PLACE_BLOCK: 'PLACE_BLOCK',
+    CONVERT_ROOM: 'CONVERT_ROOM',
 
     // Server -> Client
     JOINED: 'JOINED',
@@ -16,7 +17,9 @@ export const MSG = {
     PLAYER_LEFT: 'PLAYER_LEFT',
     STATE_UPDATE: 'STATE_UPDATE',
     BLOCK_PLACED: 'BLOCK_PLACED',
-    PLACE_BLOCK_FAILED: 'PLACE_BLOCK_FAILED'
+    PLACE_BLOCK_FAILED: 'PLACE_BLOCK_FAILED',
+    ROOM_CONVERTED: 'ROOM_CONVERTED',
+    CONVERT_ROOM_FAILED: 'CONVERT_ROOM_FAILED'
 };
 
 // Message creators for type safety
@@ -55,13 +58,30 @@ export function createVRPoseMessage(head, leftHand, rightHand) {
  * @param {number} gridZ - Grid Z coordinate
  * @param {string} blockSize - '1x1' or '1x2'
  * @param {number} rotation - 0 for east-west, 1 for north-south (1x2 only)
+ * @param {string} roomType - Room type (generic, farming, processing, cafeteria, dorm, waiting)
  */
-export function createPlaceBlockMessage(gridX, gridZ, blockSize, rotation = 0) {
+export function createPlaceBlockMessage(gridX, gridZ, blockSize, rotation = 0, roomType = 'generic') {
     return {
         type: MSG.PLACE_BLOCK,
         gridX: gridX,
         gridZ: gridZ,
         blockSize: blockSize,
-        rotation: rotation
+        rotation: rotation,
+        roomType: roomType
+    };
+}
+
+/**
+ * Create a convert room message (VR -> Server)
+ * @param {number} gridX - Grid X coordinate
+ * @param {number} gridZ - Grid Z coordinate
+ * @param {string} roomType - Room type to convert to
+ */
+export function createConvertRoomMessage(gridX, gridZ, roomType) {
+    return {
+        type: MSG.CONVERT_ROOM,
+        gridX: gridX,
+        gridZ: gridZ,
+        roomType: roomType
     };
 }

@@ -37,6 +37,7 @@ class WorldState {
                     type: CELL_SPAWN,
                     roomId: 'spawn',
                     mergeGroup: 'spawn', // All 9 cells share this - no internal walls
+                    roomType: 'generic',
                     addedBy: 'system',
                     addedAt: timestamp
                 });
@@ -53,9 +54,10 @@ class WorldState {
      * @param {string} blockSize - '1x1' or '1x2'
      * @param {string} playerId - ID of the player placing the block
      * @param {number} rotation - 0 for east-west, 1 for north-south (1x2 only)
+     * @param {string} roomType - Room type (generic, farming, processing, cafeteria, dorm, waiting)
      * @returns {Object} Result with success flag and details
      */
-    placeBlock(gridX, gridZ, blockSize, playerId, rotation = 0) {
+    placeBlock(gridX, gridZ, blockSize, playerId, rotation = 0, roomType = 'generic') {
         // Validation
         if (!this.canPlaceBlock(gridX, gridZ, blockSize, rotation)) {
             return { success: false, reason: 'Invalid placement - cells occupied or invalid' };
@@ -79,6 +81,7 @@ class WorldState {
                 type: CELL_ROOM,
                 roomId: `room_${x}_${z}`,
                 mergeGroup: mergeGroupId, // Same for all cells in this block
+                roomType: roomType,
                 addedBy: playerId,
                 addedAt: timestamp
             });
@@ -153,6 +156,44 @@ class WorldState {
             }
         }
         return [{ x: gridX, z: gridZ }];
+    }
+
+    /**
+     * Set the room type for a cell
+     * @param {number} gridX - Grid X coordinate
+     * @param {number} gridZ - Grid Z coordinate
+     * @param {string} roomType - Room type to set
+     * @returns {Object} Result with success flag
+     */
+    setRoomType(gridX, gridZ, roomType) {
+        const key = `${gridX},${gridZ}`;
+        const cell = this.grid.get(key);
+
+        if (!cell) {
+            return { success: false, reason: 'Cell does not exist' };
+        }
+
+        const validTypes = ['generic', 'farming', 'processing', 'cafeteria', 'dorm', 'waiting'];
+        if (!validTypes.includes(roomType)) {
+            return { success: false, reason: 'Invalid room type' };
+        }
+
+        cell.roomType = roomType;
+        this.version++;
+
+        return { success: true, version: this.version };
+    }
+
+    /**
+     * Get the room type for a cell
+     * @param {number} gridX - Grid X coordinate
+     * @param {number} gridZ - Grid Z coordinate
+     * @returns {string|null} Room type or null if cell doesn't exist
+     */
+    getRoomType(gridX, gridZ) {
+        const key = `${gridX},${gridZ}`;
+        const cell = this.grid.get(key);
+        return cell ? cell.roomType : null;
     }
 
     /**
@@ -310,6 +351,7 @@ class WorldState {
                 type: cell.type,
                 roomId: cell.roomId,
                 mergeGroup: cell.mergeGroup, // Include for wall generation logic
+                roomType: cell.roomType || 'generic',
                 addedBy: cell.addedBy
             });
         }

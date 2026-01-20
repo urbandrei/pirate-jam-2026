@@ -56,6 +56,17 @@ export const NEED_MAX = 100;
 export const NEED_CRITICAL = 20;  // Red warning threshold
 export const NEED_LOW = 50;       // Yellow warning threshold
 
+// Room types with display names and colors
+export const ROOM_TYPES = {
+    generic: { name: 'Generic', color: 0x888888 },
+    farming: { name: 'Farm', color: 0x228B22 },
+    processing: { name: 'Kitchen', color: 0xCD853F },
+    cafeteria: { name: 'Cafeteria', color: 0xFFD700 },
+    dorm: { name: 'Dormitory', color: 0x4169E1 },
+    waiting: { name: 'Waiting Room', color: 0x808080 }
+};
+export const DEFAULT_ROOM_TYPE = 'generic';
+
 // Colors
 export const COLORS = {
     GROUND: 0x3d5c3d,
