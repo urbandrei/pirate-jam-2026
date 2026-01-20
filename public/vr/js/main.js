@@ -37,9 +37,12 @@ class VRGame {
         this.networkInterval = 1000 / NETWORK_RATE;
         this.currentFrame = null;
 
-        // Reusable objects for sendPose() to avoid allocation each frame
+        // Reusable objects for sendPose() and HUD positioning
         this._headPosition = new THREE.Vector3();
         this._headQuaternion = new THREE.Quaternion();
+        this._hudOffset = new THREE.Vector3();
+        this._hudDirection = new THREE.Vector3();
+        this._hudRight = new THREE.Vector3();
 
         // Pre-allocated head data structure to avoid per-frame allocation
         this._headData = {
@@ -61,7 +64,7 @@ class VRGame {
         this.setupPlayerCountHUD();
 
         // Setup stats panel (population needs overview)
-        this.statsPanel = new StatsPanel(this.scene.cameraRig);
+        this.statsPanel = new StatsPanel(this.scene.scene);
 
         // Setup hands
         this.hands = new Hands(this.scene.scene, this.scene.renderer);
@@ -167,13 +170,10 @@ class VRGame {
             transparent: true
         });
         this.playerCountSprite = new THREE.Sprite(material);
-
-        // Position in upper-right of view (VR scale: ~0.5m in front of eyes)
-        this.playerCountSprite.position.set(0.3, 0.2, -0.5);
         this.playerCountSprite.scale.set(0.2, 0.05, 1);
 
-        // Attach to camera rig so it follows the head
-        this.scene.cameraRig.add(this.playerCountSprite);
+        // Add to scene (will be positioned each frame to follow XR camera)
+        this.scene.scene.add(this.playerCountSprite);
 
         // Initial render
         this.updatePlayerCountHUD(0);
@@ -227,6 +227,9 @@ class VRGame {
                 }
             }
 
+            // Update HUD positions to follow XR camera
+            this.updateHUDPositions();
+
             // Update building system
             if (this.buildingSystem) {
                 this.buildingSystem.update();
@@ -250,6 +253,44 @@ class VRGame {
 
         // Render scene - required even with WebXR
         this.scene.render();
+    }
+
+    /**
+     * Update HUD sprite positions to float in front of the XR camera
+     */
+    updateHUDPositions() {
+        if (!this.scene.isInVR()) return;
+
+        const camera = this.scene.renderer.xr.getCamera();
+        if (!camera) return;
+
+        // Get camera world position and direction
+        camera.getWorldPosition(this._headPosition);
+        camera.getWorldQuaternion(this._headQuaternion);
+
+        // Calculate forward direction from camera
+        this._hudDirection.set(0, 0, -1).applyQuaternion(this._headQuaternion);
+
+        // Calculate right direction (reuse pre-allocated vector)
+        this._hudRight.set(1, 0, 0).applyQuaternion(this._headQuaternion);
+
+        // Position player count HUD: 0.5m in front, slightly up and right
+        if (this.playerCountSprite) {
+            this._hudOffset.copy(this._hudDirection).multiplyScalar(0.5);
+            this._hudOffset.addScaledVector(this._hudRight, 0.15);
+            this._hudOffset.y += 0.12;
+
+            this.playerCountSprite.position.copy(this._headPosition).add(this._hudOffset);
+        }
+
+        // Position stats panel: 0.5m in front, slightly up and right, below player count
+        if (this.statsPanel && this.statsPanel.sprite) {
+            this._hudOffset.copy(this._hudDirection).multiplyScalar(0.5);
+            this._hudOffset.addScaledVector(this._hudRight, 0.15);
+            this._hudOffset.y += 0.02;
+
+            this.statsPanel.sprite.position.copy(this._headPosition).add(this._hudOffset);
+        }
     }
 
     sendPose() {

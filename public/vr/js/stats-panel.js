@@ -6,8 +6,8 @@
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 
 export class StatsPanel {
-    constructor(cameraRig) {
-        this.cameraRig = cameraRig;
+    constructor(scene) {
+        this.scene = scene;
         this.sprite = null;
         this.canvas = null;
         this.ctx = null;
@@ -32,13 +32,10 @@ export class StatsPanel {
             transparent: true
         });
         this.sprite = new THREE.Sprite(material);
-
-        // Position below the player count HUD (which is at 0.3, 0.2, -0.5)
-        this.sprite.position.set(0.3, 0.05, -0.5);
         this.sprite.scale.set(0.25, 0.15, 1);
 
-        // Attach to camera rig so it follows the head
-        this.cameraRig.add(this.sprite);
+        // Add to scene (position will be updated each frame by main.js)
+        this.scene.add(this.sprite);
 
         // Initial render
         this._render({
@@ -217,8 +214,8 @@ export class StatsPanel {
             if (this.sprite.geometry) {
                 this.sprite.geometry.dispose();
             }
-            if (this.cameraRig) {
-                this.cameraRig.remove(this.sprite);
+            if (this.scene) {
+                this.scene.remove(this.sprite);
             }
             this.sprite = null;
         }
