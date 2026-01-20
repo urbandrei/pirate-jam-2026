@@ -16,6 +16,11 @@ export class Scene {
         // Wall material (shared)
         this.wallMaterial = null;
 
+        // Miniature replica (same as VR players see)
+        this.miniatureGroup = null;
+        this.miniatureMeshes = [];
+        this.miniatureScale = 0.02; // 2cm per 10m cell (larger than VR since viewing from distance)
+
         // Create renderer
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -42,6 +47,7 @@ export class Scene {
         this.setupLighting();
         this.setupGround();
         this.setupWallMaterial();
+        this.setupMiniature();
         // Don't setup static rooms - wait for world state from server
 
         // Handle window resize
@@ -53,6 +59,28 @@ export class Scene {
             map: this.createConcreteTexture(),
             roughness: 0.95,
             metalness: 0.05
+        });
+    }
+
+    /**
+     * Setup the floating miniature replica (same as VR players see)
+     */
+    setupMiniature() {
+        this.miniatureGroup = new THREE.Group();
+        // Position floating in spawn room at eye level
+        this.miniatureGroup.position.set(0, 1.2, 0);
+        this.scene.add(this.miniatureGroup);
+
+        // Materials for miniature
+        this.miniRoomMaterial = new THREE.MeshBasicMaterial({
+            color: 0x4488ff,
+            transparent: true,
+            opacity: 0.4
+        });
+        this.miniDoorwayMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff0000,
+            transparent: true,
+            opacity: 0.8
         });
     }
 
@@ -151,6 +179,9 @@ export class Scene {
         for (const cell of worldState.grid) {
             this.createCellWalls(cell, worldState);
         }
+
+        // Rebuild miniature replica
+        this.rebuildMiniature(worldState);
     }
 
     /**
@@ -162,6 +193,106 @@ export class Scene {
             if (mesh.geometry) mesh.geometry.dispose();
         }
         this.dynamicWalls = [];
+    }
+
+    /**
+     * Rebuild the floating miniature replica from world state
+     * @param {Object} worldState - World state from server
+     */
+    rebuildMiniature(worldState) {
+        // Clear existing miniature meshes
+        for (const mesh of this.miniatureMeshes) {
+            this.miniatureGroup.remove(mesh);
+            if (mesh.geometry) mesh.geometry.dispose();
+        }
+        this.miniatureMeshes = [];
+
+        if (!worldState || !worldState.grid) return;
+
+        // Group cells by mergeGroup (rooms)
+        const roomGroups = new Map();
+        for (const cell of worldState.grid) {
+            const group = cell.mergeGroup;
+            if (!roomGroups.has(group)) roomGroups.set(group, []);
+            roomGroups.get(group).push(cell);
+        }
+
+        const gridCellSize = SMALL_ROOM_SIZE * this.miniatureScale;
+        const gapFactor = 0.8; // Slight gap between blocks
+
+        // Create room blocks
+        for (const [mergeGroup, cells] of roomGroups) {
+            this.createMiniRoomBlock(cells, gridCellSize, gapFactor);
+        }
+
+        // Create doorway indicators (red rods)
+        if (worldState.doorways) {
+            for (const doorway of worldState.doorways) {
+                this.createMiniDoorwayIndicator(doorway, gridCellSize);
+            }
+        }
+    }
+
+    /**
+     * Create a room block in the miniature
+     */
+    createMiniRoomBlock(cells, gridCellSize, gapFactor) {
+        // Find bounding box of this room
+        const minX = Math.min(...cells.map(c => c.x));
+        const maxX = Math.max(...cells.map(c => c.x));
+        const minZ = Math.min(...cells.map(c => c.z));
+        const maxZ = Math.max(...cells.map(c => c.z));
+
+        const width = (maxX - minX + 1) * gridCellSize * gapFactor;
+        const depth = (maxZ - minZ + 1) * gridCellSize * gapFactor;
+        const height = gridCellSize * 0.5;
+
+        const centerX = ((minX + maxX) / 2) * gridCellSize;
+        const centerZ = ((minZ + maxZ) / 2) * gridCellSize;
+
+        const geometry = new THREE.BoxGeometry(width, height, depth);
+        const mesh = new THREE.Mesh(geometry, this.miniRoomMaterial);
+        mesh.position.set(centerX, height / 2, centerZ);
+        this.miniatureGroup.add(mesh);
+        this.miniatureMeshes.push(mesh);
+    }
+
+    /**
+     * Create a doorway indicator (red rod) in the miniature
+     */
+    createMiniDoorwayIndicator(doorway, gridCellSize) {
+        // Calculate positions of the two cells
+        const x1 = doorway.cell1.x * gridCellSize;
+        const z1 = doorway.cell1.z * gridCellSize;
+        const x2 = doorway.cell2.x * gridCellSize;
+        const z2 = doorway.cell2.z * gridCellSize;
+
+        // Midpoint between cells
+        const midX = (x1 + x2) / 2;
+        const midZ = (z1 + z2) / 2;
+
+        // Create horizontal rod
+        const rodLength = gridCellSize * 0.6;
+        const rodRadius = gridCellSize * 0.05;
+        const geometry = new THREE.CylinderGeometry(rodRadius, rodRadius, rodLength, 8);
+
+        const mesh = new THREE.Mesh(geometry, this.miniDoorwayMaterial);
+
+        // Position at midpoint, slightly elevated
+        const height = gridCellSize * 0.25;
+        mesh.position.set(midX, height, midZ);
+
+        // Rotate to be horizontal and point toward the connection
+        if (doorway.cell1.x !== doorway.cell2.x) {
+            // East-West connection
+            mesh.rotation.z = Math.PI / 2;
+        } else {
+            // North-South connection
+            mesh.rotation.x = Math.PI / 2;
+        }
+
+        this.miniatureGroup.add(mesh);
+        this.miniatureMeshes.push(mesh);
     }
 
     /**

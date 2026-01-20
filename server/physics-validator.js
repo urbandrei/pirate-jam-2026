@@ -8,6 +8,8 @@ const JUMP_VELOCITY = 5.0; // meters per second
 const GRAVITY = -15.0; // meters per second squared
 const GROUND_LEVEL = 0.9; // Player capsule center height when grounded
 const WORLD_BOUNDS = 50; // Half-size of the play area
+const CELL_SIZE = 10; // SMALL_ROOM_SIZE - 10m grid cells
+const PLAYER_RADIUS = 0.3; // Player collision radius
 
 class PhysicsValidator {
     constructor(gameState) {
@@ -62,9 +64,20 @@ class PhysicsValidator {
             moveZ = (moveZ / moveLen) * MOVE_SPEED;
         }
 
-        // Apply horizontal movement
-        player.position.x += moveX * deltaTime;
-        player.position.z += moveZ * deltaTime;
+        // Calculate new position
+        const newX = player.position.x + moveX * deltaTime;
+        const newZ = player.position.z + moveZ * deltaTime;
+
+        // Get world state for collision checking
+        const worldState = this.gameState.getWorldState();
+
+        // Apply horizontal movement with wall collision (separate X and Z for sliding)
+        if (!this.checkWallCollision(newX, player.position.z, worldState)) {
+            player.position.x = newX;
+        }
+        if (!this.checkWallCollision(player.position.x, newZ, worldState)) {
+            player.position.z = newZ;
+        }
 
         // Handle jumping
         if (input.jump && player.grounded) {
@@ -90,6 +103,115 @@ class PhysicsValidator {
         // Clamp to world bounds
         player.position.x = Math.max(-WORLD_BOUNDS, Math.min(WORLD_BOUNDS, player.position.x));
         player.position.z = Math.max(-WORLD_BOUNDS, Math.min(WORLD_BOUNDS, player.position.z));
+    }
+
+    /**
+     * Check if a position collides with any walls
+     * @param {number} x - X position to check
+     * @param {number} z - Z position to check
+     * @param {Object} worldState - World state with grid and doorways
+     * @returns {boolean} True if collision detected
+     */
+    checkWallCollision(x, z, worldState) {
+        if (!worldState || !worldState.grid) return false;
+
+        const half = CELL_SIZE / 2;
+
+        // Check against walls of each cell
+        for (const cell of worldState.grid) {
+            const cellCenterX = cell.x * CELL_SIZE;
+            const cellCenterZ = cell.z * CELL_SIZE;
+
+            // Check if player is near this cell (optimization)
+            if (Math.abs(x - cellCenterX) > CELL_SIZE + PLAYER_RADIUS ||
+                Math.abs(z - cellCenterZ) > CELL_SIZE + PLAYER_RADIUS) {
+                continue;
+            }
+
+            // Check each wall of this cell
+            // North wall (z - half)
+            if (this.checkWallSegment(x, z, cellCenterX, cellCenterZ - half, 'z', cell, 0, -1, worldState)) {
+                return true;
+            }
+            // South wall (z + half)
+            if (this.checkWallSegment(x, z, cellCenterX, cellCenterZ + half, 'z', cell, 0, 1, worldState)) {
+                return true;
+            }
+            // East wall (x + half)
+            if (this.checkWallSegment(x, z, cellCenterX + half, cellCenterZ, 'x', cell, 1, 0, worldState)) {
+                return true;
+            }
+            // West wall (x - half)
+            if (this.checkWallSegment(x, z, cellCenterX - half, cellCenterZ, 'x', cell, -1, 0, worldState)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check collision with a single wall segment
+     */
+    checkWallSegment(playerX, playerZ, wallX, wallZ, axis, cell, dx, dz, worldState) {
+        const half = CELL_SIZE / 2;
+
+        // Check if there's a neighbor in this direction
+        const neighborX = cell.x + dx;
+        const neighborZ = cell.z + dz;
+        const neighbor = worldState.grid.find(c => c.x === neighborX && c.z === neighborZ);
+
+        // If neighbor exists with same mergeGroup, no wall (open space)
+        if (neighbor && neighbor.mergeGroup === cell.mergeGroup) {
+            return false;
+        }
+
+        // If neighbor exists with different mergeGroup, check if there's a doorway
+        if (neighbor && neighbor.mergeGroup !== cell.mergeGroup) {
+            const hasDoorway = worldState.doorways && worldState.doorways.some(d =>
+                (d.cell1.x === cell.x && d.cell1.z === cell.z && d.cell2.x === neighborX && d.cell2.z === neighborZ) ||
+                (d.cell2.x === cell.x && d.cell2.z === cell.z && d.cell1.x === neighborX && d.cell1.z === neighborZ)
+            );
+
+            if (hasDoorway) {
+                // Wall with doorway - check if player is in doorway gap
+                const doorwayWidth = 1.2; // DOORWAY_WIDTH
+                if (axis === 'z') {
+                    // Wall runs along X, doorway centered on wallX
+                    if (Math.abs(playerX - wallX) < doorwayWidth / 2) {
+                        return false; // In doorway, no collision
+                    }
+                } else {
+                    // Wall runs along Z, doorway centered on wallZ
+                    if (Math.abs(playerZ - wallZ) < doorwayWidth / 2) {
+                        return false; // In doorway, no collision
+                    }
+                }
+            }
+        }
+
+        // Check collision with wall line
+        if (axis === 'z') {
+            // Wall runs along X-axis at wallZ
+            const wallMinX = wallX - half;
+            const wallMaxX = wallX + half;
+            if (playerX >= wallMinX - PLAYER_RADIUS && playerX <= wallMaxX + PLAYER_RADIUS) {
+                if (Math.abs(playerZ - wallZ) < PLAYER_RADIUS) {
+                    return true;
+                }
+            }
+        } else {
+            // Wall runs along Z-axis at wallX
+            const wallMinZ = wallZ - half;
+            const wallMaxZ = wallZ + half;
+            if (playerZ >= wallMinZ - PLAYER_RADIUS && playerZ <= wallMaxZ + PLAYER_RADIUS) {
+                if (Math.abs(playerX - wallX) < PLAYER_RADIUS) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
