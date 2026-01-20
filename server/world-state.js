@@ -4,7 +4,7 @@
  */
 
 // Import constants - using require for Node.js compatibility
-const SMALL_ROOM_SIZE = 20 / 3; // ~6.67m (ROOM_SIZE / 3)
+const SMALL_ROOM_SIZE = 10; // 10m grid cells (1.5x scale)
 const WALL_THICKNESS = 0.2;
 const DOORWAY_HEIGHT = 1.8 * 1.3; // ~2.34m (PLAYER_HEIGHT * 1.3)
 const DOORWAY_WIDTH = 1.2;
@@ -19,20 +19,30 @@ class WorldState {
         this.doorways = [];    // Generated doorway list
         this.version = 0;      // Sync version counter
 
-        // Initialize with spawn room at (0,0)
+        // Initialize with 3x3 spawn room centered at origin
         this.initializeSpawnRoom();
     }
 
     /**
-     * Initialize the spawn room at grid position (0,0)
+     * Initialize the 3x3 spawn room centered at origin (-1,-1) to (1,1)
+     * All 9 cells share the same mergeGroup so no internal walls are created
      */
     initializeSpawnRoom() {
-        this.grid.set('0,0', {
-            type: CELL_SPAWN,
-            roomId: 'spawn',
-            addedBy: 'system',
-            addedAt: Date.now()
-        });
+        const timestamp = Date.now();
+
+        // Create 3x3 grid of spawn cells
+        for (let x = -1; x <= 1; x++) {
+            for (let z = -1; z <= 1; z++) {
+                this.grid.set(`${x},${z}`, {
+                    type: CELL_SPAWN,
+                    roomId: 'spawn',
+                    mergeGroup: 'spawn', // All 9 cells share this - no internal walls
+                    addedBy: 'system',
+                    addedAt: timestamp
+                });
+            }
+        }
+
         this.regenerateDoorways();
     }
 
@@ -42,27 +52,33 @@ class WorldState {
      * @param {number} gridZ - Grid Z coordinate
      * @param {string} blockSize - '1x1' or '1x2'
      * @param {string} playerId - ID of the player placing the block
+     * @param {number} rotation - 0 for east-west, 1 for north-south (1x2 only)
      * @returns {Object} Result with success flag and details
      */
-    placeBlock(gridX, gridZ, blockSize, playerId) {
+    placeBlock(gridX, gridZ, blockSize, playerId, rotation = 0) {
         // Validation
-        if (!this.canPlaceBlock(gridX, gridZ, blockSize)) {
+        if (!this.canPlaceBlock(gridX, gridZ, blockSize, rotation)) {
             return { success: false, reason: 'Invalid placement - cells occupied or invalid' };
         }
 
         // Check adjacency - at least one cell must be adjacent to existing room
-        if (!this.isAdjacentToExisting(gridX, gridZ, blockSize)) {
+        if (!this.isAdjacentToExisting(gridX, gridZ, blockSize, rotation)) {
             return { success: false, reason: 'Block must be adjacent to existing rooms' };
         }
 
         // Place the block(s)
-        const cells = this.getBlockCells(gridX, gridZ, blockSize);
+        const cells = this.getBlockCells(gridX, gridZ, blockSize, rotation);
         const timestamp = Date.now();
+
+        // Generate unique mergeGroup for this block
+        // All cells of the same block share this, so no internal walls
+        const mergeGroupId = `room_${gridX}_${gridZ}`;
 
         cells.forEach(({ x, z }) => {
             this.grid.set(`${x},${z}`, {
                 type: CELL_ROOM,
                 roomId: `room_${x}_${z}`,
+                mergeGroup: mergeGroupId, // Same for all cells in this block
                 addedBy: playerId,
                 addedAt: timestamp
             });
@@ -84,16 +100,16 @@ class WorldState {
     /**
      * Check if a block can be placed at the given position
      */
-    canPlaceBlock(gridX, gridZ, blockSize) {
-        const cells = this.getBlockCells(gridX, gridZ, blockSize);
+    canPlaceBlock(gridX, gridZ, blockSize, rotation = 0) {
+        const cells = this.getBlockCells(gridX, gridZ, blockSize, rotation);
         return cells.every(({ x, z }) => !this.grid.has(`${x},${z}`));
     }
 
     /**
      * Check if at least one cell of the block is adjacent to an existing room
      */
-    isAdjacentToExisting(gridX, gridZ, blockSize) {
-        const cells = this.getBlockCells(gridX, gridZ, blockSize);
+    isAdjacentToExisting(gridX, gridZ, blockSize, rotation = 0) {
+        const cells = this.getBlockCells(gridX, gridZ, blockSize, rotation);
 
         for (const { x, z } of cells) {
             const neighbors = [
@@ -115,26 +131,39 @@ class WorldState {
 
     /**
      * Get all cells that a block would occupy
+     * @param {number} gridX - Anchor X coordinate
+     * @param {number} gridZ - Anchor Z coordinate
+     * @param {string} blockSize - '1x1' or '1x2'
+     * @param {number} rotation - 0 for east-west (X-axis), 1 for north-south (Z-axis)
      */
-    getBlockCells(gridX, gridZ, blockSize) {
+    getBlockCells(gridX, gridZ, blockSize, rotation = 0) {
         if (blockSize === '1x2') {
-            return [
-                { x: gridX, z: gridZ },
-                { x: gridX + 1, z: gridZ }
-            ];
+            if (rotation === 0) {
+                // East-West (along X-axis)
+                return [
+                    { x: gridX, z: gridZ },
+                    { x: gridX + 1, z: gridZ }
+                ];
+            } else {
+                // North-South (along Z-axis)
+                return [
+                    { x: gridX, z: gridZ },
+                    { x: gridX, z: gridZ + 1 }
+                ];
+            }
         }
         return [{ x: gridX, z: gridZ }];
     }
 
     /**
      * Regenerate all doorways based on current grid state
-     * Doorways are created between all adjacent occupied cells
+     * Doorways are created between adjacent cells with DIFFERENT mergeGroups
      */
     regenerateDoorways() {
         this.doorways = [];
         const processed = new Set();
 
-        for (const [key] of this.grid) {
+        for (const [key, cell] of this.grid) {
             const [x, z] = key.split(',').map(Number);
 
             // Check all four directions
@@ -152,6 +181,11 @@ class WorldState {
 
                 // Skip if neighbor doesn't exist
                 if (!this.grid.has(neighborKey)) continue;
+
+                const neighbor = this.grid.get(neighborKey);
+
+                // Skip if same mergeGroup (no doorway needed - open space)
+                if (cell.mergeGroup === neighbor.mergeGroup) continue;
 
                 // Create unique doorway ID (smaller coordinates first for consistency)
                 const doorId = this.getDoorwayKey(x, z, nx, nz);
@@ -225,7 +259,14 @@ class WorldState {
         const gridArray = [];
         for (const [key, cell] of this.grid) {
             const [x, z] = key.split(',').map(Number);
-            gridArray.push({ x, z, ...cell });
+            gridArray.push({
+                x,
+                z,
+                type: cell.type,
+                roomId: cell.roomId,
+                mergeGroup: cell.mergeGroup, // Include for wall generation logic
+                addedBy: cell.addedBy
+            });
         }
 
         return {
@@ -237,7 +278,7 @@ class WorldState {
     }
 
     /**
-     * Reset to initial state (spawn room only)
+     * Reset to initial state (3x3 spawn room only)
      */
     reset() {
         this.grid.clear();

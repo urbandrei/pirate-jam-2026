@@ -54,12 +54,14 @@ export function createVRPoseMessage(head, leftHand, rightHand) {
  * @param {number} gridX - Grid X coordinate
  * @param {number} gridZ - Grid Z coordinate
  * @param {string} blockSize - '1x1' or '1x2'
+ * @param {number} rotation - 0 for east-west, 1 for north-south (1x2 only)
  */
-export function createPlaceBlockMessage(gridX, gridZ, blockSize) {
+export function createPlaceBlockMessage(gridX, gridZ, blockSize, rotation = 0) {
     return {
         type: MSG.PLACE_BLOCK,
         gridX: gridX,
         gridZ: gridZ,
-        blockSize: blockSize
+        blockSize: blockSize,
+        rotation: rotation
     };
 }

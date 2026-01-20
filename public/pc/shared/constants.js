@@ -42,7 +42,7 @@ export const WORLD_HALF = 50;
 
 // Room constants
 export const ROOM_SIZE = 20; // 20m × 20m × 20m (4x original size)
-export const SMALL_ROOM_SIZE = ROOM_SIZE / 3; // ~6.67m for surrounding rooms
+export const SMALL_ROOM_SIZE = 10; // 10m grid cells (1.5x scale)
 export const WALL_THICKNESS = 0.2; // 0.2m thin walls
 export const DOORWAY_HEIGHT = PLAYER_HEIGHT * 1.3; // ~2.34m
 export const DOORWAY_WIDTH = 1.2; // 1.2m wide doorways

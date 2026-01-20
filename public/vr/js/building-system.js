@@ -30,6 +30,10 @@ export class BuildingSystem {
         this.grabbedBlock = null;
         this.grabbedHand = null;
 
+        // Rotation state for 1x2 blocks
+        // 0 = east-west (X-axis), 1 = north-south (Z-axis)
+        this.currentRotation = 0;
+
         // World state cache
         this.worldState = null;
         this.lastWorldVersion = -1;
@@ -107,8 +111,8 @@ export class BuildingSystem {
 
     createGridLines() {
         // Create a simple grid on the pedestal surface for reference
-        const gridSize = this.gridCellSize * 5; // 5x5 visible grid
-        const gridHelper = new THREE.GridHelper(gridSize, 5, 0x666666, 0x444444);
+        const gridSize = this.gridCellSize * 7; // 7x7 visible grid (larger for 3x3 spawn)
+        const gridHelper = new THREE.GridHelper(gridSize, 7, 0x666666, 0x444444);
         gridHelper.position.y = 0.001;
         this.replicaGroup.add(gridHelper);
     }
@@ -185,6 +189,51 @@ export class BuildingSystem {
     }
 
     /**
+     * Toggle rotation for 1x2 blocks
+     * Called when user wants to rotate the block
+     */
+    toggleRotation() {
+        this.currentRotation = this.currentRotation === 0 ? 1 : 0;
+        console.log(`[BuildingSystem] Rotation: ${this.currentRotation === 0 ? 'East-West' : 'North-South'}`);
+
+        // Update grabbed block geometry if holding a 1x2
+        if (this.grabbedBlock && this.grabbedBlock.userData.blockType === '1x2') {
+            this.updateGrabbedBlockGeometry();
+        }
+    }
+
+    /**
+     * Update grabbed block geometry based on current rotation
+     */
+    updateGrabbedBlockGeometry() {
+        if (!this.grabbedBlock || this.grabbedBlock.userData.blockType !== '1x2') return;
+
+        const rotation = this.currentRotation;
+        let width, depth;
+
+        if (rotation === 0) {
+            // East-West
+            width = this.gridCellSize * 1.9;
+            depth = this.gridCellSize * 0.9;
+        } else {
+            // North-South
+            width = this.gridCellSize * 0.9;
+            depth = this.gridCellSize * 1.9;
+        }
+
+        // Dispose old geometry and create new
+        this.grabbedBlock.geometry.dispose();
+        this.grabbedBlock.geometry = new THREE.BoxGeometry(
+            width,
+            this.gridCellSize * 0.4,
+            depth
+        );
+
+        // Update userData
+        this.grabbedBlock.userData.rotation = rotation;
+    }
+
+    /**
      * Handle pinch start - check if grabbing a palette block
      */
     handlePinchStart(hand) {
@@ -244,11 +293,27 @@ export class BuildingSystem {
      * Create a grabbed block instance
      */
     grabBlockFromPalette(blockType, hand) {
-        const width = blockType === '1x2' ? this.gridCellSize * 1.9 : this.gridCellSize * 0.9;
+        let width, depth;
+
+        if (blockType === '1x2') {
+            if (this.currentRotation === 0) {
+                // East-West
+                width = this.gridCellSize * 1.9;
+                depth = this.gridCellSize * 0.9;
+            } else {
+                // North-South
+                width = this.gridCellSize * 0.9;
+                depth = this.gridCellSize * 1.9;
+            }
+        } else {
+            width = this.gridCellSize * 0.9;
+            depth = this.gridCellSize * 0.9;
+        }
+
         const geom = new THREE.BoxGeometry(
             width,
             this.gridCellSize * 0.4,
-            this.gridCellSize * 0.9
+            depth
         );
 
         const mat = new THREE.MeshStandardMaterial({
@@ -260,28 +325,14 @@ export class BuildingSystem {
         });
 
         this.grabbedBlock = new THREE.Mesh(geom, mat);
-        this.grabbedBlock.userData = { blockType: blockType };
+        this.grabbedBlock.userData = {
+            blockType: blockType,
+            rotation: this.currentRotation
+        };
         this.grabbedHand = hand;
         this.scene.add(this.grabbedBlock);
 
-        // Update ghost block geometry to match
-        if (blockType === '1x2') {
-            this.ghostBlock.geometry.dispose();
-            this.ghostBlock.geometry = new THREE.BoxGeometry(
-                this.gridCellSize * 1.95,
-                this.gridCellSize * 0.3,
-                this.gridCellSize * 0.95
-            );
-        } else {
-            this.ghostBlock.geometry.dispose();
-            this.ghostBlock.geometry = new THREE.BoxGeometry(
-                this.gridCellSize * 0.95,
-                this.gridCellSize * 0.3,
-                this.gridCellSize * 0.95
-            );
-        }
-
-        console.log(`[BuildingSystem] Grabbed ${blockType} block`);
+        console.log(`[BuildingSystem] Grabbed ${blockType} block, rotation=${this.currentRotation}`);
     }
 
     /**
@@ -297,16 +348,17 @@ export class BuildingSystem {
         }
 
         const blockType = this.grabbedBlock.userData.blockType;
+        const rotation = this.grabbedBlock.userData.rotation || 0;
 
         // Check if placement is valid
-        if (!this.canPlace(gridCoords.x, gridCoords.z, blockType)) {
+        if (!this.canPlace(gridCoords.x, gridCoords.z, blockType, rotation)) {
             console.log(`[BuildingSystem] Cannot place at (${gridCoords.x}, ${gridCoords.z})`);
             return;
         }
 
         // Send placement request to server
-        console.log(`[BuildingSystem] Requesting placement at (${gridCoords.x}, ${gridCoords.z}), type=${blockType}`);
-        this.network.send(createPlaceBlockMessage(gridCoords.x, gridCoords.z, blockType));
+        console.log(`[BuildingSystem] Requesting placement at (${gridCoords.x}, ${gridCoords.z}), type=${blockType}, rotation=${rotation}`);
+        this.network.send(createPlaceBlockMessage(gridCoords.x, gridCoords.z, blockType, rotation));
     }
 
     /**
@@ -335,14 +387,34 @@ export class BuildingSystem {
     }
 
     /**
+     * Get all cells that a block would occupy
+     */
+    getBlockCells(gridX, gridZ, blockType, rotation = 0) {
+        if (blockType === '1x2') {
+            if (rotation === 0) {
+                // East-West (X-axis)
+                return [
+                    { x: gridX, z: gridZ },
+                    { x: gridX + 1, z: gridZ }
+                ];
+            } else {
+                // North-South (Z-axis)
+                return [
+                    { x: gridX, z: gridZ },
+                    { x: gridX, z: gridZ + 1 }
+                ];
+            }
+        }
+        return [{ x: gridX, z: gridZ }];
+    }
+
+    /**
      * Check if a block can be placed at the given grid position
      */
-    canPlace(gridX, gridZ, blockType) {
+    canPlace(gridX, gridZ, blockType, rotation = 0) {
         if (!this.worldState) return true;
 
-        const cells = blockType === '1x2'
-            ? [{ x: gridX, z: gridZ }, { x: gridX + 1, z: gridZ }]
-            : [{ x: gridX, z: gridZ }];
+        const cells = this.getBlockCells(gridX, gridZ, blockType, rotation);
 
         // Check if all cells are empty
         for (const cell of cells) {
@@ -422,19 +494,56 @@ export class BuildingSystem {
         }
 
         const blockType = this.grabbedBlock.userData.blockType;
-        const canPlace = this.canPlace(gridCoords.x, gridCoords.z, blockType);
+        const rotation = this.grabbedBlock.userData.rotation || 0;
+        const canPlace = this.canPlace(gridCoords.x, gridCoords.z, blockType, rotation);
 
-        // Position ghost block at grid cell
-        const offsetX = blockType === '1x2' ? this.gridCellSize / 2 : 0;
+        // Calculate position offset based on block type and rotation
+        let offsetX = 0, offsetZ = 0;
+        if (blockType === '1x2') {
+            if (rotation === 0) {
+                offsetX = this.gridCellSize / 2;
+            } else {
+                offsetZ = this.gridCellSize / 2;
+            }
+        }
+
         this.ghostBlock.position.set(
             gridCoords.x * this.gridCellSize + offsetX,
             this.gridCellSize * 0.15,
-            gridCoords.z * this.gridCellSize
+            gridCoords.z * this.gridCellSize + offsetZ
         );
+
+        // Update ghost block geometry to match rotation
+        this.updateGhostBlockGeometry(blockType, rotation);
 
         // Color based on validity
         this.ghostBlock.material.color.setHex(canPlace ? 0x00ff00 : 0xff0000);
         this.ghostBlock.visible = true;
+    }
+
+    /**
+     * Update ghost block geometry for current block type and rotation
+     */
+    updateGhostBlockGeometry(blockType, rotation) {
+        let width, depth;
+
+        if (blockType === '1x2') {
+            if (rotation === 0) {
+                width = this.gridCellSize * 1.95;
+                depth = this.gridCellSize * 0.95;
+            } else {
+                width = this.gridCellSize * 0.95;
+                depth = this.gridCellSize * 1.95;
+            }
+        } else {
+            width = this.gridCellSize * 0.95;
+            depth = this.gridCellSize * 0.95;
+        }
+
+        this.ghostBlock.geometry.dispose();
+        this.ghostBlock.geometry = new THREE.BoxGeometry(
+            width, this.gridCellSize * 0.3, depth
+        );
     }
 
     /**
@@ -477,6 +586,7 @@ export class BuildingSystem {
 
     /**
      * Create visual representation for a grid cell
+     * Uses mergeGroup to determine if walls should be skipped
      */
     createCellVisuals(cell, wallHeight, wallThickness) {
         const x = cell.x * this.gridCellSize;
@@ -494,37 +604,52 @@ export class BuildingSystem {
         this.replicaGroup.add(floor);
         this.wallMeshes.push(floor);
 
-        // Determine which walls to draw (only outer edges)
-        const neighbors = {
-            north: this.worldState.grid.some(c => c.x === cell.x && c.z === cell.z - 1),
-            south: this.worldState.grid.some(c => c.x === cell.x && c.z === cell.z + 1),
-            east: this.worldState.grid.some(c => c.x === cell.x + 1 && c.z === cell.z),
-            west: this.worldState.grid.some(c => c.x === cell.x - 1 && c.z === cell.z)
+        // Helper to check neighbor and merge status
+        const checkNeighbor = (dx, dz) => {
+            const neighbor = this.worldState.grid.find(c => c.x === cell.x + dx && c.z === cell.z + dz);
+            if (!neighbor) return { exists: false, merged: false };
+            // Same mergeGroup means no wall between them (open space)
+            const merged = neighbor.mergeGroup === cell.mergeGroup;
+            return { exists: true, merged };
         };
 
-        // Create walls on edges without neighbors (solid)
-        // Create walls with doorways where neighbors exist
-        if (!neighbors.north) {
+        const neighbors = {
+            north: checkNeighbor(0, -1),
+            south: checkNeighbor(0, 1),
+            east: checkNeighbor(1, 0),
+            west: checkNeighbor(-1, 0)
+        };
+
+        // Wall logic:
+        // - No neighbor → solid wall
+        // - Neighbor with different mergeGroup → wall with doorway
+        // - Neighbor with same mergeGroup → no wall (skip)
+
+        // North wall
+        if (!neighbors.north.exists) {
             this.createMiniWall(x, z - half, this.gridCellSize, wallHeight, wallThickness, 'z', false);
-        } else {
+        } else if (!neighbors.north.merged) {
             this.createMiniWall(x, z - half, this.gridCellSize, wallHeight, wallThickness, 'z', true);
         }
 
-        if (!neighbors.south) {
+        // South wall
+        if (!neighbors.south.exists) {
             this.createMiniWall(x, z + half, this.gridCellSize, wallHeight, wallThickness, 'z', false);
-        } else {
+        } else if (!neighbors.south.merged) {
             this.createMiniWall(x, z + half, this.gridCellSize, wallHeight, wallThickness, 'z', true);
         }
 
-        if (!neighbors.east) {
+        // East wall
+        if (!neighbors.east.exists) {
             this.createMiniWall(x + half, z, this.gridCellSize, wallHeight, wallThickness, 'x', false);
-        } else {
+        } else if (!neighbors.east.merged) {
             this.createMiniWall(x + half, z, this.gridCellSize, wallHeight, wallThickness, 'x', true);
         }
 
-        if (!neighbors.west) {
+        // West wall
+        if (!neighbors.west.exists) {
             this.createMiniWall(x - half, z, this.gridCellSize, wallHeight, wallThickness, 'x', false);
-        } else {
+        } else if (!neighbors.west.merged) {
             this.createMiniWall(x - half, z, this.gridCellSize, wallHeight, wallThickness, 'x', true);
         }
     }

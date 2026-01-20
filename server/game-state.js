@@ -129,10 +129,11 @@ class GameState {
      * @param {number} gridZ - Grid Z coordinate
      * @param {string} blockSize - '1x1' or '1x2'
      * @param {string} playerId - ID of the player placing the block
+     * @param {number} rotation - 0 for east-west, 1 for north-south (1x2 only)
      * @returns {Object} Result with success flag and details
      */
-    placeBlock(gridX, gridZ, blockSize, playerId) {
-        return this.worldState.placeBlock(gridX, gridZ, blockSize, playerId);
+    placeBlock(gridX, gridZ, blockSize, playerId, rotation = 0) {
+        return this.worldState.placeBlock(gridX, gridZ, blockSize, playerId, rotation);
     }
 
     /**

@@ -101,6 +101,7 @@ class MessageHandler {
         const gridX = parseInt(message.gridX, 10);
         const gridZ = parseInt(message.gridZ, 10);
         const blockSize = message.blockSize || '1x1';
+        const rotation = parseInt(message.rotation, 10) || 0;
 
         // Validate block size
         if (blockSize !== '1x1' && blockSize !== '1x2') {
@@ -108,9 +109,15 @@ class MessageHandler {
             return;
         }
 
-        console.log(`[MessageHandler] PLACE_BLOCK from ${peerId}: grid(${gridX}, ${gridZ}), size=${blockSize}`);
+        // Validate rotation
+        if (rotation !== 0 && rotation !== 1) {
+            console.warn(`[MessageHandler] PLACE_BLOCK rejected: invalid rotation (${rotation})`);
+            return;
+        }
 
-        const result = this.gameState.placeBlock(gridX, gridZ, blockSize, peerId);
+        console.log(`[MessageHandler] PLACE_BLOCK from ${peerId}: grid(${gridX}, ${gridZ}), size=${blockSize}, rotation=${rotation}`);
+
+        const result = this.gameState.placeBlock(gridX, gridZ, blockSize, peerId, rotation);
 
         if (result.success) {
             console.log(`[MessageHandler] Block placed successfully, version=${result.version}`);

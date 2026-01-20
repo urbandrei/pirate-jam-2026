@@ -189,6 +189,7 @@ export class VRScene {
 
     /**
      * Create walls for a single grid cell (in VR scale)
+     * Uses mergeGroup to determine if walls should be skipped (same room) or have doorways
      */
     createCellWalls(cell, worldState) {
         const cellSize = SMALL_ROOM_SIZE * this.scale;
@@ -196,41 +197,55 @@ export class VRScene {
         const wallHeight = cellSize;
         const x = cell.x * cellSize;
         const z = cell.z * cellSize;
-
-        // Check which neighbors exist
-        const neighbors = {
-            north: worldState.grid.some(c => c.x === cell.x && c.z === cell.z - 1),
-            south: worldState.grid.some(c => c.x === cell.x && c.z === cell.z + 1),
-            east: worldState.grid.some(c => c.x === cell.x + 1 && c.z === cell.z),
-            west: worldState.grid.some(c => c.x === cell.x - 1 && c.z === cell.z)
-        };
-
         const thickness = WALL_THICKNESS * this.scale;
 
-        // Create walls based on neighbors
-        // Outer walls (no neighbor) = solid wall
-        // Inner walls (has neighbor) = wall with doorway
-        if (!neighbors.north) {
+        // Helper to check neighbor and merge status
+        const checkNeighbor = (dx, dz) => {
+            const neighbor = worldState.grid.find(c => c.x === cell.x + dx && c.z === cell.z + dz);
+            if (!neighbor) return { exists: false, merged: false };
+            // Same mergeGroup means no wall between them (open space)
+            const merged = neighbor.mergeGroup === cell.mergeGroup;
+            return { exists: true, merged };
+        };
+
+        const neighbors = {
+            north: checkNeighbor(0, -1),
+            south: checkNeighbor(0, 1),
+            east: checkNeighbor(1, 0),
+            west: checkNeighbor(-1, 0)
+        };
+
+        // Wall logic:
+        // - No neighbor → solid wall
+        // - Neighbor with different mergeGroup → wall with doorway
+        // - Neighbor with same mergeGroup → no wall (skip)
+
+        // North wall
+        if (!neighbors.north.exists) {
             this.addDynamicSolidWall(x, z - half, cellSize, wallHeight, thickness, 'z');
-        } else {
+        } else if (!neighbors.north.merged) {
             this.addDynamicWallWithDoorway(x, z - half, cellSize, wallHeight, thickness, 'z');
         }
+        // If merged, skip wall (open space)
 
-        if (!neighbors.south) {
+        // South wall
+        if (!neighbors.south.exists) {
             this.addDynamicSolidWall(x, z + half, cellSize, wallHeight, thickness, 'z');
-        } else {
+        } else if (!neighbors.south.merged) {
             this.addDynamicWallWithDoorway(x, z + half, cellSize, wallHeight, thickness, 'z');
         }
 
-        if (!neighbors.east) {
+        // East wall
+        if (!neighbors.east.exists) {
             this.addDynamicSolidWall(x + half, z, cellSize, wallHeight, thickness, 'x');
-        } else {
+        } else if (!neighbors.east.merged) {
             this.addDynamicWallWithDoorway(x + half, z, cellSize, wallHeight, thickness, 'x');
         }
 
-        if (!neighbors.west) {
+        // West wall
+        if (!neighbors.west.exists) {
             this.addDynamicSolidWall(x - half, z, cellSize, wallHeight, thickness, 'x');
-        } else {
+        } else if (!neighbors.west.merged) {
             this.addDynamicWallWithDoorway(x - half, z, cellSize, wallHeight, thickness, 'x');
         }
     }
