@@ -22,6 +22,14 @@ class GameState {
             rotation: { x: 0, y: 0, z: 0, w: 1 },
             velocity: { x: 0, y: 0, z: 0 },
             grounded: true,
+            // Survival needs (PC players only, but tracked for all)
+            needs: {
+                hunger: 100,
+                thirst: 100,
+                rest: 100
+            },
+            alive: true,
+            playerState: 'playing', // 'playing' | 'waiting' | 'sleeping'
             // VR-specific data
             headPosition: null,
             headRotation: null,
@@ -109,6 +117,9 @@ class GameState {
                 rotation: player.rotation,
                 lookRotation: player.lookRotation,
                 grounded: player.grounded,
+                needs: player.needs,
+                alive: player.alive,
+                playerState: player.playerState,
                 headPosition: player.headPosition,
                 headRotation: player.headRotation,
                 leftHand: player.leftHand,

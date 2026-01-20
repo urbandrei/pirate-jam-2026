@@ -114,6 +114,50 @@
             color: rgba(255, 255, 255, 0.6);
             font-size: 12px;
         }
+        /* Needs HUD */
+        #needs-hud {
+            position: absolute;
+            bottom: 40px;
+            left: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .need-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .need-label {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 12px;
+            width: 50px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+        .need-bar-bg {
+            width: 120px;
+            height: 12px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .need-fill {
+            height: 100%;
+            width: 100%;
+            border-radius: 5px;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+        #hunger-fill { background: linear-gradient(90deg, #ff6b35, #f7931e); }
+        #thirst-fill { background: linear-gradient(90deg, #00b4d8, #0077b6); }
+        #rest-fill { background: linear-gradient(90deg, #8338ec, #5a189a); }
+        .need-bar.critical .need-fill {
+            animation: pulse-critical 0.5s ease-in-out infinite alternate;
+        }
+        @keyframes pulse-critical {
+            from { opacity: 1; }
+            to { opacity: 0.5; }
+        }
     </style>
 </head>
 <body>
@@ -127,6 +171,26 @@
             </div>
             <div id="grabbed-overlay">
                 <div id="grabbed-text">YOU'VE BEEN GRABBED!</div>
+            </div>
+            <div id="needs-hud">
+                <div class="need-bar" id="hunger-bar">
+                    <span class="need-label">Hunger</span>
+                    <div class="need-bar-bg">
+                        <div class="need-fill" id="hunger-fill"></div>
+                    </div>
+                </div>
+                <div class="need-bar" id="thirst-bar">
+                    <span class="need-label">Thirst</span>
+                    <div class="need-bar-bg">
+                        <div class="need-fill" id="thirst-fill"></div>
+                    </div>
+                </div>
+                <div class="need-bar" id="rest-bar">
+                    <span class="need-label">Rest</span>
+                    <div class="need-bar-bg">
+                        <div class="need-fill" id="rest-fill"></div>
+                    </div>
+                </div>
             </div>
             <div id="controls-help">WASD: Move | Mouse: Look | Space: Jump | ESC: Release cursor</div>
         </div>

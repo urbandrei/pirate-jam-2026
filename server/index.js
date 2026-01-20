@@ -15,6 +15,7 @@ const GameState = require('./game-state');
 const PlayerManager = require('./player-manager');
 const PhysicsValidator = require('./physics-validator');
 const MessageHandler = require('./message-handler');
+const NeedsSystem = require('./systems/needs-system');
 
 // Configuration
 const PORT = process.env.PORT || 443;
@@ -158,6 +159,19 @@ function gameLoop() {
     // Network update
     const networkDelta = now - lastNetworkTime;
     if (networkDelta >= 1000 / NETWORK_RATE) {
+        // Update needs for all players (runs at network rate, not physics rate)
+        const networkDeltaSeconds = networkDelta / 1000;
+        for (const player of gameState.getAllPlayers()) {
+            const shouldDie = NeedsSystem.updateNeeds(player, networkDeltaSeconds);
+            if (shouldDie && player.alive) {
+                // Log death for now - actual death handling will be added later
+                console.log(`[NeedsSystem] Player ${player.id} died from needs depletion`);
+                player.alive = false;
+                player.playerState = 'waiting';
+                // TODO: Implement death queue and waiting room teleport
+            }
+        }
+
         if (gameState.getPlayerCount() > 0) {
             io.emit('message', {
                 type: 'STATE_UPDATE',

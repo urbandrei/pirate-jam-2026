@@ -14,6 +14,7 @@ import { Hands } from './hands.js';
 import { Network } from './network.js';
 import { RemotePlayers } from './remote-players.js';
 import { BuildingSystem } from './building-system.js';
+import { StatsPanel } from './stats-panel.js';
 import { NETWORK_RATE, GIANT_SCALE } from '../../pc/shared/constants.js';
 
 class VRGame {
@@ -23,6 +24,7 @@ class VRGame {
         this.network = null;
         this.remotePlayers = null;
         this.buildingSystem = null;
+        this.statsPanel = null;
         this.disposed = false;
 
         // Player count HUD
@@ -57,6 +59,9 @@ class VRGame {
 
         // Setup player count HUD
         this.setupPlayerCountHUD();
+
+        // Setup stats panel (population needs overview)
+        this.statsPanel = new StatsPanel(this.scene.cameraRig);
 
         // Setup hands
         this.hands = new Hands(this.scene.scene, this.scene.renderer);
@@ -98,6 +103,11 @@ class VRGame {
             // Update player count HUD
             const playerCount = Object.keys(state.players).length;
             this.updatePlayerCountHUD(playerCount);
+
+            // Update stats panel with population needs
+            if (this.statsPanel) {
+                this.statsPanel.update(state);
+            }
 
             // Update building system with world state (miniature replica)
             if (state.world && this.buildingSystem) {
@@ -349,6 +359,15 @@ class VRGame {
                 this.buildingSystem = null;
             } catch (err) {
                 console.warn('[VRGame] Error disposing building system:', err);
+            }
+        }
+
+        if (this.statsPanel) {
+            try {
+                this.statsPanel.dispose();
+                this.statsPanel = null;
+            } catch (err) {
+                console.warn('[VRGame] Error disposing stats panel:', err);
             }
         }
 

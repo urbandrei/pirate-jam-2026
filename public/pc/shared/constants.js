@@ -47,6 +47,15 @@ export const WALL_THICKNESS = 0.2; // 0.2m thin walls
 export const DOORWAY_HEIGHT = PLAYER_HEIGHT * 1.3; // ~2.34m
 export const DOORWAY_WIDTH = 1.2; // 1.2m wide doorways
 
+// Needs system
+export const HUNGER_DECAY_RATE = 100 / (10 * 60);  // 0-100 over 10 min
+export const THIRST_DECAY_RATE = 100 / (8 * 60);   // 0-100 over 8 min
+export const REST_DECAY_RATE = 100 / (15 * 60);    // 0-100 over 15 min
+export const REST_RESTORE_RATE = REST_DECAY_RATE * 5;  // 5x faster when sleeping
+export const NEED_MAX = 100;
+export const NEED_CRITICAL = 20;  // Red warning threshold
+export const NEED_LOW = 50;       // Yellow warning threshold
+
 // Colors
 export const COLORS = {
     GROUND: 0x3d5c3d,

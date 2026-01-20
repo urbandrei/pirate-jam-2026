@@ -7,6 +7,7 @@ import { Controls } from './controls.js';
 import { Network } from './network.js';
 import { Player } from './player.js';
 import { RemotePlayers } from './remote-players.js';
+import { HUD } from './hud.js';
 import { INPUT_RATE } from '../shared/constants.js';
 
 class Game {
@@ -16,6 +17,7 @@ class Game {
         this.network = null;
         this.player = null;
         this.remotePlayers = null;
+        this.hud = null;
 
         this.lastTime = performance.now();
         this.lastInputTime = 0;
@@ -42,6 +44,9 @@ class Game {
         // Setup remote players renderer
         this.remotePlayers = new RemotePlayers(this.scene);
 
+        // Setup HUD
+        this.hud = new HUD();
+
         // Setup network
         this.network = new Network();
         this.setupNetworkCallbacks();
@@ -64,6 +69,11 @@ class Game {
             const myState = state.players[this.network.playerId];
             if (myState) {
                 this.player.updateFromServer(myState);
+
+                // Update HUD with player needs
+                if (myState.needs) {
+                    this.hud.updateNeeds(myState.needs);
+                }
 
                 // Check if we're grabbed
                 if (myState.isGrabbed && !this.isGrabbed) {
