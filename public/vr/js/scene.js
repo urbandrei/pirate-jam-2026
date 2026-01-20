@@ -10,7 +10,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, WORLD_SIZE, GIANT_SCALE } from '../../pc/shared/constants.js';
+import { COLORS, WORLD_SIZE, GIANT_SCALE, ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH } from '../../pc/shared/constants.js';
 
 export class VRScene {
     constructor(container) {
@@ -80,15 +80,47 @@ export class VRScene {
         this.scene.add(hemi);
     }
 
+    /**
+     * Create procedural rough concrete texture
+     */
+    createConcreteTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+
+        // Base gray
+        ctx.fillStyle = '#808080';
+        ctx.fillRect(0, 0, 256, 256);
+
+        // Add noise for rough texture
+        const imageData = ctx.getImageData(0, 0, 256, 256);
+        for (let i = 0; i < imageData.data.length; i += 4) {
+            const noise = (Math.random() - 0.5) * 40;
+            imageData.data[i] = Math.max(0, Math.min(255, imageData.data[i] + noise));
+            imageData.data[i + 1] = Math.max(0, Math.min(255, imageData.data[i + 1] + noise));
+            imageData.data[i + 2] = Math.max(0, Math.min(255, imageData.data[i + 2] + noise));
+        }
+        ctx.putImageData(imageData, 0, 0);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(2, 2);
+        return texture;
+    }
+
     setupGround() {
         // Ground plane at 1/GIANT_SCALE (tiny world)
         // 100m world / 10 = 10m visual (tabletop-sized)
         const groundSize = WORLD_SIZE / GIANT_SCALE;
         const groundGeometry = new THREE.PlaneGeometry(groundSize, groundSize);
+
+        // Concrete material for ground
         const groundMaterial = new THREE.MeshStandardMaterial({
-            color: COLORS.GROUND,
-            roughness: 0.8,
-            metalness: 0.1
+            map: this.createConcreteTexture(),
+            roughness: 0.95,
+            metalness: 0.05
         });
         this.ground = new THREE.Mesh(groundGeometry, groundMaterial);
         this.ground.rotation.x = -Math.PI / 2;
@@ -103,59 +135,121 @@ export class VRScene {
     }
 
     setupReferenceBlocks() {
-        const blockColors = [
-            COLORS.BLOCK_RED,
-            COLORS.BLOCK_GREEN,
-            COLORS.BLOCK_BLUE,
-            COLORS.BLOCK_YELLOW,
-            COLORS.BLOCK_PURPLE
-        ];
+        // Replace colored blocks with concrete room
+        this.setupRoom();
+    }
 
-        // Positions in world units / GIANT_SCALE (tiny world)
-        // 10m in world = 1m visual in VR
-        const positions = [
-            { x: 10 / GIANT_SCALE, z: 0 },      // 1m in VR
-            { x: -10 / GIANT_SCALE, z: 0 },
-            { x: 0, z: 10 / GIANT_SCALE },
-            { x: 0, z: -10 / GIANT_SCALE },
-            { x: 0, z: 0 }
-        ];
+    /**
+     * Create a concrete room with doorways around spawn point
+     * All dimensions scaled by 1/GIANT_SCALE for VR "tiny world" view
+     */
+    setupRoom() {
+        const scale = 1 / GIANT_SCALE;
 
-        positions.forEach((pos, i) => {
-            // Blocks: 2m x 3m x 2m in world = 0.2m x 0.3m x 0.2m in VR (toy blocks)
-            const geometry = new THREE.BoxGeometry(
-                2 / GIANT_SCALE,
-                3 / GIANT_SCALE,
-                2 / GIANT_SCALE
-            );
-            const material = new THREE.MeshStandardMaterial({
-                color: blockColors[i],
-                roughness: 0.7,
-                metalness: 0.1
-            });
-            const block = new THREE.Mesh(geometry, material);
-            block.position.set(pos.x, 1.5 / GIANT_SCALE, pos.z);
-            this.scene.add(block);
+        // Room dimensions in VR scale
+        const roomSize = ROOM_SIZE * scale;        // 0.5m in VR
+        const wallHeight = ROOM_SIZE * scale;      // 0.5m in VR
+        const wallThickness = WALL_THICKNESS * scale; // 0.02m in VR
+        const doorwayHeight = DOORWAY_HEIGHT * scale; // ~0.234m in VR
+        const doorwayWidth = DOORWAY_WIDTH * scale;   // 0.12m in VR
+
+        // Concrete material for walls
+        const wallMaterial = new THREE.MeshStandardMaterial({
+            map: this.createConcreteTexture(),
+            roughness: 0.95,
+            metalness: 0.05
         });
 
-        // Scattered blocks - smaller toy-sized blocks (reduced count for VR performance)
-        for (let i = 0; i < 5; i++) {
-            const worldSize = 0.5 + Math.random() * 1.5; // 0.5-2m in world
-            const vrSize = worldSize / GIANT_SCALE; // 0.05-0.2m in VR
-            const geometry = new THREE.BoxGeometry(vrSize, vrSize * 2, vrSize);
-            const material = new THREE.MeshStandardMaterial({
-                color: blockColors[Math.floor(Math.random() * blockColors.length)],
-                roughness: 0.7,
-                metalness: 0.1
-            });
-            const block = new THREE.Mesh(geometry, material);
-            block.position.set(
-                (Math.random() - 0.5) * 40 / GIANT_SCALE, // ±2m in VR
-                vrSize,
-                (Math.random() - 0.5) * 40 / GIANT_SCALE
-            );
-            block.rotation.y = Math.random() * Math.PI;
-            this.scene.add(block);
+        // Calculate wall segment dimensions
+        const sideSegmentWidth = (roomSize - doorwayWidth) / 2;
+        const aboveDoorHeight = wallHeight - doorwayHeight;
+        const halfRoom = roomSize / 2;
+
+        // Create wall segments for each side (with doorway cutouts)
+        // Each wall needs: left segment, right segment, above-door segment
+
+        // North wall (z = -halfRoom)
+        this.createWallWithDoorway(
+            wallMaterial,
+            { x: 0, z: -halfRoom },
+            'z',
+            wallHeight, wallThickness,
+            doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight
+        );
+
+        // South wall (z = +halfRoom)
+        this.createWallWithDoorway(
+            wallMaterial,
+            { x: 0, z: halfRoom },
+            'z',
+            wallHeight, wallThickness,
+            doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight
+        );
+
+        // East wall (x = +halfRoom)
+        this.createWallWithDoorway(
+            wallMaterial,
+            { x: halfRoom, z: 0 },
+            'x',
+            wallHeight, wallThickness,
+            doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight
+        );
+
+        // West wall (x = -halfRoom)
+        this.createWallWithDoorway(
+            wallMaterial,
+            { x: -halfRoom, z: 0 },
+            'x',
+            wallHeight, wallThickness,
+            doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight
+        );
+    }
+
+    /**
+     * Create a wall with a doorway cutout
+     */
+    createWallWithDoorway(material, position, axis, wallHeight, wallThickness, doorwayWidth, doorwayHeight, sideSegmentWidth, aboveDoorHeight) {
+        const halfDoorway = doorwayWidth / 2;
+        const sideOffset = halfDoorway + sideSegmentWidth / 2;
+
+        if (axis === 'z') {
+            // Wall along X-axis (North/South walls)
+            // Left segment
+            const leftGeom = new THREE.BoxGeometry(sideSegmentWidth, wallHeight, wallThickness);
+            const leftWall = new THREE.Mesh(leftGeom, material);
+            leftWall.position.set(position.x - sideOffset, wallHeight / 2, position.z);
+            this.scene.add(leftWall);
+
+            // Right segment
+            const rightGeom = new THREE.BoxGeometry(sideSegmentWidth, wallHeight, wallThickness);
+            const rightWall = new THREE.Mesh(rightGeom, material);
+            rightWall.position.set(position.x + sideOffset, wallHeight / 2, position.z);
+            this.scene.add(rightWall);
+
+            // Above door segment
+            const aboveGeom = new THREE.BoxGeometry(doorwayWidth, aboveDoorHeight, wallThickness);
+            const aboveWall = new THREE.Mesh(aboveGeom, material);
+            aboveWall.position.set(position.x, doorwayHeight + aboveDoorHeight / 2, position.z);
+            this.scene.add(aboveWall);
+        } else {
+            // Wall along Z-axis (East/West walls)
+            // Left segment (negative Z)
+            const leftGeom = new THREE.BoxGeometry(wallThickness, wallHeight, sideSegmentWidth);
+            const leftWall = new THREE.Mesh(leftGeom, material);
+            leftWall.position.set(position.x, wallHeight / 2, position.z - sideOffset);
+            this.scene.add(leftWall);
+
+            // Right segment (positive Z)
+            const rightGeom = new THREE.BoxGeometry(wallThickness, wallHeight, sideSegmentWidth);
+            const rightWall = new THREE.Mesh(rightGeom, material);
+            rightWall.position.set(position.x, wallHeight / 2, position.z + sideOffset);
+            this.scene.add(rightWall);
+
+            // Above door segment
+            const aboveGeom = new THREE.BoxGeometry(wallThickness, aboveDoorHeight, doorwayWidth);
+            const aboveWall = new THREE.Mesh(aboveGeom, material);
+            aboveWall.position.set(position.x, doorwayHeight + aboveDoorHeight / 2, position.z);
+            this.scene.add(aboveWall);
         }
     }
 
