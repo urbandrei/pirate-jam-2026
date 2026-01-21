@@ -76,6 +76,23 @@ export class InteractionSystem {
     }
 
     /**
+     * Update the interaction prompts for an existing interactable
+     * @param {THREE.Mesh} mesh - The mesh to update
+     * @param {Array<{type: string, prompt: string}>} interactions - New interactions
+     */
+    updateInteractablePrompt(mesh, interactions) {
+        const data = this.interactables.get(mesh.uuid);
+        if (data) {
+            data.interactions = interactions;
+            // If this is the current target, update the prompt display
+            if (this.currentTarget === mesh && interactions.length > 0) {
+                this.currentInteraction = interactions[0];
+                this._showPrompt(this.currentInteraction.prompt);
+            }
+        }
+    }
+
+    /**
      * Clear all registered interactables
      */
     clearInteractables() {

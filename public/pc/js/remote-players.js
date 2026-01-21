@@ -9,7 +9,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { GIANT_SCALE } from '../shared/constants.js';
+import { GIANT_SCALE, ITEMS } from '../shared/constants.js';
 import { createPCPlayerMesh, createVRPlayerMeshForPC, FINGER_JOINTS, updateBoneBetweenPoints } from '../shared/player-mesh.js';
 
 export class RemotePlayers {
@@ -48,7 +48,9 @@ export class RemotePlayers {
                     mesh,
                     type: playerData.type,
                     targetPosition: { x: 0, y: 0, z: 0 },
-                    targetRotation: 0
+                    targetRotation: 0,
+                    heldItemMesh: null,
+                    lastHeldItemKey: null
                 };
                 this.players.set(playerId, playerObj);
             }
@@ -90,6 +92,71 @@ export class RemotePlayers {
         if (data.lookRotation) {
             mesh.rotation.y = data.lookRotation.y;
         }
+
+        // Update held item display
+        this.updateRemoteHeldItem(playerObj, data.heldItem);
+    }
+
+    /**
+     * Update held item display for a remote player
+     * @param {Object} playerObj - Player object from this.players
+     * @param {Object|null} heldItem - Held item data from server
+     */
+    updateRemoteHeldItem(playerObj, heldItem) {
+        // Generate key for change detection
+        const itemKey = heldItem
+            ? `${heldItem.id}-${heldItem.stackCount || 1}-${heldItem.type}`
+            : null;
+
+        // Skip if nothing changed
+        if (playerObj.lastHeldItemKey === itemKey) return;
+        playerObj.lastHeldItemKey = itemKey;
+
+        // Remove existing held item mesh
+        if (playerObj.heldItemMesh) {
+            playerObj.mesh.remove(playerObj.heldItemMesh);
+            if (playerObj.heldItemMesh.geometry) playerObj.heldItemMesh.geometry.dispose();
+            if (playerObj.heldItemMesh.material) playerObj.heldItemMesh.material.dispose();
+            playerObj.heldItemMesh = null;
+        }
+
+        // Create new mesh if holding something
+        if (heldItem) {
+            playerObj.heldItemMesh = this.createRemoteHeldItemMesh(heldItem);
+            // Position in front of player, at hand height
+            // Negative Z is forward in Three.js when player rotates with lookRotation.y
+            playerObj.heldItemMesh.position.set(0, 0.3, -0.4);
+            playerObj.mesh.add(playerObj.heldItemMesh);
+        }
+    }
+
+    /**
+     * Create a mesh for a remote player's held item
+     * @param {Object} item - Item data
+     * @returns {THREE.Mesh}
+     */
+    createRemoteHeldItemMesh(item) {
+        // Get item definition for color
+        const itemDef = ITEMS[item.type];
+
+        // Size based on stack count
+        const baseSize = 0.3;
+        const stackCount = item.stackCount || 1;
+        const stackBonus = stackCount > 1 ? Math.min((stackCount - 1) * 0.04, 0.15) : 0;
+        const size = baseSize + stackBonus;
+
+        const geometry = new THREE.BoxGeometry(size, size, size);
+
+        // Use item definition color, fall back to item.color or default yellow
+        const color = itemDef ? itemDef.color : (item.color || 0xffff00);
+
+        const material = new THREE.MeshStandardMaterial({
+            color: color,
+            roughness: 0.5,
+            metalness: 0.1
+        });
+
+        return new THREE.Mesh(geometry, material);
     }
 
     updateVRPlayer(playerObj, data) {
@@ -236,6 +303,12 @@ export class RemotePlayers {
     removePlayer(playerId) {
         const playerObj = this.players.get(playerId);
         if (playerObj) {
+            // Clean up held item mesh
+            if (playerObj.heldItemMesh) {
+                playerObj.mesh.remove(playerObj.heldItemMesh);
+                if (playerObj.heldItemMesh.geometry) playerObj.heldItemMesh.geometry.dispose();
+                if (playerObj.heldItemMesh.material) playerObj.heldItemMesh.material.dispose();
+            }
             this.scene.remove(playerObj.mesh);
             this.players.delete(playerId);
         }

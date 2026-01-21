@@ -3,7 +3,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, WORLD_SIZE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH, ROOM_TYPES, DEFAULT_ROOM_TYPE } from '../shared/constants.js';
+import { COLORS, WORLD_SIZE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH, ROOM_TYPES, DEFAULT_ROOM_TYPE, ITEMS } from '../shared/constants.js';
 
 export class Scene {
     constructor(container) {
@@ -49,6 +49,9 @@ export class Scene {
             1000
         );
         this.camera.position.set(0, 1.6, 0); // Eye height
+
+        // Add camera to scene - required for camera-attached objects (held items) to render
+        this.scene.add(this.camera);
 
         // Setup scene elements
         this.setupLighting();
@@ -680,17 +683,38 @@ export class Scene {
 
                 // Register with interaction system
                 if (interactionSystem) {
+                    const itemDef = ITEMS[obj.type];
+                    const itemName = itemDef ? itemDef.name : obj.type;
                     interactionSystem.registerInteractable(
                         mesh,
                         'WORLD_ITEM',
                         obj.id,
-                        [{ type: 'pickup_item', prompt: 'Pick up' }]
+                        [{ type: 'pickup_item', prompt: `Pick up ${itemName}` }]
                     );
                 }
             } else {
-                // Update existing mesh position
+                // Update existing mesh
                 const mesh = this.worldObjectMeshes.get(obj.id);
                 mesh.position.set(obj.position.x, obj.position.y, obj.position.z);
+
+                // Check if item type changed (e.g., rotted to trash)
+                if (mesh.userData.itemType !== obj.type) {
+                    // Update color for new type
+                    const itemDef = ITEMS[obj.type];
+                    if (itemDef) {
+                        mesh.material.color.setHex(itemDef.color);
+                    }
+                    mesh.userData.itemType = obj.type;
+
+                    // Update interaction prompt if registered
+                    if (interactionSystem) {
+                        const itemName = itemDef ? itemDef.name : obj.type;
+                        interactionSystem.updateInteractablePrompt(
+                            mesh,
+                            [{ type: 'pickup_item', prompt: `Pick up ${itemName}` }]
+                        );
+                    }
+                }
             }
         }
     }
@@ -701,16 +725,24 @@ export class Scene {
      * @returns {THREE.Mesh}
      */
     createWorldObjectMesh(obj) {
-        let geometry;
-        if (obj.type === 'cube') {
-            geometry = new THREE.BoxGeometry(obj.size, obj.size, obj.size);
-        } else {
-            // Default to cube
-            geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        // Get item definition for color
+        const itemDef = ITEMS[obj.type];
+
+        // Size based on stack count (subtle growth)
+        const baseSize = 0.4;
+        const stackBonus = obj.stackCount > 1 ? Math.min((obj.stackCount - 1) * 0.05, 0.2) : 0;
+        const size = baseSize + stackBonus;
+
+        const geometry = new THREE.BoxGeometry(size, size, size);
+
+        // Use item color if available, otherwise fallback
+        let color = obj.color || 0xffff00;
+        if (itemDef) {
+            color = itemDef.color;
         }
 
         const material = new THREE.MeshStandardMaterial({
-            color: obj.color || 0xffff00,
+            color: color,
             roughness: 0.5,
             metalness: 0.1
         });
@@ -719,6 +751,10 @@ export class Scene {
         mesh.position.set(obj.position.x, obj.position.y, obj.position.z);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
+
+        // Store item data for interaction system
+        mesh.userData.itemType = obj.type;
+        mesh.userData.stackCount = obj.stackCount || 1;
 
         return mesh;
     }

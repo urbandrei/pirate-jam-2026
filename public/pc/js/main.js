@@ -124,8 +124,9 @@ class Game {
                     this.hud.updateNeeds(myState.needs);
                 }
 
-                // Update held item display
+                // Update held item display (both 3D and HUD)
                 this.player.updateHeldItem(myState.heldItem);
+                this.hud.updateHeldItem(myState.heldItem);
 
                 // Check if we're grabbed
                 if (myState.isGrabbed && !this.isGrabbed) {

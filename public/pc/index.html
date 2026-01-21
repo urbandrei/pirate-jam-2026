@@ -158,6 +158,43 @@
             from { opacity: 1; }
             to { opacity: 0.5; }
         }
+        /* Held Item Display */
+        #held-item-hud {
+            position: absolute;
+            bottom: 40px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 120px;
+        }
+        #held-item-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        #held-item-info {
+            display: flex;
+            flex-direction: column;
+        }
+        #held-item-name {
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+        #held-item-count {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 11px;
+        }
+        #held-item-hud.empty {
+            opacity: 0.5;
+        }
     </style>
 </head>
 <body>
@@ -192,7 +229,14 @@
                     </div>
                 </div>
             </div>
-            <div id="controls-help">WASD: Move | Mouse: Look | Space: Jump | ESC: Release cursor</div>
+            <div id="held-item-hud" class="empty">
+                <div id="held-item-icon"></div>
+                <div id="held-item-info">
+                    <span id="held-item-name">Empty</span>
+                    <span id="held-item-count"></span>
+                </div>
+            </div>
+            <div id="controls-help">WASD: Move | Mouse: Look | Space: Jump | Q: Drop | Click: Interact | ESC: Release cursor</div>
         </div>
     </div>
 

@@ -4,6 +4,7 @@
  */
 
 const WorldState = require('./world-state');
+const itemSystem = require('./systems/item-system');
 
 class GameState {
     constructor() {
@@ -16,14 +17,15 @@ class GameState {
         // World objects (pickable items, etc.)
         this.worldObjects = new Map();
 
-        // Add test cube at spawn room center
-        this.worldObjects.set('test_cube_001', {
-            id: 'test_cube_001',
-            type: 'cube',
-            position: { x: 0, y: 0.25, z: 0 },
-            size: 0.5,
-            color: 0xffff00
-        });
+        // Add test items at spawn room center
+        const testSeed = itemSystem.createItem('seed', { x: 0, y: 0.25, z: 0 });
+        this.worldObjects.set(testSeed.id, testSeed);
+
+        const testVegetable = itemSystem.createItem('raw_vegetable', { x: 2, y: 0.25, z: 0 });
+        this.worldObjects.set(testVegetable.id, testVegetable);
+
+        const testMeal = itemSystem.createItem('basic_meal', { x: -2, y: 0.25, z: 0 });
+        this.worldObjects.set(testMeal.id, testMeal);
     }
 
     addPlayer(peerId, playerType) {
@@ -189,6 +191,18 @@ class GameState {
      */
     addWorldObject(obj) {
         this.worldObjects.set(obj.id, obj);
+    }
+
+    /**
+     * Create and add a new item to the world
+     * @param {string} type - Item type from ITEMS
+     * @param {Object} position - World position {x, y, z}
+     * @returns {Object} The created item
+     */
+    createWorldItem(type, position) {
+        const item = itemSystem.createItem(type, position);
+        this.worldObjects.set(item.id, item);
+        return item;
     }
 }
 

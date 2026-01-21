@@ -18,6 +18,7 @@ const MessageHandler = require('./message-handler');
 const NeedsSystem = require('./systems/needs-system');
 const RoomManager = require('./systems/room-manager');
 const InteractionSystem = require('./systems/interaction-system');
+const itemSystem = require('./systems/item-system');
 
 // Configuration
 const isDevMode = process.argv.includes('dev');
@@ -306,6 +307,9 @@ function gameLoop() {
                 // TODO: Implement death queue and waiting room teleport
             }
         }
+
+        // Update item rot (check for items that have rotted into trash)
+        itemSystem.updateItemRot(gameState.worldObjects, now);
 
         if (gameState.getPlayerCount() > 0) {
             io.emit('message', {

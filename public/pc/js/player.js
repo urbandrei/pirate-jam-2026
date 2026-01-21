@@ -3,7 +3,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, PLAYER_HEIGHT, PLAYER_RADIUS, GROUND_LEVEL } from '../shared/constants.js';
+import { COLORS, PLAYER_HEIGHT, PLAYER_RADIUS, GROUND_LEVEL, ITEMS } from '../shared/constants.js';
 
 export class Player {
     constructor(scene, camera) {
@@ -20,6 +20,7 @@ export class Player {
         // Held item state
         this.heldItem = null;
         this.heldItemMesh = null;
+        this._lastItemKey = null; // For change detection
 
         // Create visual representation (capsule)
         this.mesh = this.createCapsuleMesh();
@@ -99,8 +100,14 @@ export class Player {
      * @param {Object|null} heldItem - Held item data from server, or null if not holding
      */
     updateHeldItem(heldItem) {
-        // If same item (or both null), no change needed
-        if (this.heldItem?.id === heldItem?.id) return;
+        // Generate key that includes id, stack count, and type for change detection
+        const itemKey = heldItem
+            ? `${heldItem.id}-${heldItem.stackCount || 1}-${heldItem.type}`
+            : null;
+
+        // Skip if nothing changed
+        if (this._lastItemKey === itemKey) return;
+        this._lastItemKey = itemKey;
 
         this.heldItem = heldItem;
 
@@ -117,8 +124,6 @@ export class Player {
             this.heldItemMesh = this.createHeldItemMesh(heldItem);
             // Position in front of camera, lower edge of view
             this.heldItemMesh.position.set(0, -0.4, -0.6);
-            // Slightly smaller when held
-            this.heldItemMesh.scale.setScalar(0.6);
             this.camera.add(this.heldItemMesh);
         }
     }
@@ -129,15 +134,22 @@ export class Player {
      * @returns {THREE.Mesh}
      */
     createHeldItemMesh(item) {
-        let geometry;
-        if (item.type === 'cube') {
-            geometry = new THREE.BoxGeometry(item.size || 0.5, item.size || 0.5, item.size || 0.5);
-        } else {
-            geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-        }
+        // Get item definition for color
+        const itemDef = ITEMS[item.type];
+
+        // Size based on stack count (larger for stacked items)
+        const baseSize = 0.4;
+        const stackCount = item.stackCount || 1;
+        const stackBonus = stackCount > 1 ? Math.min((stackCount - 1) * 0.05, 0.2) : 0;
+        const size = baseSize + stackBonus;
+
+        const geometry = new THREE.BoxGeometry(size, size, size);
+
+        // Use item definition color, fall back to item.color or default yellow
+        const color = itemDef ? itemDef.color : (item.color || 0xffff00);
 
         const material = new THREE.MeshStandardMaterial({
-            color: item.color || 0xffff00,
+            color: color,
             roughness: 0.5,
             metalness: 0.1
         });

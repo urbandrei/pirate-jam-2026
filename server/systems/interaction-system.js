@@ -7,6 +7,8 @@
  * - Returns available interactions at player position
  */
 
+const itemSystem = require('./item-system');
+
 const INTERACTION_RANGE = 2.0; // meters
 
 class InteractionSystem {
@@ -200,15 +202,27 @@ class InteractionSystem {
     }
 
     _executePickup(player, itemId) {
-        // Check if player is already holding something
-        if (player.heldItem) {
-            return { success: false, error: 'Already holding an item' };
-        }
-
         // Get the world object
         const obj = this.gameState.getWorldObject(itemId);
         if (!obj) {
             return { success: false, error: 'Object not found' };
+        }
+
+        // Check if player is already holding something
+        if (player.heldItem) {
+            // Try to stack items
+            if (itemSystem.canStackItems(player.heldItem, obj)) {
+                const stackedItem = itemSystem.stackItems(player.heldItem, obj);
+                if (stackedItem) {
+                    // Remove picked up item from world
+                    this.gameState.removeWorldObject(itemId);
+                    // Update held item to stacked version
+                    player.heldItem = stackedItem;
+                    console.log(`[InteractionSystem] Player ${player.id} stacked ${obj.type}, now holding ${stackedItem.stackCount}`);
+                    return { success: true, item: stackedItem, stacked: true };
+                }
+            }
+            return { success: false, error: 'Items cannot be combined' };
         }
 
         // Remove from world and attach to player

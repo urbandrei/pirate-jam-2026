@@ -3,11 +3,11 @@
  * Displays player needs (hunger, thirst, rest) and other status info
  */
 
-import { NEED_CRITICAL, NEED_LOW } from '../shared/constants.js';
+import { NEED_CRITICAL, NEED_LOW, ITEMS } from '../shared/constants.js';
 
 export class HUD {
     constructor() {
-        // Cache DOM references
+        // Cache DOM references for needs
         this.hungerBar = document.getElementById('hunger-bar');
         this.thirstBar = document.getElementById('thirst-bar');
         this.restBar = document.getElementById('rest-bar');
@@ -16,8 +16,15 @@ export class HUD {
         this.thirstFill = document.getElementById('thirst-fill');
         this.restFill = document.getElementById('rest-fill');
 
+        // Cache DOM references for held item
+        this.heldItemHud = document.getElementById('held-item-hud');
+        this.heldItemIcon = document.getElementById('held-item-icon');
+        this.heldItemName = document.getElementById('held-item-name');
+        this.heldItemCount = document.getElementById('held-item-count');
+
         // Track last values to avoid unnecessary DOM updates
         this._lastNeeds = { hunger: -1, thirst: -1, rest: -1 };
+        this._lastHeldItem = null;
     }
 
     /**
@@ -76,6 +83,47 @@ export class HUD {
         if (hud) {
             hud.style.display = visible ? 'flex' : 'none';
         }
+    }
+
+    /**
+     * Update the held item display
+     * @param {Object|null} heldItem - The item the player is holding, or null
+     */
+    updateHeldItem(heldItem) {
+        // Skip if item hasn't changed (compare by id and stackCount)
+        const itemId = heldItem ? `${heldItem.type}-${heldItem.stackCount || 1}` : null;
+        if (itemId === this._lastHeldItem) return;
+        this._lastHeldItem = itemId;
+
+        if (!heldItem) {
+            // Show empty state
+            this.heldItemHud.classList.add('empty');
+            this.heldItemIcon.style.backgroundColor = '#333';
+            this.heldItemName.textContent = 'Empty';
+            this.heldItemCount.textContent = '';
+            return;
+        }
+
+        // Get item definition
+        const itemDef = ITEMS[heldItem.type];
+        if (!itemDef) {
+            // Unknown item type
+            this.heldItemHud.classList.remove('empty');
+            this.heldItemIcon.style.backgroundColor = '#888';
+            this.heldItemName.textContent = heldItem.type;
+            this.heldItemCount.textContent = heldItem.stackCount > 1 ? `x${heldItem.stackCount}` : '';
+            return;
+        }
+
+        // Update display with item info
+        this.heldItemHud.classList.remove('empty');
+
+        // Convert hex color to CSS
+        const colorHex = '#' + itemDef.color.toString(16).padStart(6, '0');
+        this.heldItemIcon.style.backgroundColor = colorHex;
+
+        this.heldItemName.textContent = itemDef.name;
+        this.heldItemCount.textContent = heldItem.stackCount > 1 ? `x${heldItem.stackCount}` : '';
     }
 
     /**

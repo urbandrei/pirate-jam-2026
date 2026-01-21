@@ -95,6 +95,37 @@ export const INTERACTABLE_TYPES = {
     WORLD_ITEM: 'world_item'
 };
 
+// Item definitions
+export const ITEMS = {
+    seed: {
+        name: 'Seed',
+        color: 0x8B4513,
+        canStack: true,
+        rotTime: null  // doesn't rot
+    },
+    raw_vegetable: {
+        name: 'Raw Vegetable',
+        color: 0x228B22,
+        canStack: true,
+        rotTime: 300  // 5 minutes in seconds
+    },
+    basic_meal: {
+        name: 'Basic Meal',
+        color: 0xFFD700,
+        canStack: true,
+        rotTime: 180,  // 3 minutes in seconds
+        hunger: 30
+    },
+    trash: {
+        name: 'Trash',
+        color: 0x4a4a4a,
+        canStack: false,
+        rotTime: null
+    }
+};
+
+export const ITEM_ROT_CHECK_INTERVAL = 1000; // ms between rot checks
+
 // Colors
 export const COLORS = {
     GROUND: 0x3d5c3d,
