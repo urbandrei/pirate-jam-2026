@@ -5,7 +5,7 @@
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import {
-    GIANT_SCALE, SMALL_ROOM_SIZE, ROOM_TYPES, DEFAULT_ROOM_TYPE
+    GIANT_SCALE, SMALL_ROOM_SIZE, ROOM_TYPES, DEFAULT_ROOM_TYPE, ITEMS
 } from '../../pc/shared/constants.js';
 import { createPlaceBlockMessage, createConvertRoomMessage } from '../../pc/shared/protocol.js';
 
@@ -50,6 +50,9 @@ export class BuildingSystem {
 
         // Wall meshes for cleanup
         this.wallMeshes = [];
+
+        // World items in miniature
+        this.worldItemMeshes = new Map(); // itemId -> mesh
 
         // Materials (reused)
         this.wallMaterial = null;
@@ -790,6 +793,74 @@ export class BuildingSystem {
     }
 
     /**
+     * Update world items in the miniature replica
+     * @param {Array} worldObjects - Array of world items from server state
+     */
+    updateWorldItems(worldObjects) {
+        if (!worldObjects) return;
+
+        // Track which items we've seen this update
+        const seenIds = new Set();
+
+        for (const item of worldObjects) {
+            seenIds.add(item.id);
+
+            if (this.worldItemMeshes.has(item.id)) {
+                // Update existing mesh position
+                const mesh = this.worldItemMeshes.get(item.id);
+                mesh.position.set(
+                    item.position.x * this.miniatureScale,
+                    item.position.y * this.miniatureScale,
+                    item.position.z * this.miniatureScale
+                );
+            } else {
+                // Create new mesh
+                const mesh = this.createMiniatureItemMesh(item);
+                this.worldItemMeshes.set(item.id, mesh);
+                this.replicaGroup.add(mesh);
+            }
+        }
+
+        // Remove meshes for items that no longer exist
+        for (const [id, mesh] of this.worldItemMeshes) {
+            if (!seenIds.has(id)) {
+                this.replicaGroup.remove(mesh);
+                mesh.geometry.dispose();
+                mesh.material.dispose();
+                this.worldItemMeshes.delete(id);
+            }
+        }
+    }
+
+    /**
+     * Create a miniature mesh for a world item
+     * @param {Object} item - Item data from server
+     * @returns {THREE.Mesh}
+     */
+    createMiniatureItemMesh(item) {
+        const itemDef = ITEMS[item.type];
+        const color = itemDef ? itemDef.color : 0xffff00;
+
+        // Scale world size to miniature (with minimum visibility threshold)
+        const stackCount = item.stackCount || 1;
+        const worldSize = 0.4 + (stackCount > 1 ? Math.min((stackCount - 1) * 0.05, 0.2) : 0);
+        const miniSize = Math.max(worldSize * this.miniatureScale, 0.004); // Min 4mm for visibility
+
+        const geometry = new THREE.BoxGeometry(miniSize, miniSize, miniSize);
+        const material = new THREE.MeshBasicMaterial({ color });
+        const mesh = new THREE.Mesh(geometry, material);
+
+        // Position in miniature space
+        mesh.position.set(
+            item.position.x * this.miniatureScale,
+            item.position.y * this.miniatureScale,
+            item.position.z * this.miniatureScale
+        );
+
+        return mesh;
+    }
+
+    /**
      * Cleanup resources
      */
     dispose() {
@@ -804,6 +875,14 @@ export class BuildingSystem {
             if (mesh.geometry) mesh.geometry.dispose();
         }
         this.wallMeshes = [];
+
+        // Clear world item meshes
+        for (const mesh of this.worldItemMeshes.values()) {
+            this.replicaGroup.remove(mesh);
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) mesh.material.dispose();
+        }
+        this.worldItemMeshes.clear();
 
         // Dispose materials
         if (this.roomMaterial) this.roomMaterial.dispose();

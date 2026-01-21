@@ -126,6 +126,16 @@ class VRGame {
                 this.buildingSystem.onWorldStateUpdate(state.world);
             }
 
+            // Update world items in miniature
+            if (state.worldObjects && this.buildingSystem) {
+                this.buildingSystem.updateWorldItems(state.worldObjects);
+            }
+
+            // Update world items in scene (full-scale in tiny world)
+            if (state.worldObjects && this.scene) {
+                this.scene.updateWorldItems(state.worldObjects);
+            }
+
             // Update VR scene world geometry (full-size walls)
             if (state.world && this.scene) {
                 this.scene.rebuildFromWorldState(state.world);

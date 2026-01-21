@@ -64,17 +64,30 @@ const io = new Server(server, {
 });
 
 // Dynamic config.js serving based on dev mode
-const getConfigJs = () => {
-    const serverUrl = isDevMode ? 'http://localhost:3000' : 'https://www.urbandrei.com';
-    return `window.GAME_SERVER_URL = '${serverUrl}';\n`;
-};
-
+// In dev mode, use the host from the request (supports both localhost and IP access from VR headsets)
+// In production, always use the configured URL
 app.get('/pc/config.js', (req, res) => {
-    res.type('application/javascript').send(getConfigJs());
+    let serverUrl;
+    if (isDevMode) {
+        const protocol = req.protocol;
+        const host = req.get('host'); // e.g., "localhost:3000" or "192.168.1.100:3000"
+        serverUrl = `${protocol}://${host}`;
+    } else {
+        serverUrl = 'https://www.urbandrei.com';
+    }
+    res.type('application/javascript').send(`window.GAME_SERVER_URL = '${serverUrl}';\n`);
 });
 
 app.get('/vr/config.js', (req, res) => {
-    res.type('application/javascript').send(getConfigJs());
+    let serverUrl;
+    if (isDevMode) {
+        const protocol = req.protocol;
+        const host = req.get('host');
+        serverUrl = `${protocol}://${host}`;
+    } else {
+        serverUrl = 'https://www.urbandrei.com';
+    }
+    res.type('application/javascript').send(`window.GAME_SERVER_URL = '${serverUrl}';\n`);
 });
 
 // Serve static files

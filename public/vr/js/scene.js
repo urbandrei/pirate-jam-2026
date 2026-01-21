@@ -10,7 +10,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, WORLD_SIZE, GIANT_SCALE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH, ROOM_TYPES, DEFAULT_ROOM_TYPE } from '../../pc/shared/constants.js';
+import { COLORS, WORLD_SIZE, GIANT_SCALE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH, ROOM_TYPES, DEFAULT_ROOM_TYPE, ITEMS } from '../../pc/shared/constants.js';
 
 export class VRScene {
     constructor(container) {
@@ -26,6 +26,10 @@ export class VRScene {
             this.dynamicWalls = [];
             this.dynamicFloors = [];
             this.lastWorldVersion = -1;
+
+            // World items (full-scale in tiny world)
+            this.worldItemsGroup = new THREE.Group();
+            this.worldItemMeshes = new Map(); // itemId -> mesh
 
             // VR scale factor
             this.scale = 1 / GIANT_SCALE;
@@ -63,6 +67,9 @@ export class VRScene {
             this.setupGround();
             this.setupWallMaterial();
             // Don't setup static rooms - wait for world state from server
+
+            // Add world items group to scene
+            this.scene.add(this.worldItemsGroup);
 
             // Setup VR button
             this.setupVRButton();
@@ -405,6 +412,77 @@ export class VRScene {
         }
     }
 
+    /**
+     * Update world items in the tiny world
+     * Items are rendered at 1/GIANT_SCALE to match the tiny world
+     * @param {Array} worldObjects - Array of world items from server state
+     */
+    updateWorldItems(worldObjects) {
+        if (!worldObjects) return;
+
+        // Track which items we've seen this update
+        const seenIds = new Set();
+
+        for (const item of worldObjects) {
+            seenIds.add(item.id);
+
+            if (this.worldItemMeshes.has(item.id)) {
+                // Update existing mesh position
+                const mesh = this.worldItemMeshes.get(item.id);
+                mesh.position.set(
+                    item.position.x * this.scale,
+                    item.position.y * this.scale,
+                    item.position.z * this.scale
+                );
+            } else {
+                // Create new mesh
+                const mesh = this.createWorldItemMesh(item);
+                mesh.position.set(
+                    item.position.x * this.scale,
+                    item.position.y * this.scale,
+                    item.position.z * this.scale
+                );
+                this.worldItemsGroup.add(mesh);
+                this.worldItemMeshes.set(item.id, mesh);
+            }
+        }
+
+        // Remove meshes for items that no longer exist
+        for (const [id, mesh] of this.worldItemMeshes) {
+            if (!seenIds.has(id)) {
+                this.worldItemsGroup.remove(mesh);
+                if (mesh.geometry) mesh.geometry.dispose();
+                if (mesh.material) mesh.material.dispose();
+                this.worldItemMeshes.delete(id);
+            }
+        }
+    }
+
+    /**
+     * Create a mesh for a world item at tiny world scale
+     * @param {Object} item - Item data from server
+     * @returns {THREE.Mesh}
+     */
+    createWorldItemMesh(item) {
+        const itemDef = ITEMS[item.type];
+
+        // Size based on stack count (scaled to tiny world)
+        // PC uses 0.4m base, we scale by 1/GIANT_SCALE
+        const baseSize = 0.4 * this.scale; // 4cm in VR
+        const stackCount = item.stackCount || 1;
+        const stackBonus = stackCount > 1 ? Math.min((stackCount - 1) * 0.05 * this.scale, 0.02) : 0;
+        const size = baseSize + stackBonus;
+
+        const geometry = new THREE.BoxGeometry(size, size, size);
+        const material = new THREE.MeshStandardMaterial({
+            color: itemDef ? itemDef.color : 0xffff00,
+            roughness: 0.5,
+            metalness: 0.1
+        });
+
+        return new THREE.Mesh(geometry, material);
+    }
+
     async setupVRButton() {
         const button = document.getElementById('vr-button');
         const status = document.getElementById('status');
@@ -547,6 +625,17 @@ export class VRScene {
         if (this.onResizeHandler) {
             window.removeEventListener('resize', this.onResizeHandler);
             this.onResizeHandler = null;
+        }
+
+        // Dispose world items
+        for (const mesh of this.worldItemMeshes.values()) {
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) mesh.material.dispose();
+        }
+        this.worldItemMeshes.clear();
+        if (this.worldItemsGroup) {
+            this.scene.remove(this.worldItemsGroup);
+            this.worldItemsGroup = null;
         }
 
         // Dispose ground

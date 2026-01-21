@@ -9,7 +9,7 @@
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { createPCPlayerMesh, createVRPlayerMeshForVR } from '../../pc/shared/player-mesh.js';
-import { GIANT_SCALE } from '../../pc/shared/constants.js';
+import { GIANT_SCALE, ITEMS } from '../../pc/shared/constants.js';
 
 export class RemotePlayers {
     constructor(scene) {
@@ -21,8 +21,17 @@ export class RemotePlayers {
      * Properly dispose of a player mesh and all its resources to prevent memory leaks.
      * Must be called before removing a mesh from the scene.
      */
-    disposePlayerMesh(mesh) {
-        mesh.traverse((child) => {
+    disposePlayerMesh(playerObj) {
+        // Clean up held item mesh first
+        if (playerObj.heldItemMesh) {
+            playerObj.mesh.remove(playerObj.heldItemMesh);
+            if (playerObj.heldItemMesh.geometry) playerObj.heldItemMesh.geometry.dispose();
+            if (playerObj.heldItemMesh.material) playerObj.heldItemMesh.material.dispose();
+            playerObj.heldItemMesh = null;
+        }
+
+        // Dispose main player mesh
+        playerObj.mesh.traverse((child) => {
             if (child.geometry) {
                 child.geometry.dispose();
             }
@@ -44,10 +53,10 @@ export class RemotePlayers {
         if (!state || !state.players) return;
 
         // Remove players that left - iterate directly without creating Set
-        for (const [playerId, data] of this.players) {
+        for (const [playerId, playerObj] of this.players) {
             if (!(playerId in state.players)) {
-                this.disposePlayerMesh(data.mesh);
-                this.scene.remove(data.mesh);
+                this.disposePlayerMesh(playerObj);
+                this.scene.remove(playerObj.mesh);
                 this.players.delete(playerId);
             }
         }
@@ -76,7 +85,9 @@ export class RemotePlayers {
                 playerObj = {
                     mesh,
                     type: playerData.type,
-                    targetPosition: new THREE.Vector3()
+                    targetPosition: new THREE.Vector3(),
+                    heldItemMesh: null,
+                    lastHeldItemKey: null
                 };
                 this.players.set(playerId, playerObj);
             }
@@ -108,6 +119,67 @@ export class RemotePlayers {
         if (data.lookRotation) {
             mesh.rotation.y = data.lookRotation.y;
         }
+
+        // Update held item display
+        this.updateHeldItem(playerObj, data.heldItem);
+    }
+
+    /**
+     * Update held item display for a PC player
+     * @param {Object} playerObj - Player object from this.players
+     * @param {Object|null} heldItem - Held item data from server
+     */
+    updateHeldItem(playerObj, heldItem) {
+        // Generate key for change detection
+        const itemKey = heldItem
+            ? `${heldItem.id}-${heldItem.stackCount || 1}-${heldItem.type}`
+            : null;
+
+        // Skip if nothing changed
+        if (playerObj.lastHeldItemKey === itemKey) return;
+        playerObj.lastHeldItemKey = itemKey;
+
+        // Remove existing held item mesh
+        if (playerObj.heldItemMesh) {
+            playerObj.mesh.remove(playerObj.heldItemMesh);
+            if (playerObj.heldItemMesh.geometry) playerObj.heldItemMesh.geometry.dispose();
+            if (playerObj.heldItemMesh.material) playerObj.heldItemMesh.material.dispose();
+            playerObj.heldItemMesh = null;
+        }
+
+        // Create new mesh if holding something
+        if (heldItem) {
+            playerObj.heldItemMesh = this.createHeldItemMesh(heldItem);
+            // Position relative to tiny player mesh (already scaled to 1/GIANT_SCALE)
+            // Use local coordinates: in front at hand height
+            // PC uses (0, 0.3, -0.4), scale that down for tiny player
+            playerObj.heldItemMesh.position.set(0, 0.3, -0.4);
+            playerObj.mesh.add(playerObj.heldItemMesh);
+        }
+    }
+
+    /**
+     * Create a mesh for a held item (at PC player scale, will be scaled by parent)
+     * @param {Object} item - Item data
+     * @returns {THREE.Mesh}
+     */
+    createHeldItemMesh(item) {
+        const itemDef = ITEMS[item.type];
+
+        // Size based on stack count (same scale as PC client)
+        const baseSize = 0.3;
+        const stackCount = item.stackCount || 1;
+        const stackBonus = stackCount > 1 ? Math.min((stackCount - 1) * 0.04, 0.15) : 0;
+        const size = baseSize + stackBonus;
+
+        const geometry = new THREE.BoxGeometry(size, size, size);
+        const material = new THREE.MeshStandardMaterial({
+            color: itemDef ? itemDef.color : 0xffff00,
+            roughness: 0.5,
+            metalness: 0.1
+        });
+
+        return new THREE.Mesh(geometry, material);
     }
 
     updateVRPlayer(playerObj, data) {
@@ -128,7 +200,7 @@ export class RemotePlayers {
     removePlayer(playerId) {
         const playerObj = this.players.get(playerId);
         if (playerObj) {
-            this.disposePlayerMesh(playerObj.mesh);
+            this.disposePlayerMesh(playerObj);
             this.scene.remove(playerObj.mesh);
             this.players.delete(playerId);
         }
@@ -140,9 +212,9 @@ export class RemotePlayers {
      */
     dispose() {
         console.log('[RemotePlayers] Disposing all player meshes...');
-        for (const [playerId, data] of this.players) {
-            this.disposePlayerMesh(data.mesh);
-            this.scene.remove(data.mesh);
+        for (const [playerId, playerObj] of this.players) {
+            this.disposePlayerMesh(playerObj);
+            this.scene.remove(playerObj.mesh);
         }
         this.players.clear();
         console.log('[RemotePlayers] All player meshes disposed');
