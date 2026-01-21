@@ -126,6 +126,37 @@ export const ITEMS = {
 
 export const ITEM_ROT_CHECK_INTERVAL = 1000; // ms between rot checks
 
+// Plant/Farming system
+export const PLANT_STAGES = ['seed', 'sprout', 'growing', 'mature', 'harvestable'];
+export const PLANT_STAGE_THRESHOLDS = [0, 20, 40, 60, 80]; // Progress % for each stage
+export const PLANT_GROWTH_RATE = 100 / 180; // Full growth in ~3 minutes
+export const PLANT_WATER_DECAY_RATE = 100 / 120; // Water depletes over 2 minutes
+export const PLANT_WEED_SPAWN_CHANCE = 0.02; // Per second chance (2%)
+export const PLANT_WATER_GROWTH_MULTIPLIER = 1.5; // Bonus when watered
+export const PLANT_DRY_GROWTH_MULTIPLIER = 0.3; // Penalty when dry
+export const PLANT_WEED_GROWTH_MULTIPLIER = 0.5; // Penalty when weeds present
+export const PLANT_UPDATE_INTERVAL = 1000; // 1 second between plant updates
+export const PLANT_WATER_THRESHOLD = 20; // Below this = "dry"
+
+// Soil plot layout (2x3 grid per farming cell)
+export const SOIL_PLOTS_PER_CELL = 6;
+export const SOIL_PLOT_ROWS = 2;
+export const SOIL_PLOT_COLS = 3;
+export const SOIL_PLOT_SIZE = 1.5; // 1.5m x 1.5m plot
+export const SOIL_PLOT_SPACING_X = 2.5; // Spacing between plot centers (X)
+export const SOIL_PLOT_SPACING_Z = 3.0; // Spacing between plot centers (Z)
+
+// Plant colors by stage
+export const PLANT_COLORS = {
+    seed: 0x8B4513,      // Brown mound
+    sprout: 0x90EE90,    // Light green
+    growing: 0x32CD32,   // Lime green
+    mature: 0x228B22,    // Forest green
+    harvestable: 0x006400, // Dark green
+    fruit: 0xFF6347,     // Tomato red (fruit/vegetable on plant)
+    weed: 0x8B7355      // Tan/brown weeds
+};
+
 // Colors
 export const COLORS = {
     GROUND: 0x3d5c3d,

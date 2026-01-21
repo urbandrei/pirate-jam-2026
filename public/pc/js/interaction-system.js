@@ -121,13 +121,20 @@ export class InteractionSystem {
             return;
         }
 
-        // Find intersections
-        const intersects = this.raycaster.intersectObjects(interactableMeshes, false);
+        // Find intersections (recursive to handle groups)
+        const intersects = this.raycaster.intersectObjects(interactableMeshes, true);
 
         if (intersects.length > 0) {
             const hit = intersects[0];
-            const mesh = hit.object;
-            const data = this.interactables.get(mesh.uuid);
+            // Find the registered interactable (could be the object itself or a parent group)
+            let mesh = hit.object;
+            let data = this.interactables.get(mesh.uuid);
+
+            // If not found, check parent objects (for plant groups)
+            while (!data && mesh.parent) {
+                mesh = mesh.parent;
+                data = this.interactables.get(mesh.uuid);
+            }
 
             if (data && hit.distance <= INTERACTION_RANGE) {
                 this._setTarget(mesh, data, hit.point);

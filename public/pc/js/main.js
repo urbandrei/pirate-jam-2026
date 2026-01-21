@@ -54,12 +54,15 @@ class Game {
 
         // Wire up click handler from controls
         this.controls.onLeftClick = () => {
-            // If holding an item, drop it instead of regular interaction
-            if (this.player.isHoldingItem()) {
-                this.handleDrop();
-            } else {
+            // First, check if we're targeting an interactable (prioritize interaction over drop)
+            if (this.interactionSystem.hasTarget()) {
+                // We have a valid target - try to interact
                 this.interactionSystem.handleClick();
+            } else if (this.player.isHoldingItem()) {
+                // No target but holding an item - drop it
+                this.handleDrop();
             }
+            // If neither, do nothing
         };
 
         // Wire up interaction callback to network
@@ -146,9 +149,17 @@ class Game {
                 this.scene.rebuildFromWorldState(state.world);
             }
 
-            // Update world objects (pickable items)
+            // Update world objects (pickable items and plants)
             if (state.worldObjects) {
                 this.scene.updateWorldObjects(state.worldObjects, this.interactionSystem);
+
+                // Update soil plot interactions based on held item and plant positions
+                const plants = state.worldObjects.filter(obj => obj.objectType === 'plant');
+                this.scene.updateSoilPlotInteractions(
+                    this.interactionSystem,
+                    myState ? myState.heldItem : null,
+                    plants
+                );
             }
         };
 

@@ -4,6 +4,7 @@
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { COLORS, WORLD_SIZE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH, ROOM_TYPES, DEFAULT_ROOM_TYPE, ITEMS } from '../shared/constants.js';
+import * as FarmingRenderer from './farming-renderer.js';
 
 export class Scene {
     constructor(container) {
@@ -17,6 +18,10 @@ export class Scene {
 
         // World objects (pickable items, etc.)
         this.worldObjectMeshes = new Map(); // id -> mesh
+
+        // Farming system meshes
+        this.soilPlotMeshes = new Map(); // plotId -> mesh
+        this.plantMeshes = new Map(); // plantId -> group
 
         // Wall material (shared)
         this.wallMaterial = null;
@@ -186,11 +191,17 @@ export class Scene {
         this.clearDynamicWalls();
         this.clearDynamicFloors();
         this.clearRoomLabels();
+        this.clearSoilPlots();
 
         // Build walls and floors for each cell in the grid
         for (const cell of worldState.grid) {
             this.createCellWalls(cell, worldState);
             this.createCellFloor(cell);
+
+            // Create soil plots for farming rooms
+            if (cell.roomType === 'farming') {
+                this.createSoilPlotsForCell(cell);
+            }
         }
 
         // Create room labels (one per mergeGroup)
@@ -233,6 +244,80 @@ export class Scene {
             if (sprite.material) sprite.material.dispose();
         }
         this.roomLabels = [];
+    }
+
+    /**
+     * Clear all soil plot meshes
+     */
+    clearSoilPlots() {
+        for (const [id, mesh] of this.soilPlotMeshes) {
+            this.scene.remove(mesh);
+            FarmingRenderer.disposeSoilPlotMesh(mesh);
+        }
+        this.soilPlotMeshes.clear();
+    }
+
+    /**
+     * Create soil plots for a farming cell
+     * @param {Object} cell - Cell data with x, z coordinates
+     */
+    createSoilPlotsForCell(cell) {
+        const plots = FarmingRenderer.getSoilPlotPositions(cell.x, cell.z);
+
+        for (const plot of plots) {
+            const mesh = FarmingRenderer.createSoilPlotMesh(plot.position);
+            mesh.userData.plotId = plot.id;
+            mesh.userData.gridX = plot.gridX;
+            mesh.userData.gridZ = plot.gridZ;
+
+            this.soilPlotMeshes.set(plot.id, mesh);
+            this.scene.add(mesh);
+        }
+    }
+
+    /**
+     * Register soil plots with interaction system
+     * Call this after rebuildFromWorldState and after getting player's held item
+     * @param {Object} interactionSystem - Interaction system
+     * @param {Object} heldItem - Player's currently held item (or null)
+     * @param {Array} plants - Array of plant data from server
+     */
+    updateSoilPlotInteractions(interactionSystem, heldItem, plants) {
+        if (!interactionSystem) return;
+
+        // Build a set of occupied plot IDs
+        const occupiedPlots = new Set();
+        if (plants) {
+            for (const plant of plants) {
+                if (plant.soilPlotId) {
+                    occupiedPlots.add(plant.soilPlotId);
+                }
+            }
+        }
+
+        // Update each soil plot's interactions
+        for (const [plotId, mesh] of this.soilPlotMeshes) {
+            const isOccupied = occupiedPlots.has(plotId);
+
+            if (isOccupied) {
+                // Plot has a plant - unregister soil plot interaction
+                interactionSystem.unregisterInteractable(mesh);
+            } else {
+                // Plot is empty
+                if (heldItem && heldItem.type === 'seed') {
+                    // Player has seeds - can plant
+                    interactionSystem.registerInteractable(
+                        mesh,
+                        'SOIL_PLOT',
+                        plotId,
+                        [{ type: 'plant_seed', prompt: 'Plant seed' }]
+                    );
+                } else {
+                    // No seeds - unregister
+                    interactionSystem.unregisterInteractable(mesh);
+                }
+            }
+        }
     }
 
     /**
@@ -657,8 +742,24 @@ export class Scene {
     updateWorldObjects(worldObjects, interactionSystem) {
         if (!worldObjects) return;
 
+        // Separate plants from items
+        const items = worldObjects.filter(obj => obj.objectType !== 'plant');
+        const plants = worldObjects.filter(obj => obj.objectType === 'plant');
+
+        // Update items
+        this._updateItems(items, interactionSystem);
+
+        // Update plants
+        this._updatePlants(plants, interactionSystem);
+    }
+
+    /**
+     * Update item meshes (non-plant world objects)
+     * @private
+     */
+    _updateItems(items, interactionSystem) {
         // Track which IDs are in the new state
-        const newIds = new Set(worldObjects.map(obj => obj.id));
+        const newIds = new Set(items.map(obj => obj.id));
 
         // Remove meshes for objects no longer in state
         for (const [id, mesh] of this.worldObjectMeshes) {
@@ -674,7 +775,7 @@ export class Scene {
         }
 
         // Create or update meshes for objects in state
-        for (const obj of worldObjects) {
+        for (const obj of items) {
             if (!this.worldObjectMeshes.has(obj.id)) {
                 // Create new mesh
                 const mesh = this.createWorldObjectMesh(obj);
@@ -717,6 +818,82 @@ export class Scene {
                 }
             }
         }
+    }
+
+    /**
+     * Update plant meshes
+     * @private
+     */
+    _updatePlants(plants, interactionSystem) {
+        // Track which plant IDs are in the new state
+        const newIds = new Set(plants.map(p => p.id));
+
+        // Remove meshes for plants no longer in state
+        for (const [id, group] of this.plantMeshes) {
+            if (!newIds.has(id)) {
+                this.scene.remove(group);
+                FarmingRenderer.disposePlantMesh(group);
+                if (interactionSystem) {
+                    interactionSystem.unregisterInteractable(group);
+                }
+                this.plantMeshes.delete(id);
+            }
+        }
+
+        // Create or update meshes for plants in state
+        for (const plant of plants) {
+            if (!this.plantMeshes.has(plant.id)) {
+                // Create new plant mesh
+                const group = FarmingRenderer.createPlantMesh(plant);
+                this.plantMeshes.set(plant.id, group);
+                this.scene.add(group);
+
+                // Register with interaction system
+                if (interactionSystem) {
+                    const interactions = this._getPlantInteractions(plant);
+                    if (interactions.length > 0) {
+                        interactionSystem.registerInteractable(
+                            group,
+                            'PLANT',
+                            plant.id,
+                            interactions
+                        );
+                    }
+                }
+            } else {
+                // Update existing plant mesh
+                const group = this.plantMeshes.get(plant.id);
+                const changed = FarmingRenderer.updatePlantMesh(group, plant);
+
+                // Update interactions if state changed
+                if (changed && interactionSystem) {
+                    const interactions = this._getPlantInteractions(plant);
+                    interactionSystem.updateInteractablePrompt(group, interactions);
+                }
+            }
+        }
+    }
+
+    /**
+     * Get available interactions for a plant based on its state
+     * @private
+     */
+    _getPlantInteractions(plant) {
+        const interactions = [];
+
+        if (plant.hasWeeds) {
+            interactions.push({ type: 'weed', prompt: 'Remove weeds' });
+        }
+
+        if (plant.stage === 'harvestable') {
+            interactions.push({ type: 'harvest', prompt: 'Harvest' });
+        }
+
+        // Water interaction is handled by the interaction system based on held item
+        // We always allow water_plant as an option, client-side will filter
+        interactions.push({ type: 'water_plant', prompt: 'Water' });
+
+        return interactions;
     }
 
     /**

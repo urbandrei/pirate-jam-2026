@@ -19,6 +19,7 @@ const NeedsSystem = require('./systems/needs-system');
 const RoomManager = require('./systems/room-manager');
 const InteractionSystem = require('./systems/interaction-system');
 const itemSystem = require('./systems/item-system');
+const plantSystem = require('./systems/plant-system');
 
 // Configuration
 const isDevMode = process.argv.includes('dev');
@@ -323,6 +324,9 @@ function gameLoop() {
 
         // Update item rot (check for items that have rotted into trash)
         itemSystem.updateItemRot(gameState.worldObjects, now);
+
+        // Update plant growth (runs at 1Hz internally)
+        plantSystem.updatePlants(gameState.worldObjects, now);
 
         if (gameState.getPlayerCount() > 0) {
             io.emit('message', {

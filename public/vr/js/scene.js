@@ -10,7 +10,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, WORLD_SIZE, GIANT_SCALE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH, ROOM_TYPES, DEFAULT_ROOM_TYPE, ITEMS } from '../../pc/shared/constants.js';
+import { COLORS, WORLD_SIZE, GIANT_SCALE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH, ROOM_TYPES, DEFAULT_ROOM_TYPE, ITEMS, PLANT_COLORS } from '../../pc/shared/constants.js';
 
 export class VRScene {
     constructor(container) {
@@ -30,6 +30,7 @@ export class VRScene {
             // World items (full-scale in tiny world)
             this.worldItemsGroup = new THREE.Group();
             this.worldItemMeshes = new Map(); // itemId -> mesh
+            this.plantMeshes = new Map(); // plantId -> mesh
 
             // VR scale factor
             this.scale = 1 / GIANT_SCALE;
@@ -420,10 +421,25 @@ export class VRScene {
     updateWorldItems(worldObjects) {
         if (!worldObjects) return;
 
-        // Track which items we've seen this update
+        // Separate plants from items
+        const items = worldObjects.filter(obj => obj.objectType !== 'plant');
+        const plants = worldObjects.filter(obj => obj.objectType === 'plant');
+
+        // Update items
+        this._updateItems(items);
+
+        // Update plants
+        this._updatePlants(plants);
+    }
+
+    /**
+     * Update item meshes (non-plant world objects)
+     * @private
+     */
+    _updateItems(items) {
         const seenIds = new Set();
 
-        for (const item of worldObjects) {
+        for (const item of items) {
             seenIds.add(item.id);
 
             if (this.worldItemMeshes.has(item.id)) {
@@ -456,6 +472,116 @@ export class VRScene {
                 this.worldItemMeshes.delete(id);
             }
         }
+    }
+
+    /**
+     * Update plant meshes
+     * @private
+     */
+    _updatePlants(plants) {
+        const seenIds = new Set();
+
+        for (const plant of plants) {
+            seenIds.add(plant.id);
+
+            if (this.plantMeshes.has(plant.id)) {
+                // Update existing mesh
+                const mesh = this.plantMeshes.get(plant.id);
+                mesh.position.set(
+                    plant.position.x * this.scale,
+                    plant.position.y * this.scale,
+                    plant.position.z * this.scale
+                );
+
+                // Update color if stage changed
+                if (mesh.userData.stage !== plant.stage) {
+                    const color = this._getPlantColor(plant.stage);
+                    mesh.material.color.setHex(color);
+                    mesh.userData.stage = plant.stage;
+
+                    // Update scale based on stage
+                    const stageScale = this._getPlantScale(plant.stage);
+                    mesh.scale.setScalar(stageScale);
+                }
+            } else {
+                // Create new plant mesh
+                const mesh = this.createPlantMesh(plant);
+                mesh.position.set(
+                    plant.position.x * this.scale,
+                    plant.position.y * this.scale,
+                    plant.position.z * this.scale
+                );
+                this.worldItemsGroup.add(mesh);
+                this.plantMeshes.set(plant.id, mesh);
+            }
+        }
+
+        // Remove meshes for plants that no longer exist
+        for (const [id, mesh] of this.plantMeshes) {
+            if (!seenIds.has(id)) {
+                this.worldItemsGroup.remove(mesh);
+                if (mesh.geometry) mesh.geometry.dispose();
+                if (mesh.material) mesh.material.dispose();
+                this.plantMeshes.delete(id);
+            }
+        }
+    }
+
+    /**
+     * Create a mesh for a plant at tiny world scale
+     * Uses simple colored boxes that grow with stage
+     * @param {Object} plant - Plant data from server
+     * @returns {THREE.Mesh}
+     */
+    createPlantMesh(plant) {
+        const color = this._getPlantColor(plant.stage);
+        const stageScale = this._getPlantScale(plant.stage);
+
+        // Base size scaled to tiny world
+        const baseSize = 0.3 * this.scale; // 3cm in VR
+
+        const geometry = new THREE.BoxGeometry(baseSize, baseSize * 2, baseSize);
+        const material = new THREE.MeshStandardMaterial({
+            color: color,
+            roughness: 0.6,
+            metalness: 0.0
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.scale.setScalar(stageScale);
+        mesh.userData.stage = plant.stage;
+
+        return mesh;
+    }
+
+    /**
+     * Get plant color based on growth stage
+     * @private
+     */
+    _getPlantColor(stage) {
+        const colors = {
+            seed: PLANT_COLORS.seed,
+            sprout: PLANT_COLORS.sprout,
+            growing: PLANT_COLORS.growing,
+            mature: PLANT_COLORS.mature,
+            harvestable: PLANT_COLORS.fruit
+        };
+        return colors[stage] || PLANT_COLORS.seed;
+    }
+
+    /**
+     * Get plant scale based on growth stage
+     * @private
+     */
+    _getPlantScale(stage) {
+        const scales = {
+            seed: 0.3,
+            sprout: 0.5,
+            growing: 0.7,
+            mature: 0.9,
+            harvestable: 1.0
+        };
+        return scales[stage] || 0.3;
     }
 
     /**

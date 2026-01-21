@@ -8,6 +8,7 @@
  */
 
 const itemSystem = require('./item-system');
+const plantSystem = require('./plant-system');
 
 const INTERACTION_RANGE = 2.0; // meters
 
@@ -127,6 +128,45 @@ class InteractionSystem {
             case 'eat':
                 // Will validate player is holding food when item system exists
                 return { valid: true };
+            case 'plant_seed':
+                // Must be holding a seed
+                if (!player.heldItem || player.heldItem.type !== 'seed') {
+                    return { valid: false, reason: 'Must be holding a seed' };
+                }
+                return { valid: true };
+            case 'water_plant':
+                // Must be holding water container with charges
+                if (!player.heldItem || player.heldItem.type !== 'water_container') {
+                    return { valid: false, reason: 'Must be holding a water container' };
+                }
+                if (player.heldItem.charges !== undefined && player.heldItem.charges <= 0) {
+                    return { valid: false, reason: 'Water container is empty' };
+                }
+                return { valid: true };
+            case 'harvest':
+                // Must have empty hands
+                if (player.heldItem) {
+                    return { valid: false, reason: 'Hands must be empty to harvest' };
+                }
+                // Validate plant is harvestable
+                const harvestPlant = this.gameState.getWorldObject(targetId);
+                if (!harvestPlant || harvestPlant.objectType !== 'plant') {
+                    return { valid: false, reason: 'Not a plant' };
+                }
+                if (harvestPlant.stage !== 'harvestable') {
+                    return { valid: false, reason: 'Plant is not ready to harvest' };
+                }
+                return { valid: true };
+            case 'weed':
+                // Validate plant has weeds
+                const weedPlant = this.gameState.getWorldObject(targetId);
+                if (!weedPlant || weedPlant.objectType !== 'plant') {
+                    return { valid: false, reason: 'Not a plant' };
+                }
+                if (!weedPlant.hasWeeds) {
+                    return { valid: false, reason: 'Plant has no weeds' };
+                }
+                return { valid: true };
             default:
                 // Default: allow interaction, execution will handle specifics
                 return { valid: true };
@@ -160,27 +200,133 @@ class InteractionSystem {
     }
 
     _executePlantSeed(player, plotId) {
-        // Placeholder - will be implemented with farming room
-        console.log(`[InteractionSystem] Plant seed interaction - not yet implemented`);
-        return { success: false, error: 'Plant seed not yet implemented' };
+        // Validate player holds seed
+        if (!player.heldItem || player.heldItem.type !== 'seed') {
+            return { success: false, error: 'Must be holding a seed' };
+        }
+
+        // Parse plot ID to get grid position (format: plot_gridX_gridZ_row_col)
+        const parts = plotId.split('_');
+        if (parts.length !== 5 || parts[0] !== 'plot') {
+            return { success: false, error: 'Invalid plot ID' };
+        }
+
+        const gridX = parseInt(parts[1]);
+        const gridZ = parseInt(parts[2]);
+
+        // Verify this is a farming room
+        const cellKey = `${gridX},${gridZ}`;
+        const cell = this.gameState.worldState.grid.get(cellKey);
+        if (!cell || cell.roomType !== 'farming') {
+            return { success: false, error: 'Plot is not in a farming room' };
+        }
+
+        // Check if plot already has a plant
+        const existingPlant = plantSystem.getPlantAtPlot(plotId, this.gameState.worldObjects);
+        if (existingPlant) {
+            return { success: false, error: 'Plot already has a plant' };
+        }
+
+        // Get plot position
+        const plots = plantSystem.getSoilPlotPositions(gridX, gridZ);
+        const plot = plots.find(p => p.id === plotId);
+        if (!plot) {
+            return { success: false, error: 'Plot not found' };
+        }
+
+        // Create plant and add to world
+        const plant = plantSystem.createPlant(plotId, plot.position);
+        this.gameState.addWorldObject(plant);
+
+        // Consume seed (reduce stack or remove)
+        if (player.heldItem.stackCount > 1) {
+            player.heldItem.stackCount--;
+        } else {
+            player.heldItem = null;
+        }
+
+        console.log(`[InteractionSystem] Player ${player.id} planted seed at ${plotId}`);
+        return { success: true, plant };
     }
 
     _executeWaterPlant(player, plantId) {
-        // Placeholder - will be implemented with farming room
-        console.log(`[InteractionSystem] Water plant interaction - not yet implemented`);
-        return { success: false, error: 'Water plant not yet implemented' };
+        // Validate player holds water container
+        if (!player.heldItem || player.heldItem.type !== 'water_container') {
+            return { success: false, error: 'Must be holding a water container' };
+        }
+
+        // Check water container has charges
+        if (player.heldItem.charges !== undefined && player.heldItem.charges <= 0) {
+            return { success: false, error: 'Water container is empty' };
+        }
+
+        // Get plant from world objects
+        const plant = this.gameState.getWorldObject(plantId);
+        if (!plant || plant.objectType !== 'plant') {
+            return { success: false, error: 'Plant not found' };
+        }
+
+        // Water the plant
+        plant.waterLevel = 100;
+
+        // Consume water charge
+        if (player.heldItem.charges !== undefined) {
+            player.heldItem.charges--;
+            if (player.heldItem.charges <= 0) {
+                // Container is now empty, could remove or keep as empty container
+                console.log(`[InteractionSystem] Water container empty`);
+            }
+        }
+
+        console.log(`[InteractionSystem] Player ${player.id} watered plant ${plantId}`);
+        return { success: true };
     }
 
     _executeHarvest(player, plantId) {
-        // Placeholder - will be implemented with farming room
-        console.log(`[InteractionSystem] Harvest interaction - not yet implemented`);
-        return { success: false, error: 'Harvest not yet implemented' };
+        // Validate player has empty hands
+        if (player.heldItem) {
+            return { success: false, error: 'Hands must be empty to harvest' };
+        }
+
+        // Get plant from world objects
+        const plant = this.gameState.getWorldObject(plantId);
+        if (!plant || plant.objectType !== 'plant') {
+            return { success: false, error: 'Plant not found' };
+        }
+
+        // Validate plant is harvestable
+        if (plant.stage !== 'harvestable') {
+            return { success: false, error: 'Plant is not ready to harvest' };
+        }
+
+        // Remove plant from world
+        this.gameState.removeWorldObject(plantId);
+
+        // Create vegetable item and give to player
+        const vegetable = itemSystem.createItem('raw_vegetable', plant.position);
+        player.heldItem = vegetable;
+
+        console.log(`[InteractionSystem] Player ${player.id} harvested plant ${plantId}`);
+        return { success: true, item: vegetable };
     }
 
     _executeWeed(player, plantId) {
-        // Placeholder - will be implemented with farming room
-        console.log(`[InteractionSystem] Weed interaction - not yet implemented`);
-        return { success: false, error: 'Weed not yet implemented' };
+        // Get plant from world objects
+        const plant = this.gameState.getWorldObject(plantId);
+        if (!plant || plant.objectType !== 'plant') {
+            return { success: false, error: 'Plant not found' };
+        }
+
+        // Validate plant has weeds
+        if (!plant.hasWeeds) {
+            return { success: false, error: 'Plant has no weeds' };
+        }
+
+        // Remove weeds
+        plant.hasWeeds = false;
+
+        console.log(`[InteractionSystem] Player ${player.id} removed weeds from plant ${plantId}`);
+        return { success: true };
     }
 
     _executeWash(player, stationId) {

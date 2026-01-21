@@ -2,6 +2,8 @@
  * Network message routing and handling
  */
 
+const plantSystem = require('./systems/plant-system');
+
 class MessageHandler {
     constructor(gameState, playerManager, interactionSystem = null) {
         this.gameState = gameState;
@@ -183,9 +185,21 @@ class MessageHandler {
 
         console.log(`[MessageHandler] CONVERT_ROOM from ${peerId}: grid(${gridX}, ${gridZ}), roomType=${roomType}`);
 
+        // Check if converting FROM farming - need to cleanup plants
+        const cellKey = `${gridX},${gridZ}`;
+        const currentCell = this.gameState.worldState.grid.get(cellKey);
+        const wasFromFarming = currentCell && currentCell.roomType === 'farming';
+
         const result = this.gameState.worldState.setRoomType(gridX, gridZ, roomType);
 
         if (result.success) {
+            // If we converted away from farming, destroy any plants in this cell
+            if (wasFromFarming && roomType !== 'farming') {
+                const removedCount = plantSystem.cleanupPlantsInCell(this.gameState.worldObjects, gridX, gridZ);
+                if (removedCount > 0) {
+                    console.log(`[MessageHandler] Removed ${removedCount} plants from converted farming room`);
+                }
+            }
             console.log(`[MessageHandler] Room converted successfully, version=${result.version}`);
 
             // Broadcast to all clients
