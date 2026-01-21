@@ -68,7 +68,19 @@ class Game {
         // Wire up interaction callback to network
         this.interactionSystem.onInteract = (interactionType, targetId, targetPosition) => {
             if (this.network && this.network.isConnected) {
-                this.network.sendInteract(interactionType, targetId, targetPosition);
+                // Route wash/cut to timed interaction flow
+                if (interactionType === 'wash' || interactionType === 'cut') {
+                    this.network.sendTimedInteractStart(interactionType, targetId, targetPosition);
+                } else {
+                    this.network.sendInteract(interactionType, targetId, targetPosition);
+                }
+            }
+        };
+
+        // Wire up timed interaction cancel callback
+        this.interactionSystem.onTimedInteractCancel = () => {
+            if (this.network && this.network.isConnected) {
+                this.network.sendTimedInteractCancel();
             }
         };
 
@@ -160,6 +172,14 @@ class Game {
                     myState ? myState.heldItem : null,
                     plants
                 );
+
+                // Update station interactions based on held item
+                const stations = state.worldObjects.filter(obj => obj.objectType === 'station');
+                this.scene.updateStationInteractions(
+                    this.interactionSystem,
+                    myState ? myState.heldItem : null,
+                    stations
+                );
             }
         };
 
@@ -187,6 +207,24 @@ class Game {
             console.log(`Interaction ${interactionType} on ${targetId} failed: ${reason}`);
             // Future: could show error message briefly on HUD
         };
+
+        // Timed interaction callbacks
+        this.network.onTimedInteractProgress = (interactionType, targetId, duration) => {
+            // Server confirmed timed interaction started - show progress bar
+            this.interactionSystem.startTimedInteraction(interactionType, targetId, duration);
+        };
+
+        this.network.onTimedInteractComplete = (interactionType, stationId, result) => {
+            // Server confirmed timed interaction completed
+            this.interactionSystem.completeTimedInteraction();
+            console.log(`Timed interaction ${interactionType} completed at ${stationId}`, result);
+        };
+
+        this.network.onTimedInteractCancelled = (reason) => {
+            // Server cancelled the timed interaction
+            this.interactionSystem.completeTimedInteraction(); // Hide progress bar
+            console.log(`Timed interaction cancelled: ${reason}`);
+        };
     }
 
     gameLoop() {
@@ -204,6 +242,11 @@ class Game {
 
         // Update interaction system (raycasting and highlighting)
         this.interactionSystem.update();
+
+        // Update timed interaction progress (if active)
+        if (this.interactionSystem.isInTimedInteraction()) {
+            this.interactionSystem.updateTimedInteraction();
+        }
 
         // Send input to server at fixed rate
         if (now - this.lastInputTime >= this.inputInterval) {

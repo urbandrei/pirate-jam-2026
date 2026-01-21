@@ -2,7 +2,7 @@
  * Socket.IO network client for PC
  */
 
-import { MSG, createJoinMessage, createInputMessage, createInteractMessage } from '../shared/protocol.js';
+import { MSG, createJoinMessage, createInputMessage, createInteractMessage, createTimedInteractStartMessage, createTimedInteractCancelMessage } from '../shared/protocol.js';
 
 export class Network {
     constructor() {
@@ -20,6 +20,9 @@ export class Network {
         this.onPlayerLeft = null;
         this.onInteractSuccess = null;
         this.onInteractFail = null;
+        this.onTimedInteractProgress = null;
+        this.onTimedInteractComplete = null;
+        this.onTimedInteractCancelled = null;
 
         // Status element
         this.statusEl = document.getElementById('status');
@@ -127,6 +130,27 @@ export class Network {
                     this.onInteractFail(message.interactionType, message.targetId, message.reason);
                 }
                 break;
+
+            case MSG.TIMED_INTERACT_PROGRESS:
+                console.log('Timed interaction started:', message.interactionType, 'duration:', message.duration);
+                if (this.onTimedInteractProgress) {
+                    this.onTimedInteractProgress(message.interactionType, message.targetId, message.duration);
+                }
+                break;
+
+            case MSG.TIMED_INTERACT_COMPLETE:
+                console.log('Timed interaction complete:', message.interactionType);
+                if (this.onTimedInteractComplete) {
+                    this.onTimedInteractComplete(message.interactionType, message.stationId, message.result);
+                }
+                break;
+
+            case MSG.TIMED_INTERACT_CANCELLED:
+                console.log('Timed interaction cancelled:', message.reason);
+                if (this.onTimedInteractCancelled) {
+                    this.onTimedInteractCancelled(message.reason);
+                }
+                break;
         }
     }
 
@@ -142,6 +166,14 @@ export class Network {
 
     sendInteract(interactionType, targetId, targetPosition) {
         this.send(createInteractMessage(interactionType, targetId, targetPosition));
+    }
+
+    sendTimedInteractStart(interactionType, targetId, targetPosition) {
+        this.send(createTimedInteractStartMessage(interactionType, targetId, targetPosition));
+    }
+
+    sendTimedInteractCancel() {
+        this.send(createTimedInteractCancelMessage());
     }
 
     updateStatus(text) {

@@ -3,8 +3,9 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { COLORS, WORLD_SIZE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH, ROOM_TYPES, DEFAULT_ROOM_TYPE, ITEMS } from '../shared/constants.js';
+import { COLORS, WORLD_SIZE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH, ROOM_TYPES, DEFAULT_ROOM_TYPE, ITEMS, STATIONS } from '../shared/constants.js';
 import * as FarmingRenderer from './farming-renderer.js';
+import * as StationRenderer from './station-renderer.js';
 
 export class Scene {
     constructor(container) {
@@ -22,6 +23,9 @@ export class Scene {
         // Farming system meshes
         this.soilPlotMeshes = new Map(); // plotId -> mesh
         this.plantMeshes = new Map(); // plantId -> group
+
+        // Processing station meshes
+        this.stationMeshes = new Map(); // stationId -> group
 
         // Wall material (shared)
         this.wallMaterial = null;
@@ -192,6 +196,7 @@ export class Scene {
         this.clearDynamicFloors();
         this.clearRoomLabels();
         this.clearSoilPlots();
+        this.clearStations();
 
         // Build walls and floors for each cell in the grid
         for (const cell of worldState.grid) {
@@ -201,6 +206,11 @@ export class Scene {
             // Create soil plots for farming rooms
             if (cell.roomType === 'farming') {
                 this.createSoilPlotsForCell(cell);
+            }
+
+            // Create stations for processing rooms
+            if (cell.roomType === 'processing') {
+                this.createStationsForCell(cell);
             }
         }
 
@@ -255,6 +265,74 @@ export class Scene {
             FarmingRenderer.disposeSoilPlotMesh(mesh);
         }
         this.soilPlotMeshes.clear();
+    }
+
+    /**
+     * Clear all station meshes
+     */
+    clearStations() {
+        for (const [id, group] of this.stationMeshes) {
+            this.scene.remove(group);
+            StationRenderer.disposeStationMesh(group);
+        }
+        this.stationMeshes.clear();
+    }
+
+    /**
+     * Create stations for a processing cell
+     * @param {Object} cell - Cell data with x, z coordinates
+     */
+    createStationsForCell(cell) {
+        const stations = StationRenderer.getStationPositions(cell.x, cell.z);
+
+        for (const stationData of stations) {
+            const group = StationRenderer.createStationMesh(stationData);
+            group.userData.gridX = stationData.gridX;
+            group.userData.gridZ = stationData.gridZ;
+
+            this.stationMeshes.set(stationData.id, group);
+            this.scene.add(group);
+        }
+
+        console.log(`[Scene] Created ${stations.length} stations for cell (${cell.x}, ${cell.z})`);
+    }
+
+    /**
+     * Update station interactions based on player's held item
+     * @param {Object} interactionSystem - Interaction system
+     * @param {Object|null} heldItem - Player's currently held item
+     * @param {Array} stations - Array of station data from server (worldObjects with objectType='station')
+     */
+    updateStationInteractions(interactionSystem, heldItem, stations) {
+        if (!interactionSystem) return;
+
+        for (const [stationId, group] of this.stationMeshes) {
+            const stationType = group.userData.stationType;
+            const interaction = StationRenderer.getStationInteraction(stationType, heldItem);
+
+            if (interaction) {
+                interactionSystem.registerInteractable(
+                    group,
+                    'STATION',
+                    stationId,
+                    [interaction]
+                );
+            } else {
+                interactionSystem.unregisterInteractable(group);
+            }
+        }
+
+        // Update assembly stations with their current ingredients
+        if (stations) {
+            for (const station of stations) {
+                if (station.stationType === 'assembly_station') {
+                    const group = this.stationMeshes.get(station.id);
+                    if (group) {
+                        StationRenderer.updateStationMesh(group, station);
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -742,8 +820,8 @@ export class Scene {
     updateWorldObjects(worldObjects, interactionSystem) {
         if (!worldObjects) return;
 
-        // Separate plants from items
-        const items = worldObjects.filter(obj => obj.objectType !== 'plant');
+        // Separate plants and stations from items
+        const items = worldObjects.filter(obj => obj.objectType !== 'plant' && obj.objectType !== 'station');
         const plants = worldObjects.filter(obj => obj.objectType === 'plant');
 
         // Update items

@@ -18,12 +18,38 @@ const ITEMS = {
         canStack: true,
         rotTime: 300
     },
+    washed_vegetable: {
+        name: 'Washed Vegetable',
+        color: 0x32CD32,
+        canStack: true,
+        rotTime: 240
+    },
+    prepared_vegetable: {
+        name: 'Prepared Vegetable',
+        color: 0x98FB98,
+        canStack: true,
+        rotTime: 180
+    },
     basic_meal: {
         name: 'Basic Meal',
         color: 0xFFD700,
         canStack: true,
         rotTime: 180,
         hunger: 30
+    },
+    standard_meal: {
+        name: 'Standard Meal',
+        color: 0xFFA500,
+        canStack: true,
+        rotTime: 180,
+        hunger: 50
+    },
+    quality_meal: {
+        name: 'Quality Meal',
+        color: 0xFF4500,
+        canStack: true,
+        rotTime: 180,
+        hunger: 75
     },
     trash: {
         name: 'Trash',

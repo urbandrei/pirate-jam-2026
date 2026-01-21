@@ -109,12 +109,38 @@ export const ITEMS = {
         canStack: true,
         rotTime: 300  // 5 minutes in seconds
     },
+    washed_vegetable: {
+        name: 'Washed Vegetable',
+        color: 0x32CD32,  // Lime green (cleaner look)
+        canStack: true,
+        rotTime: 240  // 4 minutes in seconds
+    },
+    prepared_vegetable: {
+        name: 'Prepared Vegetable',
+        color: 0x98FB98,  // Pale green (cut appearance)
+        canStack: true,
+        rotTime: 180  // 3 minutes in seconds
+    },
     basic_meal: {
         name: 'Basic Meal',
         color: 0xFFD700,
         canStack: true,
         rotTime: 180,  // 3 minutes in seconds
         hunger: 30
+    },
+    standard_meal: {
+        name: 'Standard Meal',
+        color: 0xFFA500,  // Orange
+        canStack: true,
+        rotTime: 180,
+        hunger: 50
+    },
+    quality_meal: {
+        name: 'Quality Meal',
+        color: 0xFF4500,  // Orange red (premium)
+        canStack: true,
+        rotTime: 180,
+        hunger: 75
     },
     trash: {
         name: 'Trash',
@@ -171,3 +197,48 @@ export const COLORS = {
     BLOCK_YELLOW: 0xffff44,
     BLOCK_PURPLE: 0xff44ff
 };
+
+// Processing station types
+export const STATION_TYPES = {
+    WASH: 'wash_station',
+    CUT: 'cut_station',
+    ASSEMBLY: 'assembly_station'
+};
+
+// Station configuration
+export const STATIONS = {
+    wash_station: {
+        name: 'Wash Station',
+        color: 0x4169E1,  // Royal blue (water)
+        interactionTime: 4000,  // 4 seconds
+        inputItem: 'raw_vegetable',
+        outputItem: 'washed_vegetable'
+    },
+    cut_station: {
+        name: 'Cutting Board',
+        color: 0x8B4513,  // Saddle brown (wood)
+        interactionTime: 5000,  // 5 seconds
+        inputItem: 'washed_vegetable',
+        outputItem: 'prepared_vegetable'
+    },
+    assembly_station: {
+        name: 'Assembly Counter',
+        color: 0xC0C0C0,  // Silver (metal counter)
+        inputItem: 'prepared_vegetable'
+    }
+};
+
+// Assembly recipes: ingredient count -> output meal
+export const RECIPES = {
+    1: 'basic_meal',
+    2: 'standard_meal',
+    3: 'quality_meal'
+};
+
+// Station layout for processing rooms (2x3 grid: 2 wash, 2 cut, 2 assembly)
+export const STATIONS_PER_CELL = 6;
+export const STATION_ROWS = 2;
+export const STATION_COLS = 3;
+export const STATION_SPACING_X = 2.5;  // Spacing between station centers (X)
+export const STATION_SPACING_Z = 3.0;  // Spacing between station centers (Z)
+export const STATION_INTERACTION_RANGE = 1.5;  // Range to find nearest station

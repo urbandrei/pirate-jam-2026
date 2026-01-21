@@ -20,6 +20,7 @@ const RoomManager = require('./systems/room-manager');
 const InteractionSystem = require('./systems/interaction-system');
 const itemSystem = require('./systems/item-system');
 const plantSystem = require('./systems/plant-system');
+const stationSystem = require('./systems/station-system');
 
 // Configuration
 const isDevMode = process.argv.includes('dev');
@@ -327,6 +328,32 @@ function gameLoop() {
 
         // Update plant growth (runs at 1Hz internally)
         plantSystem.updatePlants(gameState.worldObjects, now);
+
+        // Update timed interactions (wash/cut stations)
+        const completedTimedInteractions = interactionSystem.updateTimedInteractions(now);
+        for (const completed of completedTimedInteractions) {
+            playerManager.sendTo(completed.playerId, {
+                type: 'TIMED_INTERACT_COMPLETE',
+                interactionType: completed.interactionType,
+                stationId: completed.stationId,
+                result: completed.result
+            });
+        }
+
+        // Check if players have moved out of range during timed interactions
+        for (const player of gameState.getAllPlayers()) {
+            if (interactionSystem.hasTimedInteraction(player.id)) {
+                if (!interactionSystem.isPlayerInTimedInteractionRange(player.id)) {
+                    const cancelled = interactionSystem.cancelTimedInteraction(player.id);
+                    if (cancelled.cancelled) {
+                        playerManager.sendTo(player.id, {
+                            type: 'TIMED_INTERACT_CANCELLED',
+                            reason: 'Moved out of range'
+                        });
+                    }
+                }
+            }
+        }
 
         if (gameState.getPlayerCount() > 0) {
             io.emit('message', {

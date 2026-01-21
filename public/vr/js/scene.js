@@ -11,6 +11,8 @@
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { COLORS, WORLD_SIZE, GIANT_SCALE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH, ROOM_TYPES, DEFAULT_ROOM_TYPE, ITEMS, PLANT_COLORS } from '../../pc/shared/constants.js';
+import * as VRStationRenderer from './vr-station-renderer.js';
+import * as VRFarmingRenderer from './vr-farming-renderer.js';
 
 export class VRScene {
     constructor(container) {
@@ -31,6 +33,8 @@ export class VRScene {
             this.worldItemsGroup = new THREE.Group();
             this.worldItemMeshes = new Map(); // itemId -> mesh
             this.plantMeshes = new Map(); // plantId -> mesh
+            this.stationMeshes = new Map(); // stationId -> group
+            this.soilPlotMeshes = new Map(); // plotId -> mesh
 
             // VR scale factor
             this.scale = 1 / GIANT_SCALE;
@@ -179,11 +183,21 @@ export class VRScene {
         // Clear existing dynamic elements
         this.clearDynamicWalls();
         this.clearDynamicFloors();
+        this.clearStations();
+        this.clearSoilPlots();
 
-        // Build walls and floors for each cell in the grid
+        // Build walls, floors, and room-specific content for each cell in the grid
         for (const cell of worldState.grid) {
             this.createCellWalls(cell, worldState);
             this.createCellFloor(cell);
+
+            // Create room-specific content
+            if (cell.roomType === 'processing') {
+                this.createStationsForCell(cell);
+            }
+            if (cell.roomType === 'farming') {
+                this.createSoilPlotsForCell(cell);
+            }
         }
     }
 
@@ -208,6 +222,54 @@ export class VRScene {
             if (mesh.material) mesh.material.dispose();
         }
         this.dynamicFloors = [];
+    }
+
+    /**
+     * Clear all station meshes
+     */
+    clearStations() {
+        for (const [id, group] of this.stationMeshes) {
+            this.worldItemsGroup.remove(group);
+            VRStationRenderer.disposeStationMesh(group);
+        }
+        this.stationMeshes.clear();
+    }
+
+    /**
+     * Clear all soil plot meshes
+     */
+    clearSoilPlots() {
+        for (const [id, mesh] of this.soilPlotMeshes) {
+            this.worldItemsGroup.remove(mesh);
+            VRFarmingRenderer.disposeSoilPlotMesh(mesh);
+        }
+        this.soilPlotMeshes.clear();
+    }
+
+    /**
+     * Create stations for a processing room cell
+     * @param {Object} cell - Cell data with x, z coordinates
+     */
+    createStationsForCell(cell) {
+        const stations = VRStationRenderer.getStationPositions(cell.x, cell.z);
+        for (const stationData of stations) {
+            const group = VRStationRenderer.createStationMesh(stationData, this.scale);
+            this.stationMeshes.set(stationData.id, group);
+            this.worldItemsGroup.add(group);
+        }
+    }
+
+    /**
+     * Create soil plots for a farming room cell
+     * @param {Object} cell - Cell data with x, z coordinates
+     */
+    createSoilPlotsForCell(cell) {
+        const plots = VRFarmingRenderer.getSoilPlotPositions(cell.x, cell.z);
+        for (const plot of plots) {
+            const mesh = VRFarmingRenderer.createSoilPlotMesh(plot.position, this.scale);
+            this.soilPlotMeshes.set(plot.id, mesh);
+            this.worldItemsGroup.add(mesh);
+        }
     }
 
     /**
@@ -421,8 +483,8 @@ export class VRScene {
     updateWorldItems(worldObjects) {
         if (!worldObjects) return;
 
-        // Separate plants from items
-        const items = worldObjects.filter(obj => obj.objectType !== 'plant');
+        // Separate plants and stations from items
+        const items = worldObjects.filter(obj => obj.objectType !== 'plant' && obj.objectType !== 'station');
         const plants = worldObjects.filter(obj => obj.objectType === 'plant');
 
         // Update items
@@ -759,6 +821,20 @@ export class VRScene {
             if (mesh.material) mesh.material.dispose();
         }
         this.worldItemMeshes.clear();
+
+        // Dispose plant meshes
+        for (const mesh of this.plantMeshes.values()) {
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) mesh.material.dispose();
+        }
+        this.plantMeshes.clear();
+
+        // Dispose station meshes
+        this.clearStations();
+
+        // Dispose soil plot meshes
+        this.clearSoilPlots();
+
         if (this.worldItemsGroup) {
             this.scene.remove(this.worldItemsGroup);
             this.worldItemsGroup = null;

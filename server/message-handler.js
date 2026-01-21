@@ -3,6 +3,7 @@
  */
 
 const plantSystem = require('./systems/plant-system');
+const stationSystem = require('./systems/station-system');
 
 class MessageHandler {
     constructor(gameState, playerManager, interactionSystem = null) {
@@ -40,6 +41,12 @@ class MessageHandler {
                 break;
             case 'INTERACT':
                 this.handleInteract(peerId, message);
+                break;
+            case 'TIMED_INTERACT_START':
+                this.handleTimedInteractStart(peerId, message);
+                break;
+            case 'TIMED_INTERACT_CANCEL':
+                this.handleTimedInteractCancel(peerId, message);
                 break;
             default:
                 console.warn(`Unknown message type from ${peerId}:`, message.type);
@@ -185,10 +192,11 @@ class MessageHandler {
 
         console.log(`[MessageHandler] CONVERT_ROOM from ${peerId}: grid(${gridX}, ${gridZ}), roomType=${roomType}`);
 
-        // Check if converting FROM farming - need to cleanup plants
+        // Check if converting FROM farming or processing - need to cleanup entities
         const cellKey = `${gridX},${gridZ}`;
         const currentCell = this.gameState.worldState.grid.get(cellKey);
         const wasFromFarming = currentCell && currentCell.roomType === 'farming';
+        const wasFromProcessing = currentCell && currentCell.roomType === 'processing';
 
         const result = this.gameState.worldState.setRoomType(gridX, gridZ, roomType);
 
@@ -199,6 +207,20 @@ class MessageHandler {
                 if (removedCount > 0) {
                     console.log(`[MessageHandler] Removed ${removedCount} plants from converted farming room`);
                 }
+            }
+
+            // If we converted away from processing, destroy any stations in this cell
+            if (wasFromProcessing && roomType !== 'processing') {
+                const removedCount = stationSystem.cleanupStationsInCell(this.gameState.worldObjects, gridX, gridZ);
+                if (removedCount > 0) {
+                    console.log(`[MessageHandler] Removed ${removedCount} stations from converted processing room`);
+                }
+            }
+
+            // If we converted TO processing, create stations
+            if (roomType === 'processing' && !wasFromProcessing) {
+                const createdStations = stationSystem.createStationsForCell(this.gameState.worldObjects, gridX, gridZ);
+                console.log(`[MessageHandler] Created ${createdStations.length} stations for new processing room`);
             }
             console.log(`[MessageHandler] Room converted successfully, version=${result.version}`);
 
@@ -292,6 +314,108 @@ class MessageHandler {
                 interactionType,
                 targetId,
                 reason: execResult.error
+            });
+        }
+    }
+
+    /**
+     * Handle timed interaction start request (wash/cut stations)
+     */
+    handleTimedInteractStart(peerId, message) {
+        // Only accept from PC players
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'pc') {
+            console.warn(`[MessageHandler] TIMED_INTERACT_START rejected: not a PC player (${peerId})`);
+            return;
+        }
+
+        // Check if interaction system is available
+        if (!this.interactionSystem) {
+            console.warn(`[MessageHandler] TIMED_INTERACT_START rejected: interaction system not initialized`);
+            this.playerManager.sendTo(peerId, {
+                type: 'TIMED_INTERACT_CANCELLED',
+                reason: 'Interaction system not available'
+            });
+            return;
+        }
+
+        const { interactionType, targetId, targetPosition } = message;
+
+        // Validate the interaction type is timed (wash or cut)
+        if (interactionType !== 'wash' && interactionType !== 'cut') {
+            console.warn(`[MessageHandler] TIMED_INTERACT_START rejected: invalid type (${interactionType})`);
+            this.playerManager.sendTo(peerId, {
+                type: 'TIMED_INTERACT_CANCELLED',
+                reason: 'Invalid timed interaction type'
+            });
+            return;
+        }
+
+        // Validate range (use canInteract for range check)
+        const canResult = this.interactionSystem.canInteract(
+            player,
+            interactionType,
+            targetId,
+            targetPosition || { x: player.position.x, y: player.position.y, z: player.position.z }
+        );
+
+        if (!canResult.valid) {
+            console.log(`[MessageHandler] TIMED_INTERACT_START validation failed: ${canResult.reason}`);
+            this.playerManager.sendTo(peerId, {
+                type: 'TIMED_INTERACT_CANCELLED',
+                reason: canResult.reason
+            });
+            return;
+        }
+
+        // Start the timed interaction
+        const startResult = this.interactionSystem.startTimedInteraction(
+            player,
+            interactionType,
+            targetId,
+            targetPosition
+        );
+
+        if (startResult.success) {
+            console.log(`[MessageHandler] TIMED_INTERACT_START success: ${interactionType} on ${targetId}, duration=${startResult.duration}ms`);
+            this.playerManager.sendTo(peerId, {
+                type: 'TIMED_INTERACT_PROGRESS',
+                interactionType,
+                targetId,
+                duration: startResult.duration
+            });
+        } else {
+            console.log(`[MessageHandler] TIMED_INTERACT_START failed: ${startResult.error}`);
+            this.playerManager.sendTo(peerId, {
+                type: 'TIMED_INTERACT_CANCELLED',
+                reason: startResult.error
+            });
+        }
+    }
+
+    /**
+     * Handle timed interaction cancel request
+     */
+    handleTimedInteractCancel(peerId, message) {
+        // Only accept from PC players
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'pc') {
+            console.warn(`[MessageHandler] TIMED_INTERACT_CANCEL rejected: not a PC player (${peerId})`);
+            return;
+        }
+
+        // Check if interaction system is available
+        if (!this.interactionSystem) {
+            return;
+        }
+
+        const cancelResult = this.interactionSystem.cancelTimedInteraction(peerId);
+
+        if (cancelResult.cancelled) {
+            console.log(`[MessageHandler] TIMED_INTERACT_CANCEL: cancelled for player ${peerId}`);
+            this.playerManager.sendTo(peerId, {
+                type: 'TIMED_INTERACT_CANCELLED',
+                reason: 'Player cancelled'
             });
         }
     }

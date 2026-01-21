@@ -9,6 +9,7 @@
 
 const itemSystem = require('./item-system');
 const plantSystem = require('./plant-system');
+const stationSystem = require('./station-system');
 
 const INTERACTION_RANGE = 2.0; // meters
 
@@ -16,6 +17,196 @@ class InteractionSystem {
     constructor(gameState, roomManager) {
         this.gameState = gameState;
         this.roomManager = roomManager;
+
+        // Timed interaction tracking: playerId -> { stationId, stationType, startTime, duration, targetPosition, inputItem }
+        this.timedInteractions = new Map();
+    }
+
+    // ============================================
+    // Timed Interaction Methods
+    // ============================================
+
+    /**
+     * Start a timed interaction (wash/cut stations)
+     * @param {Object} player - Player object
+     * @param {string} interactionType - 'wash' or 'cut'
+     * @param {string} stationId - Station ID
+     * @param {Object} targetPosition - Station position
+     * @returns {{ success: boolean, duration?: number, error?: string }}
+     */
+    startTimedInteraction(player, interactionType, stationId, targetPosition) {
+        // Check if player already has active timed interaction
+        if (this.timedInteractions.has(player.id)) {
+            return { success: false, error: 'Already in a timed interaction' };
+        }
+
+        // Get station
+        const station = stationSystem.getStationById(stationId, this.gameState.worldObjects);
+        if (!station) {
+            return { success: false, error: 'Station not found' };
+        }
+
+        const stationConfig = stationSystem.getStationConfig(station.stationType);
+        if (!stationConfig) {
+            return { success: false, error: 'Invalid station type' };
+        }
+
+        // Validate player holds correct input item
+        if (!player.heldItem || player.heldItem.type !== stationConfig.inputItem) {
+            return { success: false, error: `Must be holding ${stationConfig.inputItem}` };
+        }
+
+        // Validate station type matches interaction type
+        if (interactionType === 'wash' && station.stationType !== stationSystem.STATION_TYPES.WASH) {
+            return { success: false, error: 'Not a wash station' };
+        }
+        if (interactionType === 'cut' && station.stationType !== stationSystem.STATION_TYPES.CUT) {
+            return { success: false, error: 'Not a cutting station' };
+        }
+
+        // Store the input item and start timed interaction
+        const inputItem = player.heldItem;
+        player.heldItem = null; // Item is "in use" at station
+
+        this.timedInteractions.set(player.id, {
+            playerId: player.id,
+            stationId: stationId,
+            stationType: station.stationType,
+            interactionType: interactionType,
+            startTime: Date.now(),
+            duration: stationConfig.interactionTime,
+            targetPosition: targetPosition,
+            inputItem: inputItem
+        });
+
+        console.log(`[InteractionSystem] Player ${player.id} started ${interactionType} at ${stationId} (${stationConfig.interactionTime}ms)`);
+
+        return {
+            success: true,
+            duration: stationConfig.interactionTime
+        };
+    }
+
+    /**
+     * Update timed interactions and complete any that are done
+     * Called from game loop
+     * @param {number} now - Current timestamp
+     * @returns {Array} Array of completed interactions
+     */
+    updateTimedInteractions(now) {
+        const completed = [];
+
+        for (const [playerId, timedData] of this.timedInteractions) {
+            const elapsed = now - timedData.startTime;
+
+            if (elapsed >= timedData.duration) {
+                // Interaction complete
+                const result = this._completeTimedInteraction(playerId, timedData);
+                completed.push({
+                    playerId: playerId,
+                    interactionType: timedData.interactionType,
+                    stationId: timedData.stationId,
+                    result: result
+                });
+            }
+        }
+
+        return completed;
+    }
+
+    /**
+     * Complete a timed interaction and give output item
+     * @param {string} playerId - Player ID
+     * @param {Object} timedData - Timed interaction data
+     * @returns {Object} Result with output item
+     */
+    _completeTimedInteraction(playerId, timedData) {
+        const player = this.gameState.getPlayer(playerId);
+        if (!player) {
+            this.timedInteractions.delete(playerId);
+            return { success: false, error: 'Player not found' };
+        }
+
+        const stationConfig = stationSystem.getStationConfig(timedData.stationType);
+        if (!stationConfig || !stationConfig.outputItem) {
+            this.timedInteractions.delete(playerId);
+            return { success: false, error: 'Invalid station config' };
+        }
+
+        // Create output item and give to player
+        const outputItem = itemSystem.createItem(stationConfig.outputItem, player.position);
+        player.heldItem = outputItem;
+
+        // Remove from active timed interactions
+        this.timedInteractions.delete(playerId);
+
+        console.log(`[InteractionSystem] Player ${playerId} completed ${timedData.interactionType}: ${timedData.inputItem.type} -> ${stationConfig.outputItem}`);
+
+        return {
+            success: true,
+            item: outputItem
+        };
+    }
+
+    /**
+     * Cancel a player's timed interaction and return their item
+     * @param {string} playerId - Player ID
+     * @returns {{ cancelled: boolean, reason?: string }}
+     */
+    cancelTimedInteraction(playerId) {
+        const timedData = this.timedInteractions.get(playerId);
+        if (!timedData) {
+            return { cancelled: false, reason: 'No active timed interaction' };
+        }
+
+        const player = this.gameState.getPlayer(playerId);
+        if (player) {
+            // Return the input item to player
+            player.heldItem = timedData.inputItem;
+        }
+
+        this.timedInteractions.delete(playerId);
+
+        console.log(`[InteractionSystem] Cancelled timed interaction for player ${playerId}`);
+
+        return { cancelled: true };
+    }
+
+    /**
+     * Check if player has an active timed interaction
+     * @param {string} playerId - Player ID
+     * @returns {boolean}
+     */
+    hasTimedInteraction(playerId) {
+        return this.timedInteractions.has(playerId);
+    }
+
+    /**
+     * Get a player's current timed interaction
+     * @param {string} playerId - Player ID
+     * @returns {Object|null}
+     */
+    getTimedInteraction(playerId) {
+        return this.timedInteractions.get(playerId) || null;
+    }
+
+    /**
+     * Check if a player is within range of their timed interaction target
+     * @param {string} playerId - Player ID
+     * @returns {boolean}
+     */
+    isPlayerInTimedInteractionRange(playerId) {
+        const timedData = this.timedInteractions.get(playerId);
+        if (!timedData) return true; // No interaction, so not out of range
+
+        const player = this.gameState.getPlayer(playerId);
+        if (!player) return false;
+
+        const dx = player.position.x - timedData.targetPosition.x;
+        const dz = player.position.z - timedData.targetPosition.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+
+        return distance <= INTERACTION_RANGE;
     }
 
     /**
@@ -330,21 +521,91 @@ class InteractionSystem {
     }
 
     _executeWash(player, stationId) {
-        // Placeholder - will be implemented with food processing room
-        console.log(`[InteractionSystem] Wash interaction - not yet implemented`);
-        return { success: false, error: 'Wash not yet implemented' };
+        // Wash is a timed interaction - this method should not be called directly
+        // Instead, use startTimedInteraction for wash/cut
+        // This is here for compatibility with the regular interaction flow
+        const station = stationSystem.getStationById(stationId, this.gameState.worldObjects);
+        if (!station || station.stationType !== stationSystem.STATION_TYPES.WASH) {
+            return { success: false, error: 'Not a wash station' };
+        }
+
+        const stationConfig = stationSystem.getStationConfig(station.stationType);
+        if (!player.heldItem || player.heldItem.type !== stationConfig.inputItem) {
+            return { success: false, error: `Must be holding ${stationConfig.inputItem}` };
+        }
+
+        // Signal that this is a timed interaction
+        return {
+            success: false,
+            error: 'Use timed interaction for wash',
+            requiresTimed: true,
+            duration: stationConfig.interactionTime
+        };
     }
 
     _executeCut(player, stationId) {
-        // Placeholder - will be implemented with food processing room
-        console.log(`[InteractionSystem] Cut interaction - not yet implemented`);
-        return { success: false, error: 'Cut not yet implemented' };
+        // Cut is a timed interaction - this method should not be called directly
+        // Instead, use startTimedInteraction for wash/cut
+        const station = stationSystem.getStationById(stationId, this.gameState.worldObjects);
+        if (!station || station.stationType !== stationSystem.STATION_TYPES.CUT) {
+            return { success: false, error: 'Not a cutting station' };
+        }
+
+        const stationConfig = stationSystem.getStationConfig(station.stationType);
+        if (!player.heldItem || player.heldItem.type !== stationConfig.inputItem) {
+            return { success: false, error: `Must be holding ${stationConfig.inputItem}` };
+        }
+
+        // Signal that this is a timed interaction
+        return {
+            success: false,
+            error: 'Use timed interaction for cut',
+            requiresTimed: true,
+            duration: stationConfig.interactionTime
+        };
     }
 
     _executeAssemble(player, stationId) {
-        // Placeholder - will be implemented with food processing room
-        console.log(`[InteractionSystem] Assemble interaction - not yet implemented`);
-        return { success: false, error: 'Assemble not yet implemented' };
+        // Assembly is instant - player drops ingredient on station
+        const station = stationSystem.getStationById(stationId, this.gameState.worldObjects);
+        if (!station || station.stationType !== stationSystem.STATION_TYPES.ASSEMBLY) {
+            return { success: false, error: 'Not an assembly station' };
+        }
+
+        const stationConfig = stationSystem.getStationConfig(station.stationType);
+        if (!player.heldItem || player.heldItem.type !== stationConfig.inputItem) {
+            return { success: false, error: `Must be holding ${stationConfig.inputItem}` };
+        }
+
+        // Take item from player and add to assembly station
+        const item = player.heldItem;
+        player.heldItem = null;
+
+        const result = stationSystem.addIngredient(station, item);
+
+        if (result.success && result.recipeComplete) {
+            // Give the result item to player
+            player.heldItem = result.resultItem;
+            console.log(`[InteractionSystem] Player ${player.id} assembled ${result.resultItem.type} from ${result.ingredientCount} ingredients`);
+            return {
+                success: true,
+                recipeComplete: true,
+                item: result.resultItem,
+                ingredientCount: result.ingredientCount
+            };
+        } else if (result.success) {
+            // Ingredient added but recipe not complete
+            console.log(`[InteractionSystem] Player ${player.id} added ingredient to assembly (${result.ingredientCount}/3)`);
+            return {
+                success: true,
+                recipeComplete: false,
+                ingredientCount: result.ingredientCount
+            };
+        }
+
+        // Failed to add
+        player.heldItem = item; // Return item to player
+        return { success: false, error: result.error };
     }
 
     _executePickup(player, itemId) {

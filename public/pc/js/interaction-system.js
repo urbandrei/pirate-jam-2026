@@ -41,9 +41,15 @@ export class InteractionSystem {
 
         // UI elements
         this.promptElement = this._createPromptElement();
+        this.progressBarElement = this._createProgressBarElement();
+
+        // Timed interaction state
+        this.timedInteraction = null; // { type, targetId, startTime, duration, targetPosition }
 
         // Callbacks
         this.onInteract = null; // (interactionType, targetId, targetPosition) => void
+        this.onTimedInteractStart = null; // (interactionType, targetId, targetPosition) => void
+        this.onTimedInteractCancel = null; // () => void
     }
 
     /**
@@ -230,13 +236,36 @@ export class InteractionSystem {
     }
 
     /**
-     * Add outline highlight to a mesh
+     * Add outline highlight to a mesh or group
      * @private
      */
     _addOutline(mesh) {
         if (this.outlineMeshes.has(mesh.uuid)) return;
 
-        // Clone geometry for outline
+        // Handle groups (like stations) by creating a bounding box outline
+        if (mesh.isGroup || !mesh.geometry) {
+            // Create outline from bounding box
+            const box = new THREE.Box3().setFromObject(mesh);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+
+            const geometry = new THREE.BoxGeometry(size.x * 1.05, size.y * 1.05, size.z * 1.05);
+            const outlineMesh = new THREE.Mesh(geometry, this.outlineMaterial);
+
+            // Position at center of bounding box
+            const center = new THREE.Vector3();
+            box.getCenter(center);
+            outlineMesh.position.copy(center);
+
+            outlineMesh.userData.sourceUuid = mesh.uuid;
+            outlineMesh.userData.isGroupOutline = true;
+
+            this.scene.scene.add(outlineMesh);
+            this.outlineMeshes.set(mesh.uuid, outlineMesh);
+            return;
+        }
+
+        // Clone geometry for outline (regular mesh)
         const geometry = mesh.geometry.clone();
         const outlineMesh = new THREE.Mesh(geometry, this.outlineMaterial);
 
@@ -352,10 +381,203 @@ export class InteractionSystem {
             this.promptElement.parentNode.removeChild(this.promptElement);
         }
 
+        // Remove progress bar element
+        if (this.progressBarElement && this.progressBarElement.parentNode) {
+            this.progressBarElement.parentNode.removeChild(this.progressBarElement);
+        }
+
         // Dispose outline material
         this.outlineMaterial.dispose();
 
         this.currentTarget = null;
         this.currentInteraction = null;
+        this.timedInteraction = null;
+    }
+
+    // ============================================
+    // Timed Interaction Methods
+    // ============================================
+
+    /**
+     * Start a timed interaction (called when server confirms start)
+     * @param {string} type - Interaction type ('wash' or 'cut')
+     * @param {string} targetId - Target station ID
+     * @param {number} duration - Duration in milliseconds
+     */
+    startTimedInteraction(type, targetId, duration) {
+        // Get target position from current target if available
+        let targetPosition = null;
+        if (this.currentTarget) {
+            const pos = new THREE.Vector3();
+            this.currentTarget.getWorldPosition(pos);
+            targetPosition = { x: pos.x, y: pos.y, z: pos.z };
+        }
+
+        this.timedInteraction = {
+            type,
+            targetId,
+            startTime: performance.now(),
+            duration,
+            targetPosition
+        };
+
+        this._showProgressBar();
+        console.log(`[InteractionSystem] Started timed interaction: ${type} for ${duration}ms`);
+    }
+
+    /**
+     * Update timed interaction progress (call each frame)
+     * @returns {{ complete: boolean, cancelled: boolean }}
+     */
+    updateTimedInteraction() {
+        if (!this.timedInteraction) {
+            return { complete: false, cancelled: false };
+        }
+
+        const elapsed = performance.now() - this.timedInteraction.startTime;
+        const progress = Math.min(1, elapsed / this.timedInteraction.duration);
+
+        this._updateProgressBar(progress);
+
+        // Check if player moved out of range (client-side check for responsiveness)
+        if (this.timedInteraction.targetPosition) {
+            const cameraPos = this.camera.position;
+            const targetPos = this.timedInteraction.targetPosition;
+            const dx = cameraPos.x - targetPos.x;
+            const dz = cameraPos.z - targetPos.z;
+            const distance = Math.sqrt(dx * dx + dz * dz);
+
+            if (distance > INTERACTION_RANGE * 1.5) { // Slightly larger range for tolerance
+                console.log('[InteractionSystem] Player moved out of range during timed interaction');
+                this.cancelTimedInteraction();
+                return { complete: false, cancelled: true };
+            }
+        }
+
+        // Check if complete (server handles actual completion, this is just for UI)
+        if (progress >= 1) {
+            // Don't auto-complete - wait for server confirmation
+            return { complete: false, cancelled: false };
+        }
+
+        return { complete: false, cancelled: false };
+    }
+
+    /**
+     * Cancel the current timed interaction
+     */
+    cancelTimedInteraction() {
+        if (this.timedInteraction) {
+            console.log('[InteractionSystem] Cancelled timed interaction');
+            this.timedInteraction = null;
+            this._hideProgressBar();
+
+            if (this.onTimedInteractCancel) {
+                this.onTimedInteractCancel();
+            }
+        }
+    }
+
+    /**
+     * Complete a timed interaction (called when server confirms completion)
+     */
+    completeTimedInteraction() {
+        if (this.timedInteraction) {
+            console.log('[InteractionSystem] Completed timed interaction');
+            this.timedInteraction = null;
+            this._hideProgressBar();
+        }
+    }
+
+    /**
+     * Check if currently in a timed interaction
+     * @returns {boolean}
+     */
+    isInTimedInteraction() {
+        return this.timedInteraction !== null;
+    }
+
+    /**
+     * Get current timed interaction info
+     * @returns {Object|null}
+     */
+    getTimedInteraction() {
+        return this.timedInteraction;
+    }
+
+    /**
+     * Create the progress bar DOM element
+     * @private
+     */
+    _createProgressBarElement() {
+        // Container
+        const container = document.createElement('div');
+        container.id = 'timed-interaction-progress';
+        container.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 200px;
+            height: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid #fff;
+            border-radius: 10px;
+            overflow: hidden;
+            display: none;
+            z-index: 150;
+        `;
+
+        // Progress fill
+        const fill = document.createElement('div');
+        fill.id = 'timed-interaction-fill';
+        fill.style.cssText = `
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #8BC34A);
+            transition: width 0.1s linear;
+        `;
+        container.appendChild(fill);
+
+        // Add to UI overlay or game container
+        const overlay = document.getElementById('ui-overlay');
+        const parentContainer = overlay || document.getElementById('game-container');
+        if (parentContainer) {
+            parentContainer.appendChild(container);
+        }
+
+        return container;
+    }
+
+    /**
+     * Show the progress bar
+     * @private
+     */
+    _showProgressBar() {
+        this.progressBarElement.style.display = 'block';
+        const fill = this.progressBarElement.querySelector('#timed-interaction-fill');
+        if (fill) {
+            fill.style.width = '0%';
+        }
+    }
+
+    /**
+     * Update the progress bar
+     * @param {number} progress - Progress 0-1
+     * @private
+     */
+    _updateProgressBar(progress) {
+        const fill = this.progressBarElement.querySelector('#timed-interaction-fill');
+        if (fill) {
+            fill.style.width = `${progress * 100}%`;
+        }
+    }
+
+    /**
+     * Hide the progress bar
+     * @private
+     */
+    _hideProgressBar() {
+        this.progressBarElement.style.display = 'none';
     }
 }

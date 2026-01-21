@@ -11,6 +11,8 @@ export const MSG = {
     PLACE_BLOCK: 'PLACE_BLOCK',
     CONVERT_ROOM: 'CONVERT_ROOM',
     INTERACT: 'INTERACT',
+    TIMED_INTERACT_START: 'TIMED_INTERACT_START',
+    TIMED_INTERACT_CANCEL: 'TIMED_INTERACT_CANCEL',
 
     // Server -> Client
     JOINED: 'JOINED',
@@ -22,7 +24,10 @@ export const MSG = {
     ROOM_CONVERTED: 'ROOM_CONVERTED',
     CONVERT_ROOM_FAILED: 'CONVERT_ROOM_FAILED',
     INTERACT_SUCCESS: 'INTERACT_SUCCESS',
-    INTERACT_FAIL: 'INTERACT_FAIL'
+    INTERACT_FAIL: 'INTERACT_FAIL',
+    TIMED_INTERACT_PROGRESS: 'TIMED_INTERACT_PROGRESS',
+    TIMED_INTERACT_COMPLETE: 'TIMED_INTERACT_COMPLETE',
+    TIMED_INTERACT_CANCELLED: 'TIMED_INTERACT_CANCELLED'
 };
 
 // Message creators for type safety
@@ -101,5 +106,31 @@ export function createInteractMessage(interactionType, targetId, targetPosition)
         interactionType,
         targetId,
         targetPosition
+    };
+}
+
+/**
+ * Create a timed interact start message (PC -> Server)
+ * Used for wash/cut stations that require holding interaction
+ * @param {string} interactionType - 'wash' or 'cut'
+ * @param {string} targetId - Station ID
+ * @param {Object} targetPosition - World position {x, y, z} of station
+ */
+export function createTimedInteractStartMessage(interactionType, targetId, targetPosition) {
+    return {
+        type: MSG.TIMED_INTERACT_START,
+        interactionType,
+        targetId,
+        targetPosition
+    };
+}
+
+/**
+ * Create a timed interact cancel message (PC -> Server)
+ * Sent when player moves away during timed interaction
+ */
+export function createTimedInteractCancelMessage() {
+    return {
+        type: MSG.TIMED_INTERACT_CANCEL
     };
 }

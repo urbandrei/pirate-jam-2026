@@ -799,10 +799,13 @@ export class BuildingSystem {
     updateWorldItems(worldObjects) {
         if (!worldObjects) return;
 
+        // Filter out plants and stations - they're handled separately or not shown in miniature
+        const items = worldObjects.filter(obj => obj.objectType !== 'plant' && obj.objectType !== 'station');
+
         // Track which items we've seen this update
         const seenIds = new Set();
 
-        for (const item of worldObjects) {
+        for (const item of items) {
             seenIds.add(item.id);
 
             if (this.worldItemMeshes.has(item.id)) {
