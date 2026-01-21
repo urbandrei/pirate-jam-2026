@@ -15,6 +15,9 @@ export class Scene {
         this.roomLabels = [];
         this.lastWorldVersion = -1;
 
+        // World objects (pickable items, etc.)
+        this.worldObjectMeshes = new Map(); // id -> mesh
+
         // Wall material (shared)
         this.wallMaterial = null;
 
@@ -641,5 +644,82 @@ export class Scene {
 
     remove(object) {
         this.scene.remove(object);
+    }
+
+    /**
+     * Update world objects from server state
+     * @param {Array} worldObjects - Array of world object data from server
+     * @param {Object} interactionSystem - Interaction system to register objects with
+     */
+    updateWorldObjects(worldObjects, interactionSystem) {
+        if (!worldObjects) return;
+
+        // Track which IDs are in the new state
+        const newIds = new Set(worldObjects.map(obj => obj.id));
+
+        // Remove meshes for objects no longer in state
+        for (const [id, mesh] of this.worldObjectMeshes) {
+            if (!newIds.has(id)) {
+                this.scene.remove(mesh);
+                if (mesh.geometry) mesh.geometry.dispose();
+                if (mesh.material) mesh.material.dispose();
+                if (interactionSystem) {
+                    interactionSystem.unregisterInteractable(mesh);
+                }
+                this.worldObjectMeshes.delete(id);
+            }
+        }
+
+        // Create or update meshes for objects in state
+        for (const obj of worldObjects) {
+            if (!this.worldObjectMeshes.has(obj.id)) {
+                // Create new mesh
+                const mesh = this.createWorldObjectMesh(obj);
+                this.worldObjectMeshes.set(obj.id, mesh);
+                this.scene.add(mesh);
+
+                // Register with interaction system
+                if (interactionSystem) {
+                    interactionSystem.registerInteractable(
+                        mesh,
+                        'WORLD_ITEM',
+                        obj.id,
+                        [{ type: 'pickup_item', prompt: 'Pick up' }]
+                    );
+                }
+            } else {
+                // Update existing mesh position
+                const mesh = this.worldObjectMeshes.get(obj.id);
+                mesh.position.set(obj.position.x, obj.position.y, obj.position.z);
+            }
+        }
+    }
+
+    /**
+     * Create a mesh for a world object
+     * @param {Object} obj - World object data
+     * @returns {THREE.Mesh}
+     */
+    createWorldObjectMesh(obj) {
+        let geometry;
+        if (obj.type === 'cube') {
+            geometry = new THREE.BoxGeometry(obj.size, obj.size, obj.size);
+        } else {
+            // Default to cube
+            geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        }
+
+        const material = new THREE.MeshStandardMaterial({
+            color: obj.color || 0xffff00,
+            roughness: 0.5,
+            metalness: 0.1
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(obj.position.x, obj.position.y, obj.position.z);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        return mesh;
     }
 }

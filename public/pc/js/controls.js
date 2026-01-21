@@ -28,6 +28,9 @@ export class Controls {
         this.isLocked = false;
         this.isGrabbed = false;
 
+        // Callbacks
+        this.onLeftClick = null;  // Callback for left-click interaction
+
         // Elements
         this.clickToPlay = document.getElementById('click-to-play');
         this.crosshair = document.getElementById('crosshair');
@@ -67,6 +70,14 @@ export class Controls {
 
         document.addEventListener('keyup', (e) => {
             this.handleKeyUp(e.code);
+        });
+
+        // Left-click for interaction (only when pointer-locked)
+        document.addEventListener('mousedown', (e) => {
+            if (!this.isLocked) return;
+            if (e.button === 0 && this.onLeftClick) {
+                this.onLeftClick();
+            }
         });
     }
 

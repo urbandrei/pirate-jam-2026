@@ -12,6 +12,18 @@ class GameState {
 
         // World state for building system
         this.worldState = new WorldState();
+
+        // World objects (pickable items, etc.)
+        this.worldObjects = new Map();
+
+        // Add test cube at spawn room center
+        this.worldObjects.set('test_cube_001', {
+            id: 'test_cube_001',
+            type: 'cube',
+            position: { x: 0, y: 0.25, z: 0 },
+            size: 0.5,
+            color: 0xffff00
+        });
     }
 
     addPlayer(peerId, playerType) {
@@ -45,6 +57,8 @@ class GameState {
                 right: false,
                 jump: false
             },
+            // Held item (picked up object)
+            heldItem: null,
             lastUpdate: Date.now()
         };
 
@@ -123,13 +137,15 @@ class GameState {
                 headPosition: player.headPosition,
                 headRotation: player.headRotation,
                 leftHand: player.leftHand,
-                rightHand: player.rightHand
+                rightHand: player.rightHand,
+                heldItem: player.heldItem
             };
         }
 
         return {
             players,
             world: this.worldState.getSerializableState(),
+            worldObjects: Array.from(this.worldObjects.values()),
             timestamp: Date.now()
         };
     }
@@ -152,6 +168,27 @@ class GameState {
      */
     getWorldState() {
         return this.worldState.getSerializableState();
+    }
+
+    /**
+     * Get a world object by ID
+     */
+    getWorldObject(id) {
+        return this.worldObjects.get(id);
+    }
+
+    /**
+     * Remove a world object by ID
+     */
+    removeWorldObject(id) {
+        return this.worldObjects.delete(id);
+    }
+
+    /**
+     * Add a world object
+     */
+    addWorldObject(obj) {
+        this.worldObjects.set(obj.id, obj);
     }
 }
 

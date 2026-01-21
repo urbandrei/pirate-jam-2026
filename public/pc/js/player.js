@@ -6,8 +6,9 @@ import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { COLORS, PLAYER_HEIGHT, PLAYER_RADIUS, GROUND_LEVEL } from '../shared/constants.js';
 
 export class Player {
-    constructor(scene) {
+    constructor(scene, camera) {
         this.scene = scene;
+        this.camera = camera;
 
         // Position state (received from server)
         this.position = { x: 0, y: GROUND_LEVEL, z: 0 };
@@ -15,6 +16,10 @@ export class Player {
 
         // For interpolation
         this.targetPosition = { x: 0, y: GROUND_LEVEL, z: 0 };
+
+        // Held item state
+        this.heldItem = null;
+        this.heldItemMesh = null;
 
         // Create visual representation (capsule)
         this.mesh = this.createCapsuleMesh();
@@ -87,5 +92,73 @@ export class Player {
         this.position = { ...pos };
         this.targetPosition = { ...pos };
         this.serverPosition = { ...pos };
+    }
+
+    /**
+     * Update held item display based on server state
+     * @param {Object|null} heldItem - Held item data from server, or null if not holding
+     */
+    updateHeldItem(heldItem) {
+        // If same item (or both null), no change needed
+        if (this.heldItem?.id === heldItem?.id) return;
+
+        this.heldItem = heldItem;
+
+        // Remove existing held item mesh
+        if (this.heldItemMesh) {
+            this.camera.remove(this.heldItemMesh);
+            if (this.heldItemMesh.geometry) this.heldItemMesh.geometry.dispose();
+            if (this.heldItemMesh.material) this.heldItemMesh.material.dispose();
+            this.heldItemMesh = null;
+        }
+
+        // Create new mesh if holding something
+        if (heldItem) {
+            this.heldItemMesh = this.createHeldItemMesh(heldItem);
+            // Position in front of camera, lower edge of view
+            this.heldItemMesh.position.set(0, -0.4, -0.6);
+            // Slightly smaller when held
+            this.heldItemMesh.scale.setScalar(0.6);
+            this.camera.add(this.heldItemMesh);
+        }
+    }
+
+    /**
+     * Create a mesh for the held item
+     * @param {Object} item - Item data
+     * @returns {THREE.Mesh}
+     */
+    createHeldItemMesh(item) {
+        let geometry;
+        if (item.type === 'cube') {
+            geometry = new THREE.BoxGeometry(item.size || 0.5, item.size || 0.5, item.size || 0.5);
+        } else {
+            geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        }
+
+        const material = new THREE.MeshStandardMaterial({
+            color: item.color || 0xffff00,
+            roughness: 0.5,
+            metalness: 0.1
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        return mesh;
+    }
+
+    /**
+     * Check if player is holding an item
+     * @returns {boolean}
+     */
+    isHoldingItem() {
+        return this.heldItem !== null;
+    }
+
+    /**
+     * Get the held item data
+     * @returns {Object|null}
+     */
+    getHeldItem() {
+        return this.heldItem;
     }
 }

@@ -67,6 +67,34 @@ export const ROOM_TYPES = {
 };
 export const DEFAULT_ROOM_TYPE = 'generic';
 
+// Interaction system
+export const INTERACTION_RANGE = 2.0;  // meters from camera
+
+export const INTERACTIONS = {
+    PLANT_SEED: 'plant_seed',
+    WATER_PLANT: 'water_plant',
+    HARVEST: 'harvest',
+    WEED: 'weed',
+    WASH: 'wash',
+    CUT: 'cut',
+    ASSEMBLE: 'assemble',
+    PICKUP_FOOD: 'pickup_food',
+    PICKUP_ITEM: 'pickup_item',
+    DROP_ITEM: 'drop_item',
+    EAT: 'eat',
+    SLEEP: 'sleep',
+    WAKE: 'wake'
+};
+
+export const INTERACTABLE_TYPES = {
+    SOIL_PLOT: 'soil_plot',
+    PLANT: 'plant',
+    STATION: 'station',
+    FOOD_COUNTER: 'food_counter',
+    BED: 'bed',
+    WORLD_ITEM: 'world_item'
+};
+
 // Colors
 export const COLORS = {
     GROUND: 0x3d5c3d,

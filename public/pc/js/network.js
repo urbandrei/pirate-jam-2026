@@ -2,7 +2,7 @@
  * Socket.IO network client for PC
  */
 
-import { MSG, createJoinMessage, createInputMessage } from '../shared/protocol.js';
+import { MSG, createJoinMessage, createInputMessage, createInteractMessage } from '../shared/protocol.js';
 
 export class Network {
     constructor() {
@@ -18,6 +18,8 @@ export class Network {
         this.onReleased = null;
         this.onPlayerJoined = null;
         this.onPlayerLeft = null;
+        this.onInteractSuccess = null;
+        this.onInteractFail = null;
 
         // Status element
         this.statusEl = document.getElementById('status');
@@ -111,6 +113,20 @@ export class Network {
                 console.log('Player left:', message.playerId);
                 if (this.onPlayerLeft) this.onPlayerLeft(message.playerId);
                 break;
+
+            case MSG.INTERACT_SUCCESS:
+                console.log('Interaction succeeded:', message.interactionType);
+                if (this.onInteractSuccess) {
+                    this.onInteractSuccess(message.interactionType, message.targetId, message.result);
+                }
+                break;
+
+            case MSG.INTERACT_FAIL:
+                console.log('Interaction failed:', message.reason);
+                if (this.onInteractFail) {
+                    this.onInteractFail(message.interactionType, message.targetId, message.reason);
+                }
+                break;
         }
     }
 
@@ -122,6 +138,10 @@ export class Network {
 
     sendInput(input, lookRotation) {
         this.send(createInputMessage(input, lookRotation));
+    }
+
+    sendInteract(interactionType, targetId, targetPosition) {
+        this.send(createInteractMessage(interactionType, targetId, targetPosition));
     }
 
     updateStatus(text) {

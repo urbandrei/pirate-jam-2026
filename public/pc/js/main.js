@@ -8,6 +8,7 @@ import { Network } from './network.js';
 import { Player } from './player.js';
 import { RemotePlayers } from './remote-players.js';
 import { HUD } from './hud.js';
+import { InteractionSystem } from './interaction-system.js';
 import { INPUT_RATE } from '../shared/constants.js';
 
 class Game {
@@ -18,6 +19,7 @@ class Game {
         this.player = null;
         this.remotePlayers = null;
         this.hud = null;
+        this.interactionSystem = null;
 
         this.lastTime = performance.now();
         this.lastInputTime = 0;
@@ -38,14 +40,34 @@ class Game {
         // Setup controls
         this.controls = new Controls(this.scene.camera, this.scene.renderer.domElement);
 
-        // Setup player
-        this.player = new Player(this.scene);
+        // Setup player (pass camera for held item display)
+        this.player = new Player(this.scene, this.scene.camera);
 
         // Setup remote players renderer
         this.remotePlayers = new RemotePlayers(this.scene);
 
         // Setup HUD
         this.hud = new HUD();
+
+        // Setup interaction system
+        this.interactionSystem = new InteractionSystem(this.scene, this.scene.camera);
+
+        // Wire up click handler from controls
+        this.controls.onLeftClick = () => {
+            // If holding an item, drop it instead of regular interaction
+            if (this.player.isHoldingItem()) {
+                this.handleDrop();
+            } else {
+                this.interactionSystem.handleClick();
+            }
+        };
+
+        // Wire up interaction callback to network
+        this.interactionSystem.onInteract = (interactionType, targetId, targetPosition) => {
+            if (this.network && this.network.isConnected) {
+                this.network.sendInteract(interactionType, targetId, targetPosition);
+            }
+        };
 
         // Setup network
         this.network = new Network();
@@ -63,6 +85,33 @@ class Game {
         this.gameLoop();
     }
 
+    /**
+     * Handle dropping the currently held item
+     */
+    handleDrop() {
+        if (!this.player.isHoldingItem()) return;
+
+        const heldItem = this.player.getHeldItem();
+
+        // Calculate drop position: 1.5m in front of player at ground level
+        const pos = this.player.getPosition();
+        const lookRotation = this.controls.getInput().lookRotation;
+        const yaw = lookRotation.y;
+
+        // Direction player is facing (from yaw angle)
+        const dropDistance = 1.5;
+        const dropPosition = {
+            x: pos.x - Math.sin(yaw) * dropDistance,
+            y: 0.25, // Just above ground
+            z: pos.z - Math.cos(yaw) * dropDistance
+        };
+
+        // Send drop interaction to server
+        if (this.network && this.network.isConnected) {
+            this.network.sendInteract('drop_item', heldItem.id, dropPosition);
+        }
+    }
+
     setupNetworkCallbacks() {
         this.network.onStateUpdate = (state) => {
             // Update local player from authoritative server state
@@ -74,6 +123,9 @@ class Game {
                 if (myState.needs) {
                     this.hud.updateNeeds(myState.needs);
                 }
+
+                // Update held item display
+                this.player.updateHeldItem(myState.heldItem);
 
                 // Check if we're grabbed
                 if (myState.isGrabbed && !this.isGrabbed) {
@@ -92,6 +144,11 @@ class Game {
             if (state.world) {
                 this.scene.rebuildFromWorldState(state.world);
             }
+
+            // Update world objects (pickable items)
+            if (state.worldObjects) {
+                this.scene.updateWorldObjects(state.worldObjects, this.interactionSystem);
+            }
         };
 
         this.network.onGrabbed = (grabbedBy) => {
@@ -107,6 +164,17 @@ class Game {
         this.network.onPlayerLeft = (playerId) => {
             this.remotePlayers.removePlayer(playerId);
         };
+
+        // Interaction response callbacks
+        this.network.onInteractSuccess = (interactionType, targetId, result) => {
+            console.log(`Interaction ${interactionType} on ${targetId} succeeded`, result);
+            // Future: could show success feedback, play sound, etc.
+        };
+
+        this.network.onInteractFail = (interactionType, targetId, reason) => {
+            console.log(`Interaction ${interactionType} on ${targetId} failed: ${reason}`);
+            // Future: could show error message briefly on HUD
+        };
     }
 
     gameLoop() {
@@ -121,6 +189,9 @@ class Game {
 
         // Update camera based on player position
         this.controls.update(this.player.getPosition());
+
+        // Update interaction system (raycasting and highlighting)
+        this.interactionSystem.update();
 
         // Send input to server at fixed rate
         if (now - this.lastInputTime >= this.inputInterval) {

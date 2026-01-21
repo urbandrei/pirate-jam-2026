@@ -17,9 +17,11 @@ const PhysicsValidator = require('./physics-validator');
 const MessageHandler = require('./message-handler');
 const NeedsSystem = require('./systems/needs-system');
 const RoomManager = require('./systems/room-manager');
+const InteractionSystem = require('./systems/interaction-system');
 
 // Configuration
-const PORT = process.env.PORT || 443;
+const isDevMode = process.argv.includes('dev');
+const PORT = process.env.PORT || (isDevMode ? 3000 : 443);
 const TICK_RATE = 60; // Physics ticks per second
 const NETWORK_RATE = 20; // State updates per second
 
@@ -58,6 +60,20 @@ const io = new Server(server, {
         origin: '*',
         methods: ['GET', 'POST']
     }
+});
+
+// Dynamic config.js serving based on dev mode
+const getConfigJs = () => {
+    const serverUrl = isDevMode ? 'http://localhost:3000' : 'https://www.urbandrei.com';
+    return `window.GAME_SERVER_URL = '${serverUrl}';\n`;
+};
+
+app.get('/pc/config.js', (req, res) => {
+    res.type('application/javascript').send(getConfigJs());
+});
+
+app.get('/vr/config.js', (req, res) => {
+    res.type('application/javascript').send(getConfigJs());
 });
 
 // Serve static files
@@ -214,8 +230,9 @@ app.post('/api/dev-server', express.json(), (req, res) => {
 const gameState = new GameState();
 const playerManager = new PlayerManager(gameState);
 const physicsValidator = new PhysicsValidator(gameState);
-const messageHandler = new MessageHandler(gameState, playerManager);
 const roomManager = new RoomManager(gameState.worldState, gameState);
+const interactionSystem = new InteractionSystem(gameState, roomManager);
+const messageHandler = new MessageHandler(gameState, playerManager, interactionSystem);
 
 // Socket.IO event handling
 io.on('connection', (socket) => {
@@ -306,12 +323,14 @@ function gameLoop() {
 // Start server
 server.listen(PORT, () => {
     const protocol = USE_HTTPS ? 'https' : 'http';
+    const modeText = isDevMode ? 'DEV MODE (localhost)' : 'PRODUCTION';
     console.log(`
 ╔════════════════════════════════════════════╗
 ║     Pirate Jam 2026 - Game Server          ║
 ╠════════════════════════════════════════════╣
 ║  Server running on port ${PORT}               ║
 ║  Protocol: ${protocol.toUpperCase().padEnd(30)}║
+║  Mode:     ${modeText.padEnd(30)}║
 ║                                            ║
 ║  PC Client:  ${protocol}://localhost:${PORT}/pc/    ║
 ║  VR Client:  ${protocol}://localhost:${PORT}/vr/    ║

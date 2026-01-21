@@ -3,9 +3,10 @@
  */
 
 class MessageHandler {
-    constructor(gameState, playerManager) {
+    constructor(gameState, playerManager, interactionSystem = null) {
         this.gameState = gameState;
         this.playerManager = playerManager;
+        this.interactionSystem = interactionSystem;
     }
 
     /**
@@ -34,6 +35,9 @@ class MessageHandler {
                 break;
             case 'CONVERT_ROOM':
                 this.handleConvertRoom(peerId, message);
+                break;
+            case 'INTERACT':
+                this.handleInteract(peerId, message);
                 break;
             default:
                 console.warn(`Unknown message type from ${peerId}:`, message.type);
@@ -202,6 +206,78 @@ class MessageHandler {
                 reason: result.reason,
                 gridX: gridX,
                 gridZ: gridZ
+            });
+        }
+    }
+
+    /**
+     * Handle interaction request from PC player
+     */
+    handleInteract(peerId, message) {
+        // Only accept interactions from PC players
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'pc') {
+            console.warn(`[MessageHandler] INTERACT rejected: not a PC player (${peerId})`);
+            return;
+        }
+
+        // Check if interaction system is available
+        if (!this.interactionSystem) {
+            console.warn(`[MessageHandler] INTERACT rejected: interaction system not initialized`);
+            this.playerManager.sendTo(peerId, {
+                type: 'INTERACT_FAIL',
+                interactionType: message.interactionType,
+                targetId: message.targetId,
+                reason: 'Interaction system not available'
+            });
+            return;
+        }
+
+        const { interactionType, targetId, targetPosition } = message;
+
+        // Validate the interaction
+        const canResult = this.interactionSystem.canInteract(
+            player,
+            interactionType,
+            targetId,
+            targetPosition || { x: player.position.x, y: player.position.y, z: player.position.z }
+        );
+
+        if (!canResult.valid) {
+            console.log(`[MessageHandler] INTERACT validation failed: ${canResult.reason}`);
+            this.playerManager.sendTo(peerId, {
+                type: 'INTERACT_FAIL',
+                interactionType,
+                targetId,
+                reason: canResult.reason
+            });
+            return;
+        }
+
+        // Execute the interaction
+        const execResult = this.interactionSystem.executeInteraction(
+            player,
+            interactionType,
+            targetId,
+            targetPosition
+        );
+
+        if (execResult.success) {
+            console.log(`[MessageHandler] INTERACT success: ${interactionType} on ${targetId}`);
+            this.playerManager.sendTo(peerId, {
+                type: 'INTERACT_SUCCESS',
+                interactionType,
+                targetId,
+                result: execResult.result
+            });
+            // Note: State changes propagate via regular STATE_UPDATE
+        } else {
+            console.log(`[MessageHandler] INTERACT execution failed: ${execResult.error}`);
+            this.playerManager.sendTo(peerId, {
+                type: 'INTERACT_FAIL',
+                interactionType,
+                targetId,
+                reason: execResult.error
             });
         }
     }

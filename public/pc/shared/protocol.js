@@ -10,6 +10,7 @@ export const MSG = {
     VR_POSE: 'VR_POSE',
     PLACE_BLOCK: 'PLACE_BLOCK',
     CONVERT_ROOM: 'CONVERT_ROOM',
+    INTERACT: 'INTERACT',
 
     // Server -> Client
     JOINED: 'JOINED',
@@ -19,7 +20,9 @@ export const MSG = {
     BLOCK_PLACED: 'BLOCK_PLACED',
     PLACE_BLOCK_FAILED: 'PLACE_BLOCK_FAILED',
     ROOM_CONVERTED: 'ROOM_CONVERTED',
-    CONVERT_ROOM_FAILED: 'CONVERT_ROOM_FAILED'
+    CONVERT_ROOM_FAILED: 'CONVERT_ROOM_FAILED',
+    INTERACT_SUCCESS: 'INTERACT_SUCCESS',
+    INTERACT_FAIL: 'INTERACT_FAIL'
 };
 
 // Message creators for type safety
@@ -83,5 +86,20 @@ export function createConvertRoomMessage(gridX, gridZ, roomType) {
         gridX: gridX,
         gridZ: gridZ,
         roomType: roomType
+    };
+}
+
+/**
+ * Create an interact message (PC -> Server)
+ * @param {string} interactionType - Type of interaction (from INTERACTIONS constant)
+ * @param {string} targetId - ID of the target object
+ * @param {Object} targetPosition - World position {x, y, z} of target for range validation
+ */
+export function createInteractMessage(interactionType, targetId, targetPosition) {
+    return {
+        type: MSG.INTERACT,
+        interactionType,
+        targetId,
+        targetPosition
     };
 }
