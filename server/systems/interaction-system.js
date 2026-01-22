@@ -16,13 +16,22 @@ const bedSystem = require('./bed-system');
 const INTERACTION_RANGE = 2.0; // meters
 
 class InteractionSystem {
-    constructor(gameState, roomManager, isDevMode = false) {
+    constructor(gameState, roomManager, isDevMode = false, playerQueue = null) {
         this.gameState = gameState;
         this.roomManager = roomManager;
         this.isDevMode = isDevMode;
+        this.playerQueue = playerQueue;
 
         // Timed interaction tracking: playerId -> { stationId, stationType, startTime, duration, targetPosition, inputItem }
         this.timedInteractions = new Map();
+    }
+
+    /**
+     * Set the player queue reference (for join_game interaction)
+     * @param {PlayerQueue} queue
+     */
+    setPlayerQueue(queue) {
+        this.playerQueue = queue;
     }
 
     // ============================================
@@ -221,7 +230,31 @@ class InteractionSystem {
      * @returns {{ valid: boolean, reason?: string }}
      */
     canInteract(player, interactionType, targetId, targetPosition) {
-        // Must be alive
+        // join_game is a special case - allowed when dead/waiting but needs range check
+        if (interactionType === 'join_game') {
+            // Must be in waiting room state
+            if (player.playerState !== 'dead' && player.playerState !== 'waiting') {
+                return { valid: false, reason: 'Not in waiting room' };
+            }
+            // Range check to door (door is at south wall of waiting room)
+            const WAITING_ROOM_CENTER_X = 500;
+            const WAITING_ROOM_CENTER_Z = 500;
+            const WAITING_ROOM_HALF_SIZE = 5;
+            const doorPos = {
+                x: WAITING_ROOM_CENTER_X,
+                y: 1.25,
+                z: WAITING_ROOM_CENTER_Z - WAITING_ROOM_HALF_SIZE  // South wall
+            };
+            const dx = player.position.x - doorPos.x;
+            const dz = player.position.z - doorPos.z;
+            const distance = Math.sqrt(dx * dx + dz * dz);
+            if (distance > INTERACTION_RANGE) {
+                return { valid: false, reason: 'Too far from door' };
+            }
+            return { valid: true };
+        }
+
+        // Must be alive for other interactions
         if (!player.alive) {
             return { valid: false, reason: 'Player is not alive' };
         }
@@ -366,6 +399,8 @@ class InteractionSystem {
                 return this._executeDrinkWater(player, targetId);
             case 'fill_watering_can':
                 return this._executeFillWateringCan(player, targetId);
+            case 'join_game':
+                return this._executeJoinGame(player);
             default:
                 return { success: false, error: `Unknown interaction: ${interactionType}` };
         }
@@ -790,6 +825,61 @@ class InteractionSystem {
             success: true,
             charges: maxCharges
         };
+    }
+
+    /**
+     * Execute join_game interaction (walking through waiting room door)
+     * @param {Object} player - Player object
+     * @returns {{ success: boolean, error?: string }}
+     */
+    _executeJoinGame(player) {
+        // Validate player is in waiting room
+        if (player.playerState !== 'dead' && player.playerState !== 'waiting') {
+            return { success: false, error: 'Not in waiting room' };
+        }
+
+        // Check cooldown
+        const DEATH_COOLDOWN = 60000;  // 1 minute
+        const cooldownRemaining = (player.deathTime || 0) + DEATH_COOLDOWN - Date.now();
+        if (cooldownRemaining > 0) {
+            return { success: false, error: 'On cooldown' };
+        }
+
+        // Check queue position
+        if (!this.playerQueue) {
+            return { success: false, error: 'Queue system not available' };
+        }
+
+        if (this.playerQueue.getQueuePosition(player.id) !== 1) {
+            return { success: false, error: 'Not first in queue' };
+        }
+
+        // Check if game has space
+        if (!this.gameState.canAcceptPlayer()) {
+            return { success: false, error: 'Game full' };
+        }
+
+        // Success - remove from queue and reactivate player
+        this.playerQueue.removeFromQueue(player.id);
+
+        // Reset player state
+        player.alive = true;
+        player.playerState = 'playing';
+        player.deathTime = null;
+
+        // Reset needs to full
+        player.needs = {
+            hunger: 100,
+            thirst: 100,
+            rest: 100
+        };
+
+        // Teleport to spawn in main world
+        player.position = { x: 0, y: 0.9, z: 0 };
+        player.velocity = { x: 0, y: 0, z: 0 };
+
+        console.log(`[InteractionSystem] Player ${player.id} rejoined game through door`);
+        return { success: true };
     }
 
     _executePlantSeed(player, plotId) {

@@ -75,8 +75,11 @@ export class Player {
     }
 
     update(deltaTime) {
-        // Smooth interpolation to server position
-        const lerpFactor = 0.3;
+        // Frame-rate independent lerp using exponential decay
+        // This ensures smooth movement regardless of frame rate (60fps, 144fps, etc.)
+        const lerpSpeed = 15; // Higher = snappier, lower = smoother
+        const lerpFactor = 1 - Math.exp(-lerpSpeed * deltaTime);
+
         this.position.x += (this.targetPosition.x - this.position.x) * lerpFactor;
         this.position.y += (this.targetPosition.y - this.position.y) * lerpFactor;
         this.position.z += (this.targetPosition.z - this.position.z) * lerpFactor;

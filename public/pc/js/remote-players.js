@@ -36,6 +36,24 @@ export class RemotePlayers {
             // Skip local player
             if (playerId === localPlayerId) continue;
 
+            // Skip dead/waiting players - they should be invisible (in local waiting room)
+            // Server already filters these out, but this is defensive
+            if (playerData.playerState === 'dead' || playerData.playerState === 'waiting') {
+                // Remove mesh if it exists (player just died)
+                if (this.players.has(playerId)) {
+                    const data = this.players.get(playerId);
+                    this.scene.remove(data.mesh);
+                    // Dispose held item mesh if any
+                    if (data.heldItemMesh) {
+                        this.scene.remove(data.heldItemMesh);
+                        if (data.heldItemMesh.geometry) data.heldItemMesh.geometry.dispose();
+                        if (data.heldItemMesh.material) data.heldItemMesh.material.dispose();
+                    }
+                    this.players.delete(playerId);
+                }
+                continue;
+            }
+
             let playerObj = this.players.get(playerId);
 
             if (!playerObj) {

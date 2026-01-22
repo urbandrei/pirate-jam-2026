@@ -9,10 +9,11 @@ const bedSystem = require('./systems/bed-system');
 const NeedsSystem = require('./systems/needs-system');
 
 class MessageHandler {
-    constructor(gameState, playerManager, interactionSystem = null) {
+    constructor(gameState, playerManager, interactionSystem = null, playerQueue = null) {
         this.gameState = gameState;
         this.playerManager = playerManager;
         this.interactionSystem = interactionSystem;
+        this.playerQueue = playerQueue;
     }
 
     /**
@@ -57,13 +58,51 @@ class MessageHandler {
             case 'REVIVE':
                 this.handleRevive(peerId, message);
                 break;
+            case 'JOIN_QUEUE':
+                this.handleJoinQueue(peerId, message);
+                break;
+            case 'JOIN_FROM_QUEUE':
+                this.handleJoinFromQueue(peerId, message);
+                break;
             default:
                 console.warn(`Unknown message type from ${peerId}:`, message.type);
         }
     }
 
     handleJoin(peerId, message) {
-        const player = this.playerManager.handleJoin(peerId, message.playerType);
+        const playerType = message.playerType || 'pc';
+
+        // VR players always get in (they manage the game)
+        // PC players need to check player limit
+        if (playerType === 'pc' && this.playerQueue && !this.gameState.canAcceptPlayer()) {
+            // Game is full - create player in waiting state so they can walk around waiting room
+            const player = this.playerManager.handleJoin(peerId, playerType);
+            if (player) {
+                // Set player as waiting (not alive, not playing - won't count toward limit)
+                player.alive = false;
+                player.playerState = 'waiting';
+                player.deathTime = null;  // No cooldown for new players joining full game
+
+                // Position in waiting room
+                player.position = { x: 500, y: 0.9, z: 502 };
+                player.velocity = { x: 0, y: 0, z: 0 };
+
+                // Add to queue
+                const position = this.playerQueue.addToQueue(peerId, playerType);
+                console.log(`[MessageHandler] Game full, player ${peerId} placed in waiting room at queue position ${position}`);
+
+                this.playerManager.sendTo(peerId, {
+                    type: 'JOIN_QUEUED',
+                    position: position,
+                    total: this.playerQueue.getQueueLength(),
+                    playerLimit: this.gameState.getPlayerLimit(),
+                    waitingRoomPosition: player.position  // Client needs this to position camera
+                });
+            }
+            return;
+        }
+
+        const player = this.playerManager.handleJoin(peerId, playerType);
         if (player) {
             // Send confirmation with initial state
             this.playerManager.sendTo(peerId, {
@@ -367,12 +406,32 @@ class MessageHandler {
 
         if (execResult.success) {
             console.log(`[MessageHandler] INTERACT success: ${interactionType} on ${targetId}`);
-            this.playerManager.sendTo(peerId, {
-                type: 'INTERACT_SUCCESS',
-                interactionType,
-                targetId,
-                result: execResult.result
-            });
+
+            // Special handling for join_game - send PLAYER_REVIVED
+            if (interactionType === 'join_game') {
+                this.playerManager.sendTo(peerId, {
+                    type: 'PLAYER_REVIVED',
+                    position: player.position,
+                    needs: player.needs
+                });
+
+                // Notify other players
+                this.playerManager.broadcast({
+                    type: 'PLAYER_JOINED',
+                    player: {
+                        id: player.id,
+                        type: player.type,
+                        position: player.position
+                    }
+                }, peerId);
+            } else {
+                this.playerManager.sendTo(peerId, {
+                    type: 'INTERACT_SUCCESS',
+                    interactionType,
+                    targetId,
+                    result: execResult.result
+                });
+            }
             // Note: State changes propagate via regular STATE_UPDATE
         } else {
             console.log(`[MessageHandler] INTERACT execution failed: ${execResult.error}`);
@@ -567,6 +626,105 @@ class MessageHandler {
             type: 'PLAYER_REVIVED',
             playerId: peerId
         }, peerId);
+    }
+
+    /**
+     * Handle dead player joining the queue after cooldown
+     */
+    handleJoinQueue(peerId, message) {
+        if (!this.playerQueue) {
+            console.warn(`[MessageHandler] JOIN_QUEUE rejected: player queue not initialized`);
+            return;
+        }
+
+        // Check if player is already in queue
+        if (this.playerQueue.isInQueue(peerId)) {
+            const info = this.playerQueue.getQueueInfo(peerId);
+            this.playerManager.sendTo(peerId, {
+                type: 'QUEUE_JOINED',
+                position: info.position,
+                total: info.total
+            });
+            return;
+        }
+
+        // Add to queue
+        const position = this.playerQueue.addToQueue(peerId, 'pc');
+        console.log(`[MessageHandler] Player ${peerId} joined queue at position ${position}`);
+
+        this.playerManager.sendTo(peerId, {
+            type: 'QUEUE_JOINED',
+            position: position,
+            total: this.playerQueue.getQueueLength()
+        });
+    }
+
+    /**
+     * Handle player joining game from queue (after QUEUE_READY)
+     */
+    handleJoinFromQueue(peerId, message) {
+        if (!this.playerQueue) {
+            console.warn(`[MessageHandler] JOIN_FROM_QUEUE rejected: player queue not initialized`);
+            return;
+        }
+
+        // Verify player was in queue and it's their turn
+        const queuePosition = this.playerQueue.getQueuePosition(peerId);
+        if (queuePosition !== 1) {
+            console.warn(`[MessageHandler] JOIN_FROM_QUEUE rejected: player ${peerId} not at front of queue (position: ${queuePosition})`);
+            this.playerManager.sendTo(peerId, {
+                type: 'JOIN_FROM_QUEUE_FAILED',
+                reason: 'Not at front of queue'
+            });
+            return;
+        }
+
+        // Double-check there's room
+        if (!this.gameState.canAcceptPlayer()) {
+            console.warn(`[MessageHandler] JOIN_FROM_QUEUE rejected: game is full`);
+            this.playerManager.sendTo(peerId, {
+                type: 'JOIN_FROM_QUEUE_FAILED',
+                reason: 'Game is still full'
+            });
+            return;
+        }
+
+        // Remove from queue
+        this.playerQueue.removeFromQueue(peerId);
+
+        // Check if player already exists (dead player rejoining)
+        let player = this.gameState.getPlayer(peerId);
+
+        if (player) {
+            // Reactivate existing player
+            this.gameState.reactivatePlayer(peerId);
+            player = this.gameState.getPlayer(peerId);
+            console.log(`[MessageHandler] Player ${peerId} reactivated from queue`);
+        } else {
+            // New player from queue
+            player = this.playerManager.handleJoin(peerId, 'pc');
+            console.log(`[MessageHandler] New player ${peerId} joined from queue`);
+        }
+
+        if (player) {
+            // Send confirmation with full state
+            this.playerManager.sendTo(peerId, {
+                type: 'JOINED',
+                playerId: peerId,
+                player: player,
+                state: this.gameState.getSerializableState()
+            });
+
+            // Notify other players
+            this.playerManager.broadcast({
+                type: 'PLAYER_JOINED',
+                player: {
+                    id: player.id,
+                    type: player.type,
+                    position: player.position
+                }
+            }, peerId);
+        }
     }
 }
 

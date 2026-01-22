@@ -30,6 +30,8 @@ class Game {
         this.isGrabbed = false;
         this.isSleeping = false;
         this.isDead = false;
+        this.isInQueue = false;
+        this.isInWaitingRoom = false;
 
         this.init();
     }
@@ -58,6 +60,16 @@ class Game {
 
         // Wire up click handler from controls
         this.controls.onLeftClick = () => {
+            // Check for waiting room door interaction first
+            if (this.isInWaitingRoom) {
+                const doorInteraction = this.scene.getWaitingRoomDoorInteraction();
+                if (doorInteraction) {
+                    // Try to join game through door
+                    this.network.sendInteract(doorInteraction.type, doorInteraction.targetId, doorInteraction.position);
+                    return;
+                }
+            }
+
             // First, check if we're targeting an interactable (prioritize interaction over drop)
             if (this.interactionSystem.hasTarget()) {
                 // We have a valid target - try to interact
@@ -109,6 +121,7 @@ class Game {
 
         // Setup network
         this.network = new Network();
+
         this.setupNetworkCallbacks();
 
         // Connect to server
@@ -167,7 +180,21 @@ class Game {
     }
 
     setupNetworkCallbacks() {
+        // Handle successful join (including from queue)
+        this.network.onJoined = () => {
+            if (this.isInQueue) {
+                this.handleJoinedFromQueue();
+            }
+        };
+
         this.network.onStateUpdate = (state) => {
+            // Skip all state updates while in waiting room (local-only experience)
+            // Waiting room players don't receive STATE_UPDATE from server anyway,
+            // but this is a defensive check
+            if (this.isInWaitingRoom) {
+                return;
+            }
+
             // Update local player from authoritative server state
             const myState = state.players[this.network.playerId];
             if (myState) {
@@ -248,12 +275,69 @@ class Game {
         };
 
         // Death and revive callbacks
-        this.network.onPlayerDied = (deathPosition) => {
-            this.handleDeath(deathPosition);
+        this.network.onPlayerDied = (deathPosition, cause, waitingRoomPosition) => {
+            this.handleDeath(deathPosition, cause, waitingRoomPosition);
         };
 
         this.network.onPlayerRevived = (position, needs) => {
             this.handleRevive(position, needs);
+        };
+
+        // Waiting room state callback
+        this.network.onWaitingRoomState = (state) => {
+            this.scene.updateWaitingRoomState(state);
+        };
+
+        // Door timeout callback
+        this.network.onDoorTimeout = () => {
+            console.log('[Game] Took too long - moved to back of queue');
+            // Could show a brief message to the player
+        };
+
+        // Queue callbacks (for new players joining full game)
+        this.network.onJoinQueued = (position, total, playerLimit, waitingRoomPosition) => {
+            // Game was full when we tried to join - teleport to waiting room
+            console.log(`[Game] Game full (${playerLimit} players). Queued at position ${position}/${total}`);
+            this.isInQueue = true;
+            this.isInWaitingRoom = true;
+
+            // Initialize player position to waiting room (critical for camera placement)
+            if (waitingRoomPosition) {
+                this.player.setPosition(waitingRoomPosition);
+            }
+
+            this.scene.showWaitingRoom();
+
+            // Initialize queue state immediately (before WAITING_ROOM_STATE arrives from server)
+            this.scene.updateWaitingRoomState({
+                cooldownRemaining: 0,  // No cooldown for new players joining full game
+                queuePosition: position,
+                queueTotal: total,
+                doorOpen: false,  // Door only opens when game has space
+                joinTimeRemaining: null
+            });
+        };
+
+        this.network.onQueueJoined = (position, total) => {
+            // Dead player successfully joined queue after cooldown
+            console.log(`[Game] Joined queue at position ${position}/${total}`);
+            this.isInQueue = true;
+        };
+
+        this.network.onQueueUpdate = (position, total) => {
+            // Queue position updated - handled by WAITING_ROOM_STATE
+            console.log(`[Game] Queue position: ${position}/${total}`);
+        };
+
+        this.network.onQueueReady = () => {
+            // Slot available - door should now be open (green)
+            // Player needs to walk through door to join
+            console.log('[Game] Slot available! Walk through the door to join.');
+        };
+
+        this.network.onJoinFromQueueFailed = (reason) => {
+            // Failed to join from queue
+            console.log('[Game] Failed to join from queue:', reason);
         };
 
         // Timed interaction callbacks
@@ -284,6 +368,11 @@ class Game {
 
         // Update player position (interpolation)
         this.player.update(deltaTime);
+
+        // Local movement for waiting room (no server updates come back)
+        if (this.isInWaitingRoom) {
+            this.updateLocalWaitingRoomMovement(deltaTime);
+        }
 
         // Update camera based on player position
         this.controls.update(this.player.getPosition());
@@ -361,40 +450,107 @@ class Game {
     }
 
     /**
-     * Handle player death
+     * Handle player death - teleported to physical waiting room
      */
-    handleDeath(deathPosition) {
+    handleDeath(deathPosition, cause = 'unknown', waitingRoomPosition) {
         if (this.isDead) return;
 
         this.isDead = true;
-        this.controls.setDead(true);
+        this.isInWaitingRoom = true;
 
-        // Release pointer lock so user can click revive button
-        document.exitPointerLock();
+        // Don't disable controls - player can walk around waiting room
+        this.controls.setDead(false);
 
-        // Show death overlay with revive callback
-        this.hud.showDeathOverlay(() => {
-            // Callback when revive button is clicked
-            if (this.network && this.network.isConnected) {
-                this.network.sendRevive();
-            }
-        });
+        // Show physical waiting room
+        this.scene.showWaitingRoom();
 
-        console.log('[Game] Player died at', deathPosition);
+        console.log('[Game] Player died at', deathPosition, 'cause:', cause, '- teleported to waiting room');
     }
 
     /**
-     * Handle player revive
+     * Handle player revive (joining game from queue)
      */
-    handleRevive(position, needs) {
+    handleRevive(position) {
         this.isDead = false;
+        this.isInQueue = false;
+        this.isInWaitingRoom = false;
         this.controls.setDead(false);
-        this.hud.hideDeathOverlay();
+
+        // Hide physical waiting room
+        this.scene.hideWaitingRoom();
 
         // Re-lock pointer
         this.scene.renderer.domElement.requestPointerLock();
 
-        console.log('[Game] Player revived at', position);
+        console.log('[Game] Player respawned at', position);
+    }
+
+    /**
+     * Handle successful join from queue (JOINED message after queue)
+     */
+    handleJoinedFromQueue() {
+        this.isDead = false;
+        this.isInQueue = false;
+        this.isInWaitingRoom = false;
+        this.controls.setDead(false);
+
+        // Hide physical waiting room
+        this.scene.hideWaitingRoom();
+
+        // Re-lock pointer
+        this.scene.renderer.domElement.requestPointerLock();
+
+        console.log('[Game] Joined game from queue');
+    }
+
+    /**
+     * Handle local movement in waiting room (no server updates)
+     * @param {number} deltaTime - Time since last frame in seconds
+     */
+    updateLocalWaitingRoomMovement(deltaTime) {
+        const input = this.controls.getInput();
+        const MOVE_SPEED = 5.0;  // Same as server
+        const lookYaw = input.lookRotation.y;
+
+        let moveX = 0;
+        let moveZ = 0;
+
+        if (input.forward) {
+            moveX -= Math.sin(lookYaw);
+            moveZ -= Math.cos(lookYaw);
+        }
+        if (input.backward) {
+            moveX += Math.sin(lookYaw);
+            moveZ += Math.cos(lookYaw);
+        }
+        if (input.left) {
+            moveX -= Math.cos(lookYaw);
+            moveZ += Math.sin(lookYaw);
+        }
+        if (input.right) {
+            moveX += Math.cos(lookYaw);
+            moveZ -= Math.sin(lookYaw);
+        }
+
+        // Normalize diagonal movement
+        const moveLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
+        if (moveLen > 0) {
+            moveX = (moveX / moveLen) * MOVE_SPEED;
+            moveZ = (moveZ / moveLen) * MOVE_SPEED;
+        }
+
+        // Apply movement
+        const pos = this.player.getPosition();
+        pos.x += moveX * deltaTime;
+        pos.z += moveZ * deltaTime;
+
+        // Clamp to waiting room bounds (10x10m room centered at 500, 500)
+        const CENTER_X = 500, CENTER_Z = 500;
+        const HALF_SIZE = 5, RADIUS = 0.3;
+        pos.x = Math.max(CENTER_X - HALF_SIZE + RADIUS, Math.min(CENTER_X + HALF_SIZE - RADIUS, pos.x));
+        pos.z = Math.max(CENTER_Z - HALF_SIZE + RADIUS, Math.min(CENTER_Z + HALF_SIZE - RADIUS, pos.z));
+
+        this.player.setPosition(pos);
     }
 }
 

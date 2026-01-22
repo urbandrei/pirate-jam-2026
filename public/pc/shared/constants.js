@@ -322,3 +322,16 @@ export const SLEEP_BASE_MULTIPLIER = 5;        // Base rest restore rate (same a
 export const SLEEP_MAX_MULTIPLIER = 10;        // Perfect minigame multiplier
 export const SLEEP_SQUARE_SIZE = 50;           // Square size in pixels
 export const SLEEP_SQUARE_SPEED = 200;         // Pixels per second
+
+// Waiting room constants
+export const WAITING_ROOM = {
+    CENTER: { x: 500, y: 0, z: 500 },
+    SIZE: 10,  // 10m x 10m room
+    DOOR_POSITION: { x: 500, y: 1.25, z: 495 },  // South wall door
+    SPAWN_POSITION: { x: 500, y: 0.9, z: 502 },  // Spawn near back wall
+    JOIN_TIMEOUT: 30000,   // 30 seconds to walk through door
+    DEATH_COOLDOWN: 60000, // 1 minute before joining queue
+};
+
+// Player limit system
+export const DEFAULT_PLAYER_LIMIT = 10;

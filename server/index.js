@@ -21,6 +21,16 @@ const InteractionSystem = require('./systems/interaction-system');
 const itemSystem = require('./systems/item-system');
 const plantSystem = require('./systems/plant-system');
 const stationSystem = require('./systems/station-system');
+const { PlayerQueue, JOIN_TIMEOUT } = require('./systems/player-queue');
+
+// Waiting room constants (must match shared/constants.js)
+const WAITING_ROOM = {
+    CENTER: { x: 500, y: 0, z: 500 },
+    SIZE: 10,
+    DOOR_POSITION: { x: 500, y: 1.25, z: 495 },
+    SPAWN_POSITION: { x: 500, y: 0.9, z: 502 },
+    DEATH_COOLDOWN: 60000  // 1 minute
+};
 
 // Configuration
 const isDevMode = process.argv.includes('dev');
@@ -247,8 +257,9 @@ const gameState = new GameState(isDevMode);
 const playerManager = new PlayerManager(gameState);
 const physicsValidator = new PhysicsValidator(gameState);
 const roomManager = new RoomManager(gameState.worldState, gameState);
-const interactionSystem = new InteractionSystem(gameState, roomManager, isDevMode);
-const messageHandler = new MessageHandler(gameState, playerManager, interactionSystem);
+const playerQueue = new PlayerQueue();
+const interactionSystem = new InteractionSystem(gameState, roomManager, isDevMode, playerQueue);
+const messageHandler = new MessageHandler(gameState, playerManager, interactionSystem, playerQueue);
 
 // Socket.IO event handling
 io.on('connection', (socket) => {
@@ -265,6 +276,14 @@ io.on('connection', (socket) => {
     // Handle disconnect
     socket.on('disconnect', () => {
         console.log(`Client disconnected: ${socket.id}`);
+
+        // Remove from queue if they were waiting
+        playerQueue.removeFromQueue(socket.id);
+
+        // Check if this was an active player (opens a slot)
+        const player = gameState.getPlayer(socket.id);
+        const wasActivePlayer = player && player.alive;
+
         playerManager.handleDisconnection(socket.id);
 
         // Notify remaining players
@@ -272,6 +291,17 @@ io.on('connection', (socket) => {
             type: 'PLAYER_LEFT',
             playerId: socket.id
         });
+
+        // If an active player left, notify next queued player
+        if (wasActivePlayer && playerQueue.getQueueLength() > 0) {
+            const nextPlayer = playerQueue.peekNextPlayer();
+            if (nextPlayer) {
+                playerManager.sendTo(nextPlayer.peerId, {
+                    type: 'QUEUE_READY'
+                });
+                console.log(`[PlayerQueue] Slot opened, notified player ${nextPlayer.peerId}`);
+            }
+        }
     });
 });
 
@@ -317,16 +347,26 @@ function gameLoop() {
             if (shouldDie && player.alive) {
                 console.log(`[NeedsSystem] Player ${player.id} died from needs depletion`);
 
-                // Store death position
+                // Store death position for body
                 const deathPosition = {
                     x: player.position.x,
                     y: player.position.y,
                     z: player.position.z
                 };
 
-                // Mark player as dead
+                // Mark player as dead and record death time
                 player.alive = false;
                 player.playerState = 'dead';
+                player.deathTime = now;
+
+                // Teleport player to waiting room
+                player.position.x = WAITING_ROOM.SPAWN_POSITION.x;
+                player.position.y = WAITING_ROOM.SPAWN_POSITION.y;
+                player.position.z = WAITING_ROOM.SPAWN_POSITION.z;
+                player.velocity = { x: 0, y: 0, z: 0 };
+
+                // Add to queue (cooldown tracked via deathTime)
+                playerQueue.addToQueue(player.id, 'pc');
 
                 // Create body object at death location
                 const bodyObject = {
@@ -339,11 +379,19 @@ function gameLoop() {
                 gameState.worldObjects.set(bodyObject.id, bodyObject);
                 console.log(`[DeathSystem] Created body for player ${player.id} at (${deathPosition.x.toFixed(2)}, ${deathPosition.z.toFixed(2)})`);
 
-                // Notify the player they died
+                // Notify the player they died and were teleported
                 playerManager.sendTo(player.id, {
                     type: 'PLAYER_DIED',
-                    deathPosition: deathPosition
+                    deathPosition: deathPosition,
+                    cause: NeedsSystem.getDeathCause(player),
+                    waitingRoomPosition: WAITING_ROOM.SPAWN_POSITION
                 });
+
+                // Notify others that player died
+                playerManager.broadcast({
+                    type: 'PLAYER_LEFT',
+                    playerId: player.id
+                }, player.id);
             }
         }
 
@@ -389,11 +437,67 @@ function gameLoop() {
                 }
             }
 
-            io.emit('message', {
+            // Only send STATE_UPDATE to playing/sleeping players (not dead/waiting)
+            // Dead/waiting players have local-only waiting room experience
+            const stateMessage = {
                 type: 'STATE_UPDATE',
                 state: gameState.getSerializableState()
+            };
+            for (const player of gameState.getAllPlayers()) {
+                if (player.playerState === 'dead' || player.playerState === 'waiting') {
+                    continue;
+                }
+                playerManager.sendTo(player.id, stateMessage);
+            }
+        }
+
+        // Process waiting room door states (every network tick for smooth updates)
+        for (const player of gameState.getAllPlayers()) {
+            if (player.playerState !== 'dead' && player.playerState !== 'waiting') {
+                continue;
+            }
+
+            const cooldownRemaining = Math.max(0, (player.deathTime || 0) + WAITING_ROOM.DEATH_COOLDOWN - now);
+            const queuePos = playerQueue.getQueuePosition(player.id);
+            const canJoin = cooldownRemaining === 0 && queuePos === 1 && gameState.canAcceptPlayer();
+
+            // Handle 30s join timeout
+            if (canJoin) {
+                if (!playerQueue.getDoorOpenTime(player.id)) {
+                    playerQueue.markDoorOpened(player.id);
+                    console.log(`[WaitingRoom] Door opened for player ${player.id}`);
+                } else if (playerQueue.hasTimedOut(player.id)) {
+                    // Player took too long - move to back of queue
+                    playerQueue.moveToBack(player.id);
+                    playerManager.sendTo(player.id, { type: 'DOOR_TIMEOUT' });
+                    console.log(`[WaitingRoom] Player ${player.id} timed out, moved to back of queue`);
+                    continue;
+                }
+            } else {
+                // Door not open - reset timer if it was set
+                playerQueue.resetDoorTimer(player.id);
+            }
+
+            // Calculate join time remaining
+            let joinTimeRemaining = null;
+            if (canJoin) {
+                const doorOpenTime = playerQueue.getDoorOpenTime(player.id);
+                if (doorOpenTime) {
+                    joinTimeRemaining = Math.max(0, Math.ceil((JOIN_TIMEOUT - (now - doorOpenTime)) / 1000));
+                }
+            }
+
+            // Send waiting room state to player
+            playerManager.sendTo(player.id, {
+                type: 'WAITING_ROOM_STATE',
+                cooldownRemaining: Math.ceil(cooldownRemaining / 1000),  // Seconds
+                queuePosition: queuePos,
+                queueTotal: playerQueue.getQueueLength(),
+                doorOpen: canJoin,
+                joinTimeRemaining
             });
         }
+
         lastNetworkTime = now;
     }
 

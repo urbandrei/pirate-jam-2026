@@ -126,10 +126,23 @@ function resetNeeds(player) {
     player.playerState = 'playing';
 }
 
+/**
+ * Determine the cause of death based on which need hit 0
+ * @param {Object} player - The player object
+ * @returns {string} Death cause: 'hunger', 'thirst', or 'exhaustion'
+ */
+function getDeathCause(player) {
+    if (player.needs.hunger <= 0) return 'hunger';
+    if (player.needs.thirst <= 0) return 'thirst';
+    if (player.needs.rest <= 0) return 'exhaustion';
+    return 'unknown';
+}
+
 module.exports = {
     updateNeeds,
     calculateAggregateStats,
     resetNeeds,
+    getDeathCause,
     // Export constants for testing
     HUNGER_DECAY_RATE,
     THIRST_DECAY_RATE,

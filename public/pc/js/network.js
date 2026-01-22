@@ -13,6 +13,7 @@ export class Network {
         // Callbacks
         this.onConnected = null;
         this.onDisconnected = null;
+        this.onJoined = null;
         this.onStateUpdate = null;
         this.onGrabbed = null;
         this.onReleased = null;
@@ -26,6 +27,17 @@ export class Network {
         this.onSleepMinigameResult = null;
         this.onPlayerDied = null;
         this.onPlayerRevived = null;
+
+        // Queue callbacks
+        this.onJoinQueued = null;
+        this.onQueueJoined = null;
+        this.onQueueUpdate = null;
+        this.onQueueReady = null;
+        this.onJoinFromQueueFailed = null;
+
+        // Waiting room callbacks
+        this.onWaitingRoomState = null;
+        this.onDoorTimeout = null;
 
         // Status element
         this.statusEl = document.getElementById('status');
@@ -92,6 +104,7 @@ export class Network {
             case MSG.JOINED:
                 console.log('Joined game:', message);
                 this.updateStatus(`Playing as ${this.playerId.slice(0, 8)}`);
+                if (this.onJoined) this.onJoined(message.player, message.state);
                 break;
 
             case MSG.STATE_UPDATE:
@@ -163,14 +176,63 @@ export class Network {
                 break;
 
             case MSG.PLAYER_DIED:
-                console.log('You died at:', message.deathPosition);
-                if (this.onPlayerDied) this.onPlayerDied(message.deathPosition);
+                console.log('You died at:', message.deathPosition, 'cause:', message.cause);
+                if (this.onPlayerDied) this.onPlayerDied(message.deathPosition, message.cause);
                 break;
 
             case MSG.PLAYER_REVIVED:
                 console.log('Player revived:', message.playerId || 'you');
                 if (message.position && this.onPlayerRevived) {
                     this.onPlayerRevived(message.position, message.needs);
+                }
+                break;
+
+            // Queue messages
+            case 'JOIN_QUEUED':
+                console.log('Game full, added to queue at position:', message.position);
+                if (this.onJoinQueued) {
+                    this.onJoinQueued(message.position, message.total, message.playerLimit, message.waitingRoomPosition);
+                }
+                break;
+
+            case 'QUEUE_JOINED':
+                console.log('Joined queue at position:', message.position);
+                if (this.onQueueJoined) {
+                    this.onQueueJoined(message.position, message.total);
+                }
+                break;
+
+            case 'QUEUE_UPDATE':
+                if (this.onQueueUpdate) {
+                    this.onQueueUpdate(message.position, message.total);
+                }
+                break;
+
+            case 'QUEUE_READY':
+                console.log('Slot available! Can join now.');
+                if (this.onQueueReady) {
+                    this.onQueueReady();
+                }
+                break;
+
+            case 'JOIN_FROM_QUEUE_FAILED':
+                console.log('Failed to join from queue:', message.reason);
+                if (this.onJoinFromQueueFailed) {
+                    this.onJoinFromQueueFailed(message.reason);
+                }
+                break;
+
+            // Waiting room messages
+            case 'WAITING_ROOM_STATE':
+                if (this.onWaitingRoomState) {
+                    this.onWaitingRoomState(message);
+                }
+                break;
+
+            case 'DOOR_TIMEOUT':
+                console.log('Took too long to enter door - moved to back of queue');
+                if (this.onDoorTimeout) {
+                    this.onDoorTimeout();
                 }
                 break;
         }

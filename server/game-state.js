@@ -9,6 +9,7 @@ const plantSystem = require('./systems/plant-system');
 const stationSystem = require('./systems/station-system');
 const applianceSystem = require('./systems/appliance-system');
 const bedSystem = require('./systems/bed-system');
+const { DEFAULT_PLAYER_LIMIT } = require('./systems/player-queue');
 
 class GameState {
     constructor(isDevMode = false) {
@@ -16,6 +17,9 @@ class GameState {
 
         // Map of peerId -> player state
         this.players = new Map();
+
+        // Player limit (adjustable by VR player)
+        this.playerLimit = DEFAULT_PLAYER_LIMIT;
 
         // World state for building system
         this.worldState = new WorldState(isDevMode);
@@ -130,6 +134,97 @@ class GameState {
         return this.players.size;
     }
 
+    /**
+     * Get count of active players (alive and in game)
+     * @returns {number}
+     */
+    getActivePlayerCount() {
+        let count = 0;
+        for (const player of this.players.values()) {
+            if (player.alive && player.playerState === 'playing') {
+                count++;
+            }
+            // Also count sleeping players as active (they're in the game)
+            if (player.alive && player.playerState === 'sleeping') {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Check if server can accept a new active player
+     * @returns {boolean}
+     */
+    canAcceptPlayer() {
+        return this.getActivePlayerCount() < this.playerLimit;
+    }
+
+    /**
+     * Set the player limit
+     * @param {number} limit - New limit (1-50)
+     */
+    setPlayerLimit(limit) {
+        this.playerLimit = Math.max(1, Math.min(50, limit));
+        console.log(`[GameState] Player limit set to ${this.playerLimit}`);
+    }
+
+    /**
+     * Get current player limit
+     * @returns {number}
+     */
+    getPlayerLimit() {
+        return this.playerLimit;
+    }
+
+    /**
+     * Get all players in waiting/dead state
+     * @returns {Array}
+     */
+    getWaitingPlayers() {
+        return Array.from(this.players.values()).filter(
+            p => !p.alive || p.playerState === 'waiting' || p.playerState === 'dead'
+        );
+    }
+
+    /**
+     * Get all alive/active players
+     * @returns {Array}
+     */
+    getAlivePlayers() {
+        return Array.from(this.players.values()).filter(p => p.alive);
+    }
+
+    /**
+     * Deactivate a player (mark as dead, keep connection)
+     * @param {string} peerId
+     */
+    deactivatePlayer(peerId) {
+        const player = this.players.get(peerId);
+        if (player) {
+            player.alive = false;
+            player.playerState = 'dead';
+            console.log(`[GameState] Player ${peerId} deactivated`);
+        }
+    }
+
+    /**
+     * Reactivate a player (for respawn)
+     * @param {string} peerId
+     */
+    reactivatePlayer(peerId) {
+        const player = this.players.get(peerId);
+        if (player) {
+            player.alive = true;
+            player.playerState = 'playing';
+            player.needs = { hunger: 100, thirst: 100, rest: 100 };
+            // Respawn at center
+            player.position = { x: 0, y: player.type === 'pc' ? 0.9 : 0, z: 0 };
+            player.velocity = { x: 0, y: 0, z: 0 };
+            console.log(`[GameState] Player ${peerId} reactivated`);
+        }
+    }
+
     updatePlayerInput(peerId, input) {
         const player = this.players.get(peerId);
         if (player && player.type === 'pc') {
@@ -168,6 +263,11 @@ class GameState {
     getSerializableState() {
         const players = {};
         for (const [id, player] of this.players) {
+            // Skip dead/waiting players - they're in local-only waiting room
+            // and should be invisible to all other players
+            if (player.playerState === 'dead' || player.playerState === 'waiting') {
+                continue;
+            }
             players[id] = {
                 id: player.id,
                 type: player.type,

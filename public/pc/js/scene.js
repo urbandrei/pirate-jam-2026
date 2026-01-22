@@ -8,6 +8,7 @@ import * as FarmingRenderer from './farming-renderer.js';
 import * as StationRenderer from './station-renderer.js';
 import * as ApplianceRenderer from './appliance-renderer.js';
 import * as BedRenderer from './bed-renderer.js';
+import { WaitingRoomRenderer } from './waiting-room-renderer.js';
 
 export class Scene {
     constructor(container) {
@@ -41,6 +42,9 @@ export class Scene {
 
         // Wall material (shared)
         this.wallMaterial = null;
+
+        // Waiting room renderer
+        this.waitingRoomRenderer = null;
 
         // Miniature replica (same as VR players see)
         // VR uses miniatureScale = 0.005 at 1/10 world scale
@@ -1248,5 +1252,51 @@ export class Scene {
         mesh.userData.stackCount = obj.stackCount || 1;
 
         return mesh;
+    }
+
+    // ============================================
+    // Waiting Room Methods
+    // ============================================
+
+    /**
+     * Show the waiting room (creates renderer if needed)
+     */
+    showWaitingRoom() {
+        if (!this.waitingRoomRenderer) {
+            this.waitingRoomRenderer = new WaitingRoomRenderer(this.scene);
+            console.log('[Scene] Waiting room created');
+        }
+    }
+
+    /**
+     * Hide the waiting room (disposes renderer)
+     */
+    hideWaitingRoom() {
+        if (this.waitingRoomRenderer) {
+            this.waitingRoomRenderer.dispose();
+            this.waitingRoomRenderer = null;
+            console.log('[Scene] Waiting room disposed');
+        }
+    }
+
+    /**
+     * Update waiting room state from server
+     * @param {Object} state - WAITING_ROOM_STATE message data
+     */
+    updateWaitingRoomState(state) {
+        if (this.waitingRoomRenderer) {
+            this.waitingRoomRenderer.updateState(state);
+        }
+    }
+
+    /**
+     * Get door interaction from waiting room (for interaction system)
+     * @returns {Object|null}
+     */
+    getWaitingRoomDoorInteraction() {
+        if (this.waitingRoomRenderer) {
+            return this.waitingRoomRenderer.getDoorInteraction();
+        }
+        return null;
     }
 }

@@ -11,6 +11,10 @@ const WORLD_BOUNDS = 50; // Half-size of the play area
 const CELL_SIZE = 10; // SMALL_ROOM_SIZE - 10m grid cells
 const PLAYER_RADIUS = 0.3; // Player collision radius
 
+// Waiting room constants (must match shared/constants.js)
+const WAITING_ROOM_CENTER = { x: 500, z: 500 };
+const WAITING_ROOM_HALF_SIZE = 5; // Half of 10m room
+
 class PhysicsValidator {
     constructor(gameState) {
         this.gameState = gameState;
@@ -24,7 +28,12 @@ class PhysicsValidator {
     tick(deltaTime) {
         for (const player of this.gameState.getAllPlayers()) {
             if (player.type === 'pc') {
-                this.updatePCPlayer(player, deltaTime);
+                // Dead/waiting players use waiting room physics
+                if (player.playerState === 'dead' || player.playerState === 'waiting') {
+                    this.updateWaitingRoomPlayer(player, deltaTime);
+                } else {
+                    this.updatePCPlayer(player, deltaTime);
+                }
             }
         }
     }
@@ -212,6 +221,76 @@ class PhysicsValidator {
         }
 
         return false;
+    }
+
+    /**
+     * Update a player in the waiting room (simplified physics)
+     * @param {Object} player - Player object
+     * @param {number} deltaTime - Time since last tick in seconds
+     */
+    updateWaitingRoomPlayer(player, deltaTime) {
+        const input = player.input;
+        const lookYaw = player.lookRotation?.y || 0;
+
+        // Calculate movement direction based on look direction
+        let moveX = 0;
+        let moveZ = 0;
+
+        if (input.forward) {
+            moveX -= Math.sin(lookYaw);
+            moveZ -= Math.cos(lookYaw);
+        }
+        if (input.backward) {
+            moveX += Math.sin(lookYaw);
+            moveZ += Math.cos(lookYaw);
+        }
+        if (input.left) {
+            moveX -= Math.cos(lookYaw);
+            moveZ += Math.sin(lookYaw);
+        }
+        if (input.right) {
+            moveX += Math.cos(lookYaw);
+            moveZ -= Math.sin(lookYaw);
+        }
+
+        // Normalize diagonal movement
+        const moveLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
+        if (moveLen > 0) {
+            moveX = (moveX / moveLen) * MOVE_SPEED;
+            moveZ = (moveZ / moveLen) * MOVE_SPEED;
+        }
+
+        // Apply movement
+        player.position.x += moveX * deltaTime;
+        player.position.z += moveZ * deltaTime;
+
+        // Handle jumping
+        if (input.jump && player.grounded) {
+            player.velocity.y = JUMP_VELOCITY;
+            player.grounded = false;
+            player.input.jump = false;
+        }
+
+        // Apply gravity
+        if (!player.grounded) {
+            player.velocity.y += GRAVITY * deltaTime;
+            player.position.y += player.velocity.y * deltaTime;
+
+            if (player.position.y <= GROUND_LEVEL) {
+                player.position.y = GROUND_LEVEL;
+                player.velocity.y = 0;
+                player.grounded = true;
+            }
+        }
+
+        // Clamp to waiting room bounds (10x10m room centered at 500, 500)
+        const minX = WAITING_ROOM_CENTER.x - WAITING_ROOM_HALF_SIZE + PLAYER_RADIUS;
+        const maxX = WAITING_ROOM_CENTER.x + WAITING_ROOM_HALF_SIZE - PLAYER_RADIUS;
+        const minZ = WAITING_ROOM_CENTER.z - WAITING_ROOM_HALF_SIZE + PLAYER_RADIUS;
+        const maxZ = WAITING_ROOM_CENTER.z + WAITING_ROOM_HALF_SIZE - PLAYER_RADIUS;
+
+        player.position.x = Math.max(minX, Math.min(maxX, player.position.x));
+        player.position.z = Math.max(minZ, Math.min(maxZ, player.position.z));
     }
 
     /**
