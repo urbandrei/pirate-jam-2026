@@ -1107,18 +1107,6 @@ class InteractionSystem {
             return { success: false, error: 'Object not found' };
         }
 
-        // TODO: DELETE THIS - Temporary seed respawning for testing
-        // Respawn seed at original position before picking up (in main room or dev mode)
-        if (obj.type === 'seed') {
-            const isInMainRoom = Math.abs(obj.position.x) < 5 && Math.abs(obj.position.z) < 5;
-            if (isInMainRoom || this.isDevMode) {
-                const seedPosition = { x: obj.position.x, y: obj.position.y, z: obj.position.z };
-                const newSeed = itemSystem.createItem('seed', seedPosition);
-                this.gameState.addWorldObject(newSeed);
-                console.log(`[InteractionSystem] Respawned seed at (${seedPosition.x}, ${seedPosition.y}, ${seedPosition.z})`);
-            }
-        }
-
         // Check if player is already holding something
         if (player.heldItem) {
             // Try to stack items

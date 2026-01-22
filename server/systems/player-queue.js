@@ -7,7 +7,7 @@
  * - Handles both new players joining full game and dead players rejoining
  */
 
-const DEFAULT_PLAYER_LIMIT = 1;  // Temporarily set to 1 for testing (was 10)
+const DEFAULT_PLAYER_LIMIT = 10;
 
 const JOIN_TIMEOUT = 30000;  // 30 seconds to walk through door
 
