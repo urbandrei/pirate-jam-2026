@@ -13,6 +13,8 @@ export const MSG = {
     INTERACT: 'INTERACT',
     TIMED_INTERACT_START: 'TIMED_INTERACT_START',
     TIMED_INTERACT_CANCEL: 'TIMED_INTERACT_CANCEL',
+    SLEEP_MINIGAME_COMPLETE: 'SLEEP_MINIGAME_COMPLETE',
+    REVIVE: 'REVIVE',
 
     // Server -> Client
     JOINED: 'JOINED',
@@ -27,7 +29,10 @@ export const MSG = {
     INTERACT_FAIL: 'INTERACT_FAIL',
     TIMED_INTERACT_PROGRESS: 'TIMED_INTERACT_PROGRESS',
     TIMED_INTERACT_COMPLETE: 'TIMED_INTERACT_COMPLETE',
-    TIMED_INTERACT_CANCELLED: 'TIMED_INTERACT_CANCELLED'
+    TIMED_INTERACT_CANCELLED: 'TIMED_INTERACT_CANCELLED',
+    SLEEP_MINIGAME_RESULT: 'SLEEP_MINIGAME_RESULT',
+    PLAYER_DIED: 'PLAYER_DIED',
+    PLAYER_REVIVED: 'PLAYER_REVIVED'
 };
 
 // Message creators for type safety
@@ -132,5 +137,19 @@ export function createTimedInteractStartMessage(interactionType, targetId, targe
 export function createTimedInteractCancelMessage() {
     return {
         type: MSG.TIMED_INTERACT_CANCEL
+    };
+}
+
+/**
+ * Create a sleep minigame complete message (PC -> Server)
+ * Sent when player finishes the sleep minigame
+ * @param {number} score - Score percentage (0-100)
+ * @param {number} multiplier - Rest restoration multiplier earned
+ */
+export function createSleepMinigameCompleteMessage(score, multiplier) {
+    return {
+        type: MSG.SLEEP_MINIGAME_COMPLETE,
+        score,
+        multiplier
     };
 }

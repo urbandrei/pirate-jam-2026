@@ -19,19 +19,28 @@ const STATIONS = {
         color: 0x4169E1,
         interactionTime: 4000,
         inputItem: 'raw_vegetable',
-        outputItem: 'washed_vegetable'
+        outputItem: 'washed_vegetable',
+        width: 1.2,
+        height: 0.9,
+        depth: 0.8
     },
     cut_station: {
         name: 'Cutting Board',
         color: 0x8B4513,
         interactionTime: 5000,
         inputItem: 'washed_vegetable',
-        outputItem: 'prepared_vegetable'
+        outputItem: 'prepared_vegetable',
+        width: 1.4,
+        height: 0.75,
+        depth: 0.9
     },
     assembly_station: {
         name: 'Assembly Counter',
         color: 0xC0C0C0,
-        inputItem: 'prepared_vegetable'
+        inputItem: 'prepared_vegetable',
+        width: 1.6,
+        height: 0.87,
+        depth: 1.0
     }
 };
 
@@ -107,12 +116,18 @@ function getStationPositions(gridX, gridZ) {
  */
 function createStation(stationType, position, gridX, gridZ, row, col) {
     const stationId = `station_${stationType}_${gridX}_${gridZ}_${row}_${col}`;
+    const config = STATIONS[stationType];
 
     return {
         id: stationId,
         objectType: 'station',
         stationType: stationType,
         position: { ...position },
+        bounds: {
+            width: config.width,
+            height: config.height,
+            depth: config.depth
+        },
         gridX: gridX,
         gridZ: gridZ,
         row: row,

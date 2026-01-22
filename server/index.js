@@ -243,11 +243,11 @@ app.post('/api/dev-server', express.json(), (req, res) => {
 });
 
 // Initialize game systems
-const gameState = new GameState();
+const gameState = new GameState(isDevMode);
 const playerManager = new PlayerManager(gameState);
 const physicsValidator = new PhysicsValidator(gameState);
 const roomManager = new RoomManager(gameState.worldState, gameState);
-const interactionSystem = new InteractionSystem(gameState, roomManager);
+const interactionSystem = new InteractionSystem(gameState, roomManager, isDevMode);
 const messageHandler = new MessageHandler(gameState, playerManager, interactionSystem);
 
 // Socket.IO event handling
@@ -315,11 +315,35 @@ function gameLoop() {
         for (const player of gameState.getAllPlayers()) {
             const shouldDie = NeedsSystem.updateNeeds(player, networkDeltaSeconds);
             if (shouldDie && player.alive) {
-                // Log death for now - actual death handling will be added later
                 console.log(`[NeedsSystem] Player ${player.id} died from needs depletion`);
+
+                // Store death position
+                const deathPosition = {
+                    x: player.position.x,
+                    y: player.position.y,
+                    z: player.position.z
+                };
+
+                // Mark player as dead
                 player.alive = false;
-                player.playerState = 'waiting';
-                // TODO: Implement death queue and waiting room teleport
+                player.playerState = 'dead';
+
+                // Create body object at death location
+                const bodyObject = {
+                    id: `body_${player.id}_${Date.now()}`,
+                    type: 'player_body',
+                    position: { x: deathPosition.x, y: 0.15, z: deathPosition.z },
+                    playerId: player.id,
+                    createdAt: Date.now()
+                };
+                gameState.worldObjects.set(bodyObject.id, bodyObject);
+                console.log(`[DeathSystem] Created body for player ${player.id} at (${deathPosition.x.toFixed(2)}, ${deathPosition.z.toFixed(2)})`);
+
+                // Notify the player they died
+                playerManager.sendTo(player.id, {
+                    type: 'PLAYER_DIED',
+                    deathPosition: deathPosition
+                });
             }
         }
 
@@ -356,6 +380,15 @@ function gameLoop() {
         }
 
         if (gameState.getPlayerCount() > 0) {
+            // Calculate available interactions for each PC player before sending state
+            for (const [playerId, player] of gameState.players) {
+                if (player.type === 'pc' && player.playerState === 'playing') {
+                    player.availableInteraction = interactionSystem.getTargetedInteraction(player, gameState.worldObjects);
+                } else {
+                    player.availableInteraction = null;
+                }
+            }
+
             io.emit('message', {
                 type: 'STATE_UPDATE',
                 state: gameState.getSerializableState()

@@ -281,6 +281,65 @@ function getAllPlants(worldObjects) {
     return plants;
 }
 
+/**
+ * Create soil plot objects for a farming cell and add to worldObjects
+ * @param {number} gridX - Cell grid X coordinate
+ * @param {number} gridZ - Cell grid Z coordinate
+ * @param {Map} worldObjects - World objects map to add plots to
+ * @returns {Array} Array of created soil plot objects
+ */
+function createSoilPlotsForCell(gridX, gridZ, worldObjects) {
+    const plots = getSoilPlotPositions(gridX, gridZ);
+    const created = [];
+
+    for (const plot of plots) {
+        // Create soil plot object
+        const soilPlot = {
+            id: plot.id,
+            objectType: 'soil_plot',
+            position: plot.position,
+            gridX: plot.gridX,
+            gridZ: plot.gridZ,
+            row: plot.row,
+            col: plot.col
+        };
+
+        worldObjects.set(plot.id, soilPlot);
+        created.push(soilPlot);
+    }
+
+    console.log(`[PlantSystem] Created ${created.length} soil plots for cell (${gridX}, ${gridZ})`);
+    return created;
+}
+
+/**
+ * Remove soil plots for a cell from worldObjects
+ * @param {number} gridX - Cell grid X coordinate
+ * @param {number} gridZ - Cell grid Z coordinate
+ * @param {Map} worldObjects - World objects map
+ * @returns {number} Number of plots removed
+ */
+function cleanupSoilPlotsInCell(gridX, gridZ, worldObjects) {
+    const prefix = `plot_${gridX}_${gridZ}_`;
+    const toRemove = [];
+
+    for (const [id, obj] of worldObjects) {
+        if (obj.objectType === 'soil_plot' && id.startsWith(prefix)) {
+            toRemove.push(id);
+        }
+    }
+
+    for (const id of toRemove) {
+        worldObjects.delete(id);
+    }
+
+    if (toRemove.length > 0) {
+        console.log(`[PlantSystem] Removed ${toRemove.length} soil plots from cell (${gridX}, ${gridZ})`);
+    }
+
+    return toRemove.length;
+}
+
 module.exports = {
     PLANT_STAGES,
     PLANT_STAGE_THRESHOLDS,
@@ -292,5 +351,7 @@ module.exports = {
     updatePlantGrowth,
     updatePlants,
     cleanupPlantsInCell,
-    getAllPlants
+    getAllPlants,
+    createSoilPlotsForCell,
+    cleanupSoilPlotsInCell
 };

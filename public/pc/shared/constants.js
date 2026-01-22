@@ -83,7 +83,16 @@ export const INTERACTIONS = {
     DROP_ITEM: 'drop_item',
     EAT: 'eat',
     SLEEP: 'sleep',
-    WAKE: 'wake'
+    WAKE: 'wake',
+    // Cafeteria appliance interactions
+    LOAD_VENDING: 'load_vending',
+    TAKE_VENDING: 'take_vending',
+    GET_COFFEE: 'get_coffee',
+    DRINK_WATER: 'drink_water',
+    FILL_WATERING_CAN: 'fill_watering_can',
+    // Consumable interactions (can be done anywhere)
+    DRINK_COFFEE: 'drink_coffee',
+    DRINK_CONTAINER: 'drink_container'
 };
 
 export const INTERACTABLE_TYPES = {
@@ -92,7 +101,8 @@ export const INTERACTABLE_TYPES = {
     STATION: 'station',
     FOOD_COUNTER: 'food_counter',
     BED: 'bed',
-    WORLD_ITEM: 'world_item'
+    WORLD_ITEM: 'world_item',
+    APPLIANCE: 'appliance'
 };
 
 // Item definitions
@@ -147,6 +157,21 @@ export const ITEMS = {
         color: 0x4a4a4a,
         canStack: false,
         rotTime: null
+    },
+    coffee: {
+        name: 'Coffee',
+        color: 0x4a2c2a,  // Dark brown
+        canStack: true,
+        rotTime: null,  // Coffee doesn't spoil
+        rest: 25        // Restores 25 rest when consumed
+    },
+    water_container: {
+        name: 'Water Container',
+        color: 0x87CEEB,  // Sky blue
+        canStack: false,
+        rotTime: null,
+        thirst: 40,       // Restores 40 thirst when consumed
+        charges: 3        // Can be used 3 times
     }
 };
 
@@ -242,3 +267,58 @@ export const STATION_COLS = 3;
 export const STATION_SPACING_X = 2.5;  // Spacing between station centers (X)
 export const STATION_SPACING_Z = 3.0;  // Spacing between station centers (Z)
 export const STATION_INTERACTION_RANGE = 1.5;  // Range to find nearest station
+
+// Cafeteria appliance types
+export const APPLIANCE_TYPES = {
+    VENDING_MACHINE: 'vending_machine',
+    COFFEE_MACHINE: 'coffee_machine',
+    WATER_STATION: 'water_station'
+};
+
+// Appliance configuration
+export const APPLIANCES = {
+    vending_machine: {
+        name: 'Vending Machine',
+        color: 0x808080,  // Gray metal
+        slots: 6,         // Number of food slots
+        width: 1.5,
+        height: 2.0,
+        depth: 0.8
+    },
+    coffee_machine: {
+        name: 'Coffee Machine',
+        color: 0x2F4F4F,  // Dark slate gray
+        width: 0.8,
+        height: 1.2,
+        depth: 0.6
+    },
+    water_station: {
+        name: 'Water Station',
+        color: 0x4682B4,  // Steel blue
+        width: 1.2,
+        height: 1.0,
+        depth: 0.8,
+        thirstRestore: 30  // Direct thirst restoration
+    }
+};
+
+// Cafeteria layout (appliances along one wall, tables in center)
+export const CAFETERIA_APPLIANCE_SPACING = 3.0;  // Spacing between appliances
+export const CAFETERIA_TABLE_COUNT = 2;
+export const CAFETERIA_TABLE_SIZE = { width: 2.0, height: 0.75, depth: 1.2 };
+
+// Dorm bed configuration
+export const BED_ROWS = 2;
+export const BED_COLS = 2;
+export const BEDS_PER_CELL = BED_ROWS * BED_COLS;  // 4 beds
+export const BED_SPACING_X = 3.5;
+export const BED_SPACING_Z = 4.0;
+export const BED_SIZE = { width: 1.0, height: 0.6, depth: 2.0 };  // Single bed dimensions (swap for better proportions)
+
+// Sleep minigame constants
+export const SLEEP_MINIGAME_DURATION = 30000;  // 30 seconds
+export const SLEEP_MINIGAME_SQUARES = 25;      // Number of squares to spawn
+export const SLEEP_BASE_MULTIPLIER = 5;        // Base rest restore rate (same as REST_RESTORE_RATE)
+export const SLEEP_MAX_MULTIPLIER = 10;        // Perfect minigame multiplier
+export const SLEEP_SQUARE_SIZE = 50;           // Square size in pixels
+export const SLEEP_SQUARE_SPEED = 200;         // Pixels per second

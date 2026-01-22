@@ -2,7 +2,7 @@
  * Socket.IO network client for PC
  */
 
-import { MSG, createJoinMessage, createInputMessage, createInteractMessage, createTimedInteractStartMessage, createTimedInteractCancelMessage } from '../shared/protocol.js';
+import { MSG, createJoinMessage, createInputMessage, createInteractMessage, createTimedInteractStartMessage, createTimedInteractCancelMessage, createSleepMinigameCompleteMessage } from '../shared/protocol.js';
 
 export class Network {
     constructor() {
@@ -23,6 +23,9 @@ export class Network {
         this.onTimedInteractProgress = null;
         this.onTimedInteractComplete = null;
         this.onTimedInteractCancelled = null;
+        this.onSleepMinigameResult = null;
+        this.onPlayerDied = null;
+        this.onPlayerRevived = null;
 
         // Status element
         this.statusEl = document.getElementById('status');
@@ -151,6 +154,25 @@ export class Network {
                     this.onTimedInteractCancelled(message.reason);
                 }
                 break;
+
+            case MSG.SLEEP_MINIGAME_RESULT:
+                console.log('Sleep minigame result:', message.score, message.multiplier);
+                if (this.onSleepMinigameResult) {
+                    this.onSleepMinigameResult(message.score, message.multiplier);
+                }
+                break;
+
+            case MSG.PLAYER_DIED:
+                console.log('You died at:', message.deathPosition);
+                if (this.onPlayerDied) this.onPlayerDied(message.deathPosition);
+                break;
+
+            case MSG.PLAYER_REVIVED:
+                console.log('Player revived:', message.playerId || 'you');
+                if (message.position && this.onPlayerRevived) {
+                    this.onPlayerRevived(message.position, message.needs);
+                }
+                break;
         }
     }
 
@@ -174,6 +196,14 @@ export class Network {
 
     sendTimedInteractCancel() {
         this.send(createTimedInteractCancelMessage());
+    }
+
+    sendSleepMinigameComplete(score, multiplier) {
+        this.send(createSleepMinigameCompleteMessage(score, multiplier));
+    }
+
+    sendRevive() {
+        this.send({ type: MSG.REVIVE });
     }
 
     updateStatus(text) {

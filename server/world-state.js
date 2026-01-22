@@ -14,13 +14,49 @@ const CELL_SPAWN = 'spawn';
 const CELL_ROOM = 'room';
 
 class WorldState {
-    constructor() {
+    constructor(isDevMode = false) {
         this.grid = new Map(); // "x,z" -> cell data
         this.doorways = [];    // Generated doorway list
         this.version = 0;      // Sync version counter
+        this.isDevMode = isDevMode;
 
         // Initialize with 3x3 spawn room centered at origin
         this.initializeSpawnRoom();
+
+        // In dev mode, spawn one of each room type around the perimeter
+        if (isDevMode) {
+            this.initializeDevRooms();
+        }
+    }
+
+    /**
+     * Initialize dev mode rooms - one of each type around the spawn perimeter
+     * Layout:
+     *          (-1,-2) Farming
+     *              |
+     * (-2,-1)  [SPAWN]  (2,-1)
+     * Processing [3x3]  Cafeteria
+     *              |
+     *          (-1,2) Dorm
+     */
+    initializeDevRooms() {
+        console.log('[WorldState] Dev mode: Creating perimeter rooms');
+
+        const devRooms = [
+            { x: -1, z: -2, type: 'farming' },
+            { x: 2, z: -1, type: 'cafeteria' },
+            { x: -2, z: -1, type: 'processing' },
+            { x: -1, z: 2, type: 'dorm' }
+        ];
+
+        for (const room of devRooms) {
+            const result = this.placeBlock(room.x, room.z, '1x1', 'system', 0, room.type);
+            if (result.success) {
+                console.log(`[WorldState] Dev mode: Placed ${room.type} room at (${room.x}, ${room.z})`);
+            } else {
+                console.warn(`[WorldState] Dev mode: Failed to place ${room.type} room: ${result.reason}`);
+            }
+        }
     }
 
     /**

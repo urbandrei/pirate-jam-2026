@@ -21,6 +21,7 @@ export class HUD {
         this.heldItemIcon = document.getElementById('held-item-icon');
         this.heldItemName = document.getElementById('held-item-name');
         this.heldItemCount = document.getElementById('held-item-count');
+        this.heldItemHint = document.getElementById('held-item-hint');
 
         // Track last values to avoid unnecessary DOM updates
         this._lastNeeds = { hunger: -1, thirst: -1, rest: -1 };
@@ -101,6 +102,7 @@ export class HUD {
             this.heldItemIcon.style.backgroundColor = '#333';
             this.heldItemName.textContent = 'Empty';
             this.heldItemCount.textContent = '';
+            this.heldItemHint.textContent = '';
             return;
         }
 
@@ -112,6 +114,7 @@ export class HUD {
             this.heldItemIcon.style.backgroundColor = '#888';
             this.heldItemName.textContent = heldItem.type;
             this.heldItemCount.textContent = heldItem.stackCount > 1 ? `x${heldItem.stackCount}` : '';
+            this.heldItemHint.textContent = 'Click to drop';
             return;
         }
 
@@ -124,13 +127,51 @@ export class HUD {
 
         this.heldItemName.textContent = itemDef.name;
         this.heldItemCount.textContent = heldItem.stackCount > 1 ? `x${heldItem.stackCount}` : '';
+
+        // Show hint based on item type
+        if (itemDef.hunger) {
+            this.heldItemHint.textContent = 'Click to eat';
+        } else if (itemDef.rest && heldItem.type === 'coffee') {
+            this.heldItemHint.textContent = 'Click to drink';
+        } else if (itemDef.thirst && heldItem.type === 'water_container') {
+            this.heldItemHint.textContent = 'Click to drink';
+        } else {
+            this.heldItemHint.textContent = 'Click to drop';
+        }
     }
 
     /**
-     * Show death overlay (to be expanded later)
+     * Show death overlay with revive button
+     * @param {Function} onReviveClick - Callback when revive button is clicked
      */
-    showDeathOverlay() {
-        // TODO: Implement death overlay when waiting room is added
-        console.log('[HUD] Player died - death overlay not yet implemented');
+    showDeathOverlay(onReviveClick) {
+        // Create overlay if it doesn't exist
+        if (!this.deathOverlay) {
+            this.deathOverlay = document.createElement('div');
+            this.deathOverlay.id = 'death-overlay';
+            this.deathOverlay.innerHTML = `
+                <div id="death-text">You died</div>
+                <button id="revive-button">Revive</button>
+            `;
+            document.getElementById('ui-overlay').appendChild(this.deathOverlay);
+        }
+
+        // Show the overlay
+        this.deathOverlay.style.display = 'flex';
+
+        // Wire up revive button
+        const reviveButton = document.getElementById('revive-button');
+        reviveButton.onclick = () => {
+            if (onReviveClick) onReviveClick();
+        };
+    }
+
+    /**
+     * Hide death overlay
+     */
+    hideDeathOverlay() {
+        if (this.deathOverlay) {
+            this.deathOverlay.style.display = 'none';
+        }
     }
 }

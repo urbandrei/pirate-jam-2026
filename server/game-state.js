@@ -5,14 +5,20 @@
 
 const WorldState = require('./world-state');
 const itemSystem = require('./systems/item-system');
+const plantSystem = require('./systems/plant-system');
+const stationSystem = require('./systems/station-system');
+const applianceSystem = require('./systems/appliance-system');
+const bedSystem = require('./systems/bed-system');
 
 class GameState {
-    constructor() {
+    constructor(isDevMode = false) {
+        this.isDevMode = isDevMode;
+
         // Map of peerId -> player state
         this.players = new Map();
 
         // World state for building system
-        this.worldState = new WorldState();
+        this.worldState = new WorldState(isDevMode);
 
         // World objects (pickable items, etc.)
         this.worldObjects = new Map();
@@ -26,6 +32,42 @@ class GameState {
 
         const testMeal = itemSystem.createItem('basic_meal', { x: -2, y: 0.25, z: 0 });
         this.worldObjects.set(testMeal.id, testMeal);
+
+        // In dev mode, create room-specific objects for the perimeter rooms
+        if (isDevMode) {
+            this._createDevRoomObjects();
+        }
+    }
+
+    /**
+     * Create room-specific objects for dev mode perimeter rooms
+     * Must match the room positions in WorldState.initializeDevRooms()
+     */
+    _createDevRoomObjects() {
+        console.log('[GameState] Dev mode: Creating room objects');
+
+        const devRooms = [
+            { x: -1, z: -2, type: 'farming' },
+            { x: 2, z: -1, type: 'cafeteria' },
+            { x: -2, z: -1, type: 'processing' },
+            { x: -1, z: 2, type: 'dorm' }
+        ];
+
+        for (const room of devRooms) {
+            if (room.type === 'farming') {
+                plantSystem.createSoilPlotsForCell(room.x, room.z, this.worldObjects);
+                console.log(`[GameState] Dev mode: Created soil plots for farming room at (${room.x}, ${room.z})`);
+            } else if (room.type === 'processing') {
+                stationSystem.createStationsForCell(this.worldObjects, room.x, room.z);
+                console.log(`[GameState] Dev mode: Created stations for processing room at (${room.x}, ${room.z})`);
+            } else if (room.type === 'cafeteria') {
+                applianceSystem.createAppliancesForCell(this.worldObjects, room.x, room.z);
+                console.log(`[GameState] Dev mode: Created appliances for cafeteria room at (${room.x}, ${room.z})`);
+            } else if (room.type === 'dorm') {
+                bedSystem.createBedsForCell(this.worldObjects, room.x, room.z);
+                console.log(`[GameState] Dev mode: Created beds for dorm room at (${room.x}, ${room.z})`);
+            }
+        }
     }
 
     addPlayer(peerId, playerType) {
@@ -140,7 +182,8 @@ class GameState {
                 headRotation: player.headRotation,
                 leftHand: player.leftHand,
                 rightHand: player.rightHand,
-                heldItem: player.heldItem
+                heldItem: player.heldItem,
+                availableInteraction: player.availableInteraction || null
             };
         }
 

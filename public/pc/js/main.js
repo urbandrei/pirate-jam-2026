@@ -9,7 +9,8 @@ import { Player } from './player.js';
 import { RemotePlayers } from './remote-players.js';
 import { HUD } from './hud.js';
 import { InteractionSystem } from './interaction-system.js';
-import { INPUT_RATE } from '../shared/constants.js';
+import { SleepMinigame } from './sleep-minigame.js';
+import { INPUT_RATE, ITEMS } from '../shared/constants.js';
 
 class Game {
     constructor() {
@@ -20,12 +21,15 @@ class Game {
         this.remotePlayers = null;
         this.hud = null;
         this.interactionSystem = null;
+        this.sleepMinigame = null;
 
         this.lastTime = performance.now();
         this.lastInputTime = 0;
         this.inputInterval = 1000 / INPUT_RATE;
 
         this.isGrabbed = false;
+        this.isSleeping = false;
+        this.isDead = false;
 
         this.init();
     }
@@ -59,8 +63,23 @@ class Game {
                 // We have a valid target - try to interact
                 this.interactionSystem.handleClick();
             } else if (this.player.isHoldingItem()) {
-                // No target but holding an item - drop it
-                this.handleDrop();
+                // No target but holding an item - check if consumable, otherwise drop
+                const heldItem = this.player.getHeldItem();
+                const itemDef = heldItem ? ITEMS[heldItem.type] : null;
+
+                if (itemDef && itemDef.hunger) {
+                    // Food item - eat it
+                    this.handleConsume('eat', heldItem);
+                } else if (itemDef && itemDef.rest && heldItem.type === 'coffee') {
+                    // Coffee - drink it
+                    this.handleConsume('drink_coffee', heldItem);
+                } else if (itemDef && itemDef.thirst && heldItem.type === 'water_container') {
+                    // Water container - drink from it
+                    this.handleConsume('drink_container', heldItem);
+                } else {
+                    // Non-consumable item - drop it
+                    this.handleDrop();
+                }
             }
             // If neither, do nothing
         };
@@ -71,6 +90,10 @@ class Game {
                 // Route wash/cut to timed interaction flow
                 if (interactionType === 'wash' || interactionType === 'cut') {
                     this.network.sendTimedInteractStart(interactionType, targetId, targetPosition);
+                } else if (interactionType === 'sleep') {
+                    // Sleep interaction - send to server and start minigame on success
+                    this.network.sendInteract(interactionType, targetId, targetPosition);
+                    // Minigame will start when we receive INTERACT_SUCCESS for sleep
                 } else {
                     this.network.sendInteract(interactionType, targetId, targetPosition);
                 }
@@ -127,6 +150,22 @@ class Game {
         }
     }
 
+    /**
+     * Handle consuming a held item (eating/drinking)
+     * @param {string} interactionType - 'eat', 'drink_coffee', or 'drink_container'
+     * @param {Object} item - The item being consumed
+     */
+    handleConsume(interactionType, item) {
+        if (!item) return;
+
+        const pos = this.player.getPosition();
+
+        // Send consume interaction to server
+        if (this.network && this.network.isConnected) {
+            this.network.sendInteract(interactionType, item.id, pos);
+        }
+    }
+
     setupNetworkCallbacks() {
         this.network.onStateUpdate = (state) => {
             // Update local player from authoritative server state
@@ -151,6 +190,9 @@ class Game {
                     this.isGrabbed = false;
                     this.controls.setGrabbed(false);
                 }
+
+                // Update available interaction from server
+                this.interactionSystem.setAvailableInteraction(myState.availableInteraction);
             }
 
             // Update remote players
@@ -161,25 +203,11 @@ class Game {
                 this.scene.rebuildFromWorldState(state.world);
             }
 
-            // Update world objects (pickable items and plants)
+            // Update world objects (pickable items, plants, appliances, beds, etc.)
             if (state.worldObjects) {
-                this.scene.updateWorldObjects(state.worldObjects, this.interactionSystem);
-
-                // Update soil plot interactions based on held item and plant positions
-                const plants = state.worldObjects.filter(obj => obj.objectType === 'plant');
-                this.scene.updateSoilPlotInteractions(
-                    this.interactionSystem,
-                    myState ? myState.heldItem : null,
-                    plants
-                );
-
-                // Update station interactions based on held item
-                const stations = state.worldObjects.filter(obj => obj.objectType === 'station');
-                this.scene.updateStationInteractions(
-                    this.interactionSystem,
-                    myState ? myState.heldItem : null,
-                    stations
-                );
+                const heldItem = myState ? myState.heldItem : null;
+                this.scene.updateWorldObjects(state.worldObjects, this.interactionSystem, myState, heldItem);
+                // Note: Soil plot interactions now handled by server via availableInteraction
             }
         };
 
@@ -200,12 +228,32 @@ class Game {
         // Interaction response callbacks
         this.network.onInteractSuccess = (interactionType, targetId, result) => {
             console.log(`Interaction ${interactionType} on ${targetId} succeeded`, result);
-            // Future: could show success feedback, play sound, etc.
+
+            // Handle sleep interaction success - start minigame
+            if (interactionType === 'sleep') {
+                this.startSleepMinigame();
+            } else if (interactionType === 'wake') {
+                this.handleWakeUp();
+            }
         };
 
         this.network.onInteractFail = (interactionType, targetId, reason) => {
             console.log(`Interaction ${interactionType} on ${targetId} failed: ${reason}`);
             // Future: could show error message briefly on HUD
+        };
+
+        // Sleep minigame result callback
+        this.network.onSleepMinigameResult = (score, multiplier) => {
+            console.log(`Sleep minigame result received: score=${score}%, multiplier=${multiplier}`);
+        };
+
+        // Death and revive callbacks
+        this.network.onPlayerDied = (deathPosition) => {
+            this.handleDeath(deathPosition);
+        };
+
+        this.network.onPlayerRevived = (position, needs) => {
+            this.handleRevive(position, needs);
         };
 
         // Timed interaction callbacks
@@ -264,6 +312,89 @@ class Game {
 
         // Render
         this.scene.render();
+    }
+
+    /**
+     * Start the sleep minigame
+     */
+    startSleepMinigame() {
+        if (this.isSleeping) return;
+
+        this.isSleeping = true;
+        this.controls.setSleeping(true);  // Disable movement and lock camera up while sleeping
+
+        // Release pointer lock so user can click on minigame squares
+        document.exitPointerLock();
+
+        // Create and start the minigame
+        this.sleepMinigame = new SleepMinigame((score, multiplier) => {
+            // Minigame completed - send result to server
+            if (this.network && this.network.isConnected) {
+                this.network.sendSleepMinigameComplete(score, multiplier);
+
+                // Immediately wake up after minigame - no waiting
+                this.network.sendInteract('wake', null, this.player.getPosition());
+            }
+
+            console.log(`Sleep minigame completed: score=${score}%, multiplier=${multiplier.toFixed(1)}x`);
+        });
+
+        this.sleepMinigame.start();
+    }
+
+    /**
+     * Handle waking up from sleep (called when server confirms wake)
+     */
+    handleWakeUp() {
+        this.isSleeping = false;
+        this.controls.setSleeping(false);  // Re-enable movement and camera
+
+        if (this.sleepMinigame) {
+            this.sleepMinigame.stop();
+            this.sleepMinigame = null;
+        }
+
+        // Re-lock pointer after minigame ends
+        this.scene.renderer.domElement.requestPointerLock();
+
+        console.log('Player woke up');
+    }
+
+    /**
+     * Handle player death
+     */
+    handleDeath(deathPosition) {
+        if (this.isDead) return;
+
+        this.isDead = true;
+        this.controls.setDead(true);
+
+        // Release pointer lock so user can click revive button
+        document.exitPointerLock();
+
+        // Show death overlay with revive callback
+        this.hud.showDeathOverlay(() => {
+            // Callback when revive button is clicked
+            if (this.network && this.network.isConnected) {
+                this.network.sendRevive();
+            }
+        });
+
+        console.log('[Game] Player died at', deathPosition);
+    }
+
+    /**
+     * Handle player revive
+     */
+    handleRevive(position, needs) {
+        this.isDead = false;
+        this.controls.setDead(false);
+        this.hud.hideDeathOverlay();
+
+        // Re-lock pointer
+        this.scene.renderer.domElement.requestPointerLock();
+
+        console.log('[Game] Player revived at', position);
     }
 }
 

@@ -37,11 +37,21 @@ function updateNeeds(player, deltaTime) {
 
     // Handle sleeping state - rest restores instead of decaying
     if (player.playerState === 'sleeping') {
-        needs.rest = Math.min(100, needs.rest + REST_RESTORE_RATE * deltaTime);
+        // Use player's sleep multiplier (set by minigame) or default to base rate
+        const sleepMultiplier = player.sleepMultiplier || (REST_RESTORE_RATE / REST_DECAY_RATE);
+        const effectiveRestoreRate = REST_DECAY_RATE * sleepMultiplier;
+        needs.rest = Math.min(100, needs.rest + effectiveRestoreRate * deltaTime);
 
         // Still decay hunger and thirst while sleeping (can starve in bed)
         needs.hunger = Math.max(0, needs.hunger - HUNGER_DECAY_RATE * deltaTime);
         needs.thirst = Math.max(0, needs.thirst - THIRST_DECAY_RATE * deltaTime);
+
+        // Auto-wake when rest is full
+        if (needs.rest >= 100) {
+            // Note: The actual wake logic should be handled by bed-system
+            // This is just a flag that the game loop should trigger wake
+            player.shouldAutoWake = true;
+        }
     } else {
         // Normal decay for all needs when playing
         needs.hunger = Math.max(0, needs.hunger - HUNGER_DECAY_RATE * deltaTime);

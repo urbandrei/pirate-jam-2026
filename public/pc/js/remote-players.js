@@ -71,6 +71,11 @@ export class RemotePlayers {
     updatePCPlayer(playerObj, data) {
         const mesh = playerObj.mesh;
 
+        // Track sleeping state for pose changes
+        const wasSleeping = playerObj.isSleeping || false;
+        const isSleeping = data.playerState === 'sleeping';
+        playerObj.isSleeping = isSleeping;
+
         // Skip interpolation when grabbed - follow hand position immediately
         if (data.isGrabbed) {
             mesh.position.set(
@@ -88,13 +93,31 @@ export class RemotePlayers {
             mesh.position.z += (tz - mesh.position.z) * 0.3;
         }
 
-        // Update rotation based on look direction
-        if (data.lookRotation) {
+        // Handle sleeping pose
+        if (isSleeping && !wasSleeping) {
+            // Transition to sleeping: lie down on the bed
+            // Player capsule is vertical (Y-up). To lie on back:
+            // - Rotate X by +90° to tilt backward (face up, head toward -Z where pillow is)
+            mesh.rotation.x = Math.PI / 2;
+            mesh.rotation.y = 0;
+            mesh.rotation.z = 0;
+        } else if (!isSleeping && wasSleeping) {
+            // Transition from sleeping: stand up
+            mesh.rotation.x = 0;
+            mesh.rotation.z = 0;
+        }
+
+        // Update rotation based on look direction (only when not sleeping)
+        if (data.lookRotation && !isSleeping) {
             mesh.rotation.y = data.lookRotation.y;
         }
 
-        // Update held item display
-        this.updateRemoteHeldItem(playerObj, data.heldItem);
+        // Update held item display (hide when sleeping)
+        if (isSleeping) {
+            this.updateRemoteHeldItem(playerObj, null);
+        } else {
+            this.updateRemoteHeldItem(playerObj, data.heldItem);
+        }
     }
 
     /**

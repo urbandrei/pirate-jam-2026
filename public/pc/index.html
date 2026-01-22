@@ -195,6 +195,46 @@
         #held-item-hud.empty {
             opacity: 0.5;
         }
+        #held-item-hint {
+            color: rgba(255, 255, 100, 0.9);
+            font-size: 10px;
+            margin-top: 2px;
+        }
+        /* Death Overlay */
+        #death-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            pointer-events: auto;
+            z-index: 100;
+        }
+        #death-text {
+            color: #cc3333;
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        }
+        #revive-button {
+            background: #333;
+            color: white;
+            border: 2px solid #555;
+            padding: 15px 40px;
+            font-size: 18px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        #revive-button:hover {
+            background: #444;
+            border-color: #777;
+        }
     </style>
 </head>
 <body>
@@ -234,6 +274,7 @@
                 <div id="held-item-info">
                     <span id="held-item-name">Empty</span>
                     <span id="held-item-count"></span>
+                    <span id="held-item-hint"></span>
                 </div>
             </div>
             <div id="controls-help">WASD: Move | Mouse: Look | Space: Jump | Q: Drop | Click: Interact | ESC: Release cursor</div>

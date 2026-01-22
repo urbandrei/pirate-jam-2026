@@ -6,6 +6,8 @@ import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { COLORS, WORLD_SIZE, SMALL_ROOM_SIZE, WALL_THICKNESS, DOORWAY_HEIGHT, DOORWAY_WIDTH, ROOM_TYPES, DEFAULT_ROOM_TYPE, ITEMS, STATIONS } from '../shared/constants.js';
 import * as FarmingRenderer from './farming-renderer.js';
 import * as StationRenderer from './station-renderer.js';
+import * as ApplianceRenderer from './appliance-renderer.js';
+import * as BedRenderer from './bed-renderer.js';
 
 export class Scene {
     constructor(container) {
@@ -26,6 +28,16 @@ export class Scene {
 
         // Processing station meshes
         this.stationMeshes = new Map(); // stationId -> group
+
+        // Cafeteria appliance and table meshes
+        this.applianceMeshes = new Map(); // applianceId -> group
+        this.tableMeshes = new Map(); // tableId -> group
+
+        // Dorm bed meshes
+        this.bedMeshes = new Map(); // bedId -> group
+
+        // Player body meshes (dead players)
+        this.bodyMeshes = new Map(); // bodyId -> mesh
 
         // Wall material (shared)
         this.wallMaterial = null;
@@ -197,6 +209,8 @@ export class Scene {
         this.clearRoomLabels();
         this.clearSoilPlots();
         this.clearStations();
+        this.clearAppliances();
+        this.clearBeds();
 
         // Build walls and floors for each cell in the grid
         for (const cell of worldState.grid) {
@@ -211,6 +225,16 @@ export class Scene {
             // Create stations for processing rooms
             if (cell.roomType === 'processing') {
                 this.createStationsForCell(cell);
+            }
+
+            // Create appliances and tables for cafeteria rooms
+            if (cell.roomType === 'cafeteria') {
+                this.createAppliancesForCell(cell);
+            }
+
+            // Create beds for dorm rooms
+            if (cell.roomType === 'dorm') {
+                this.createBedsForCell(cell);
             }
         }
 
@@ -279,6 +303,34 @@ export class Scene {
     }
 
     /**
+     * Clear all appliance meshes
+     */
+    clearAppliances() {
+        for (const [id, group] of this.applianceMeshes) {
+            this.scene.remove(group);
+            ApplianceRenderer.disposeApplianceMesh(group);
+        }
+        this.applianceMeshes.clear();
+
+        for (const [id, group] of this.tableMeshes) {
+            this.scene.remove(group);
+            ApplianceRenderer.disposeApplianceMesh(group);
+        }
+        this.tableMeshes.clear();
+    }
+
+    /**
+     * Clear all bed meshes
+     */
+    clearBeds() {
+        for (const [id, group] of this.bedMeshes) {
+            this.scene.remove(group);
+            BedRenderer.disposeBedMesh(group);
+        }
+        this.bedMeshes.clear();
+    }
+
+    /**
      * Create stations for a processing cell
      * @param {Object} cell - Cell data with x, z coordinates
      */
@@ -295,6 +347,55 @@ export class Scene {
         }
 
         console.log(`[Scene] Created ${stations.length} stations for cell (${cell.x}, ${cell.z})`);
+    }
+
+    /**
+     * Create appliances and tables for a cafeteria cell
+     * @param {Object} cell - Cell data with x, z coordinates
+     */
+    createAppliancesForCell(cell) {
+        // Create appliances
+        const appliances = ApplianceRenderer.getAppliancePositions(cell.x, cell.z);
+        for (const applianceData of appliances) {
+            const group = ApplianceRenderer.createApplianceMesh(applianceData);
+            group.userData.gridX = applianceData.gridX;
+            group.userData.gridZ = applianceData.gridZ;
+
+            this.applianceMeshes.set(applianceData.id, group);
+            this.scene.add(group);
+        }
+
+        // Create tables
+        const tables = ApplianceRenderer.getTablePositions(cell.x, cell.z);
+        for (const tableData of tables) {
+            const group = ApplianceRenderer.createTableMesh(tableData);
+            group.userData.gridX = tableData.gridX;
+            group.userData.gridZ = tableData.gridZ;
+
+            this.tableMeshes.set(tableData.id, group);
+            this.scene.add(group);
+        }
+
+        console.log(`[Scene] Created ${appliances.length} appliances and ${tables.length} tables for cell (${cell.x}, ${cell.z})`);
+    }
+
+    /**
+     * Create beds for a dorm cell
+     * @param {Object} cell - Cell data with x, z coordinates
+     */
+    createBedsForCell(cell) {
+        const beds = BedRenderer.getBedPositions(cell.x, cell.z);
+
+        for (const bedData of beds) {
+            const group = BedRenderer.createBedMesh(bedData);
+            group.userData.gridX = bedData.gridX;
+            group.userData.gridZ = bedData.gridZ;
+
+            this.bedMeshes.set(bedData.id, group);
+            this.scene.add(group);
+        }
+
+        console.log(`[Scene] Created ${beds.length} beds for cell (${cell.x}, ${cell.z})`);
     }
 
     /**
@@ -330,6 +431,81 @@ export class Scene {
                     if (group) {
                         StationRenderer.updateStationMesh(group, station);
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * Update appliance interactions based on player's held item
+     * @param {Object} interactionSystem - Interaction system
+     * @param {Object|null} heldItem - Player's currently held item
+     * @param {Array} appliances - Array of appliance data from server
+     */
+    updateApplianceInteractions(interactionSystem, heldItem, appliances) {
+        if (!interactionSystem) return;
+
+        for (const [applianceId, group] of this.applianceMeshes) {
+            const applianceType = group.userData.applianceType;
+            const interactions = ApplianceRenderer.getApplianceInteractions(applianceType, heldItem);
+
+            if (interactions.length > 0) {
+                // Register or update interactions
+                interactionSystem.registerInteractable(
+                    group,
+                    'APPLIANCE',
+                    applianceId,
+                    interactions
+                );
+                // Also update prompt if this is currently targeted
+                interactionSystem.updateInteractablePrompt(group, interactions);
+            } else {
+                interactionSystem.unregisterInteractable(group);
+            }
+        }
+
+        // Update vending machines with their current slot contents
+        if (appliances) {
+            for (const appliance of appliances) {
+                if (appliance.applianceType === 'vending_machine') {
+                    const group = this.applianceMeshes.get(appliance.id);
+                    if (group) {
+                        ApplianceRenderer.updateApplianceMesh(group, appliance);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Update bed interactions based on player state and bed occupancy
+     * @param {Object} interactionSystem - Interaction system
+     * @param {Object} player - Current player data
+     * @param {Array} beds - Array of bed data from server
+     */
+    updateBedInteractions(interactionSystem, player, beds) {
+        if (!interactionSystem || !player) return;
+
+        for (const [bedId, group] of this.bedMeshes) {
+            // Find this bed's data from server
+            const bedData = beds ? beds.find(b => b.id === bedId) : null;
+
+            if (bedData) {
+                // Update bed mesh occupancy visual
+                BedRenderer.updateBedMesh(group, bedData);
+
+                // Get interaction based on bed state and player state
+                const interaction = BedRenderer.getBedInteraction(bedData, player);
+
+                if (interaction) {
+                    interactionSystem.registerInteractable(
+                        group,
+                        'BED',
+                        bedId,
+                        [interaction]
+                    );
+                } else {
+                    interactionSystem.unregisterInteractable(group);
                 }
             }
         }
@@ -816,19 +992,44 @@ export class Scene {
      * Update world objects from server state
      * @param {Array} worldObjects - Array of world object data from server
      * @param {Object} interactionSystem - Interaction system to register objects with
+     * @param {Object} player - Current player data (for bed interactions)
+     * @param {Object|null} heldItem - Player's currently held item
      */
-    updateWorldObjects(worldObjects, interactionSystem) {
+    updateWorldObjects(worldObjects, interactionSystem, player, heldItem) {
         if (!worldObjects) return;
 
-        // Separate plants and stations from items
-        const items = worldObjects.filter(obj => obj.objectType !== 'plant' && obj.objectType !== 'station');
+        // Separate different object types
+        const items = worldObjects.filter(obj =>
+            obj.objectType !== 'plant' &&
+            obj.objectType !== 'station' &&
+            obj.objectType !== 'appliance' &&
+            obj.objectType !== 'table' &&
+            obj.objectType !== 'bed' &&
+            obj.type !== 'player_body'
+        );
         const plants = worldObjects.filter(obj => obj.objectType === 'plant');
+        const stations = worldObjects.filter(obj => obj.objectType === 'station');
+        const appliances = worldObjects.filter(obj => obj.objectType === 'appliance');
+        const beds = worldObjects.filter(obj => obj.objectType === 'bed');
+        const bodies = worldObjects.filter(obj => obj.type === 'player_body');
 
         // Update items
         this._updateItems(items, interactionSystem);
 
+        // Update player bodies
+        this._updateBodies(bodies);
+
         // Update plants
         this._updatePlants(plants, interactionSystem);
+
+        // Update station interactions and visuals
+        this.updateStationInteractions(interactionSystem, heldItem, stations);
+
+        // Update appliance interactions and visuals
+        this.updateApplianceInteractions(interactionSystem, heldItem, appliances);
+
+        // Update bed interactions and visuals
+        this.updateBedInteractions(interactionSystem, player, beds);
     }
 
     /**
@@ -894,6 +1095,41 @@ export class Scene {
                         );
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Update player body meshes (dead players)
+     * @private
+     */
+    _updateBodies(bodies) {
+        // Track which body IDs are in the new state
+        const newIds = new Set(bodies.map(b => b.id));
+
+        // Remove meshes for bodies no longer in state
+        for (const [id, mesh] of this.bodyMeshes) {
+            if (!newIds.has(id)) {
+                this.scene.remove(mesh);
+                if (mesh.geometry) mesh.geometry.dispose();
+                if (mesh.material) mesh.material.dispose();
+                this.bodyMeshes.delete(id);
+            }
+        }
+
+        // Create meshes for new bodies
+        for (const body of bodies) {
+            if (!this.bodyMeshes.has(body.id)) {
+                // Create body mesh (dark gray flat cube)
+                const geometry = new THREE.BoxGeometry(0.6, 0.2, 0.8);
+                const material = new THREE.MeshLambertMaterial({ color: 0x333333 });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.set(body.position.x, body.position.y, body.position.z);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+
+                this.bodyMeshes.set(body.id, mesh);
+                this.scene.add(mesh);
             }
         }
     }

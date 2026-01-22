@@ -4,6 +4,9 @@
 
 const plantSystem = require('./systems/plant-system');
 const stationSystem = require('./systems/station-system');
+const applianceSystem = require('./systems/appliance-system');
+const bedSystem = require('./systems/bed-system');
+const NeedsSystem = require('./systems/needs-system');
 
 class MessageHandler {
     constructor(gameState, playerManager, interactionSystem = null) {
@@ -47,6 +50,12 @@ class MessageHandler {
                 break;
             case 'TIMED_INTERACT_CANCEL':
                 this.handleTimedInteractCancel(peerId, message);
+                break;
+            case 'SLEEP_MINIGAME_COMPLETE':
+                this.handleSleepMinigameComplete(peerId, message);
+                break;
+            case 'REVIVE':
+                this.handleRevive(peerId, message);
                 break;
             default:
                 console.warn(`Unknown message type from ${peerId}:`, message.type);
@@ -146,6 +155,23 @@ class MessageHandler {
         if (result.success) {
             console.log(`[MessageHandler] Block placed successfully, version=${result.version}`);
 
+            // Create room-type-specific entities for the placed cell(s)
+            const cells = blockSize === '1x2'
+                ? (rotation === 0 ? [[gridX, gridZ], [gridX + 1, gridZ]] : [[gridX, gridZ], [gridX, gridZ + 1]])
+                : [[gridX, gridZ]];
+
+            for (const [cellX, cellZ] of cells) {
+                if (roomType === 'farming') {
+                    plantSystem.createSoilPlotsForCell(cellX, cellZ, this.gameState.worldObjects);
+                } else if (roomType === 'processing') {
+                    stationSystem.createStationsForCell(this.gameState.worldObjects, cellX, cellZ);
+                } else if (roomType === 'cafeteria') {
+                    applianceSystem.createAppliancesForCell(this.gameState.worldObjects, cellX, cellZ);
+                } else if (roomType === 'dorm') {
+                    bedSystem.createBedsForCell(this.gameState.worldObjects, cellX, cellZ);
+                }
+            }
+
             // Broadcast to all clients
             this.playerManager.broadcast({
                 type: 'BLOCK_PLACED',
@@ -192,20 +218,26 @@ class MessageHandler {
 
         console.log(`[MessageHandler] CONVERT_ROOM from ${peerId}: grid(${gridX}, ${gridZ}), roomType=${roomType}`);
 
-        // Check if converting FROM farming or processing - need to cleanup entities
+        // Check if converting FROM any room type - need to cleanup entities
         const cellKey = `${gridX},${gridZ}`;
         const currentCell = this.gameState.worldState.grid.get(cellKey);
         const wasFromFarming = currentCell && currentCell.roomType === 'farming';
         const wasFromProcessing = currentCell && currentCell.roomType === 'processing';
+        const wasFromCafeteria = currentCell && currentCell.roomType === 'cafeteria';
+        const wasFromDorm = currentCell && currentCell.roomType === 'dorm';
 
         const result = this.gameState.worldState.setRoomType(gridX, gridZ, roomType);
 
         if (result.success) {
-            // If we converted away from farming, destroy any plants in this cell
+            // If we converted away from farming, destroy any plants and soil plots in this cell
             if (wasFromFarming && roomType !== 'farming') {
-                const removedCount = plantSystem.cleanupPlantsInCell(this.gameState.worldObjects, gridX, gridZ);
-                if (removedCount > 0) {
-                    console.log(`[MessageHandler] Removed ${removedCount} plants from converted farming room`);
+                const removedPlants = plantSystem.cleanupPlantsInCell(this.gameState.worldObjects, gridX, gridZ);
+                if (removedPlants > 0) {
+                    console.log(`[MessageHandler] Removed ${removedPlants} plants from converted farming room`);
+                }
+                const removedPlots = plantSystem.cleanupSoilPlotsInCell(gridX, gridZ, this.gameState.worldObjects);
+                if (removedPlots > 0) {
+                    console.log(`[MessageHandler] Removed ${removedPlots} soil plots from converted farming room`);
                 }
             }
 
@@ -217,11 +249,46 @@ class MessageHandler {
                 }
             }
 
+            // If we converted away from cafeteria, destroy any appliances/tables in this cell
+            if (wasFromCafeteria && roomType !== 'cafeteria') {
+                const removedCount = applianceSystem.cleanupAppliancesInCell(this.gameState.worldObjects, gridX, gridZ);
+                if (removedCount > 0) {
+                    console.log(`[MessageHandler] Removed ${removedCount} appliances/tables from converted cafeteria room`);
+                }
+            }
+
+            // If we converted away from dorm, destroy any beds in this cell (and wake sleeping players)
+            if (wasFromDorm && roomType !== 'dorm') {
+                const removedCount = bedSystem.cleanupBedsInCell(this.gameState.worldObjects, gridX, gridZ, this.gameState);
+                if (removedCount > 0) {
+                    console.log(`[MessageHandler] Removed ${removedCount} beds from converted dorm room`);
+                }
+            }
+
+            // If we converted TO farming, create soil plots
+            if (roomType === 'farming' && !wasFromFarming) {
+                const createdPlots = plantSystem.createSoilPlotsForCell(gridX, gridZ, this.gameState.worldObjects);
+                console.log(`[MessageHandler] Created ${createdPlots.length} soil plots for new farming room`);
+            }
+
             // If we converted TO processing, create stations
             if (roomType === 'processing' && !wasFromProcessing) {
                 const createdStations = stationSystem.createStationsForCell(this.gameState.worldObjects, gridX, gridZ);
                 console.log(`[MessageHandler] Created ${createdStations.length} stations for new processing room`);
             }
+
+            // If we converted TO cafeteria, create appliances and tables
+            if (roomType === 'cafeteria' && !wasFromCafeteria) {
+                const createdObjects = applianceSystem.createAppliancesForCell(this.gameState.worldObjects, gridX, gridZ);
+                console.log(`[MessageHandler] Created ${createdObjects.length} appliances/tables for new cafeteria room`);
+            }
+
+            // If we converted TO dorm, create beds
+            if (roomType === 'dorm' && !wasFromDorm) {
+                const createdBeds = bedSystem.createBedsForCell(this.gameState.worldObjects, gridX, gridZ);
+                console.log(`[MessageHandler] Created ${createdBeds.length} beds for new dorm room`);
+            }
+
             console.log(`[MessageHandler] Room converted successfully, version=${result.version}`);
 
             // Broadcast to all clients
@@ -418,6 +485,88 @@ class MessageHandler {
                 reason: 'Player cancelled'
             });
         }
+    }
+
+    /**
+     * Handle sleep minigame completion from PC player
+     */
+    handleSleepMinigameComplete(peerId, message) {
+        // Only accept from PC players
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'pc') {
+            console.warn(`[MessageHandler] SLEEP_MINIGAME_COMPLETE rejected: not a PC player (${peerId})`);
+            return;
+        }
+
+        // Verify player is actually sleeping
+        if (player.playerState !== 'sleeping') {
+            console.warn(`[MessageHandler] SLEEP_MINIGAME_COMPLETE rejected: player not sleeping (${peerId})`);
+            return;
+        }
+
+        const { score } = message;
+
+        // Validate score
+        const validScore = Math.max(0, Math.min(100, parseInt(score, 10) || 0));
+
+        // Update sleep multiplier based on minigame performance
+        bedSystem.updateSleepMultiplier(player, validScore);
+
+        console.log(`[MessageHandler] SLEEP_MINIGAME_COMPLETE: player ${peerId}, score=${validScore}%, multiplier=${player.sleepMultiplier.toFixed(1)}`);
+
+        // Send confirmation
+        this.playerManager.sendTo(peerId, {
+            type: 'SLEEP_MINIGAME_RESULT',
+            score: validScore,
+            multiplier: player.sleepMultiplier
+        });
+    }
+
+    /**
+     * Handle revive request from dead PC player
+     */
+    handleRevive(peerId, message) {
+        const player = this.gameState.getPlayer(peerId);
+        if (!player) {
+            console.warn(`[MessageHandler] REVIVE rejected: player not found (${peerId})`);
+            return;
+        }
+
+        if (player.type !== 'pc') {
+            console.warn(`[MessageHandler] REVIVE rejected: not a PC player (${peerId})`);
+            return;
+        }
+
+        if (player.alive || player.playerState !== 'dead') {
+            console.warn(`[MessageHandler] REVIVE rejected: player not dead (${peerId})`);
+            return;
+        }
+
+        // Reset player needs
+        NeedsSystem.resetNeeds(player);
+
+        // Respawn at spawn room center
+        player.position = { x: 0, y: 0.9, z: 0 };
+        player.velocity = { x: 0, y: 0, z: 0 };
+        player.grounded = true;
+
+        // Clear any held items
+        player.heldItem = null;
+
+        console.log(`[MessageHandler] Player ${peerId} revived at spawn`);
+
+        // Send confirmation
+        this.playerManager.sendTo(peerId, {
+            type: 'PLAYER_REVIVED',
+            position: player.position,
+            needs: player.needs
+        });
+
+        // Broadcast to other players
+        this.playerManager.broadcast({
+            type: 'PLAYER_REVIVED',
+            playerId: peerId
+        }, peerId);
     }
 }
 

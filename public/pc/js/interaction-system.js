@@ -1,8 +1,8 @@
 /**
  * PC Client Interaction System
  *
+ * Server-authoritative: receives available interaction from server
  * Handles:
- * - Raycasting from camera to find interactable objects
  * - Outline highlighting of current target
  * - Interaction prompts
  * - Click handling
@@ -16,17 +16,8 @@ export class InteractionSystem {
         this.scene = scene;      // Scene class instance
         this.camera = camera;    // THREE.Camera
 
-        // Raycaster for interaction detection
-        this.raycaster = new THREE.Raycaster();
-        this.raycaster.far = INTERACTION_RANGE;
-
-        // Current target state
-        this.currentTarget = null;
-        this.currentInteraction = null;
-
-        // Interactable objects registry
-        // Map of mesh.uuid -> { mesh, type, id, interactions }
-        this.interactables = new Map();
+        // Current target state (from server)
+        this.currentInteraction = null; // { targetId, targetType, interactions[], position }
 
         // Outline effect material
         this.outlineMaterial = new THREE.MeshBasicMaterial({
@@ -36,8 +27,9 @@ export class InteractionSystem {
             opacity: 0.5
         });
 
-        // Track outline meshes for cleanup
-        this.outlineMeshes = new Map(); // original.uuid -> outlineMesh
+        // Current outline mesh
+        this.outlineMesh = null;
+        this.outlineTargetId = null;
 
         // UI elements
         this.promptElement = this._createPromptElement();
@@ -53,106 +45,41 @@ export class InteractionSystem {
     }
 
     /**
-     * Register an object as interactable
-     * @param {THREE.Mesh} mesh - The mesh to make interactable
-     * @param {string} type - Interactable type (from INTERACTABLE_TYPES)
-     * @param {string} id - Unique identifier
-     * @param {Array<{type: string, prompt: string}>} interactions - Available interactions
+     * Set the available interaction from server state
+     * @param {Object|null} interaction - { targetId, targetType, interactions[], position } or null
      */
-    registerInteractable(mesh, type, id, interactions) {
-        this.interactables.set(mesh.uuid, {
-            mesh,
-            type,
-            id,
-            interactions
-        });
-
-        // Mark mesh for raycasting
-        mesh.userData.interactable = true;
-        mesh.userData.interactableId = id;
-    }
-
-    /**
-     * Unregister an interactable object
-     * @param {THREE.Mesh} mesh - The mesh to remove
-     */
-    unregisterInteractable(mesh) {
-        this.interactables.delete(mesh.uuid);
-        this._removeOutline(mesh);
-    }
-
-    /**
-     * Update the interaction prompts for an existing interactable
-     * @param {THREE.Mesh} mesh - The mesh to update
-     * @param {Array<{type: string, prompt: string}>} interactions - New interactions
-     */
-    updateInteractablePrompt(mesh, interactions) {
-        const data = this.interactables.get(mesh.uuid);
-        if (data) {
-            data.interactions = interactions;
-            // If this is the current target, update the prompt display
-            if (this.currentTarget === mesh && interactions.length > 0) {
-                this.currentInteraction = interactions[0];
-                this._showPrompt(this.currentInteraction.prompt);
+    setAvailableInteraction(interaction) {
+        // If same target, just update interactions
+        if (interaction && this.currentInteraction &&
+            interaction.targetId === this.currentInteraction.targetId) {
+            this.currentInteraction = interaction;
+            if (interaction.interactions && interaction.interactions.length > 0) {
+                this._showPrompt(interaction.interactions[0].prompt);
             }
+            return;
         }
-    }
 
-    /**
-     * Clear all registered interactables
-     */
-    clearInteractables() {
-        for (const [uuid, data] of this.interactables) {
-            this._removeOutline(data.mesh);
-        }
-        this.interactables.clear();
+        // Clear previous target
         this._clearTarget();
+
+        if (interaction && interaction.interactions && interaction.interactions.length > 0) {
+            this.currentInteraction = interaction;
+
+            // Create outline for target
+            this._createOutlineForTarget(interaction.targetId, interaction.position);
+
+            // Show prompt
+            this._showPrompt(interaction.interactions[0].prompt);
+        }
     }
 
     /**
      * Update interaction system (call each frame)
+     * Now just updates outline position if target exists
      */
     update() {
-        // Cast ray from camera center (crosshair)
-        this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
-
-        // Get all interactable meshes
-        const interactableMeshes = [];
-        for (const [uuid, data] of this.interactables) {
-            interactableMeshes.push(data.mesh);
-        }
-
-        if (interactableMeshes.length === 0) {
-            this._clearTarget();
-            return;
-        }
-
-        // Find intersections (recursive to handle groups)
-        const intersects = this.raycaster.intersectObjects(interactableMeshes, true);
-
-        if (intersects.length > 0) {
-            const hit = intersects[0];
-            // Find the registered interactable (could be the object itself or a parent group)
-            let mesh = hit.object;
-            let data = this.interactables.get(mesh.uuid);
-
-            // If not found, check parent objects (for plant groups)
-            while (!data && mesh.parent) {
-                mesh = mesh.parent;
-                data = this.interactables.get(mesh.uuid);
-            }
-
-            if (data && hit.distance <= INTERACTION_RANGE) {
-                this._setTarget(mesh, data, hit.point);
-            } else {
-                this._clearTarget();
-            }
-        } else {
-            this._clearTarget();
-        }
-
-        // Update outline positions for moving objects
-        this._updateOutlinePositions();
+        // Outline position is fixed based on server-provided position
+        // No raycasting needed
     }
 
     /**
@@ -160,17 +87,13 @@ export class InteractionSystem {
      * @returns {boolean} True if interaction was triggered
      */
     handleClick() {
-        if (this.currentTarget && this.currentInteraction) {
-            const data = this.interactables.get(this.currentTarget.uuid);
-            if (data && this.onInteract) {
-                // Get world position of target
-                const targetPosition = new THREE.Vector3();
-                this.currentTarget.getWorldPosition(targetPosition);
-
+        if (this.currentInteraction && this.currentInteraction.interactions.length > 0) {
+            if (this.onInteract) {
+                const interaction = this.currentInteraction.interactions[0];
                 this.onInteract(
-                    this.currentInteraction.type,
-                    data.id,
-                    { x: targetPosition.x, y: targetPosition.y, z: targetPosition.z }
+                    interaction.type,
+                    this.currentInteraction.targetId,
+                    this.currentInteraction.position
                 );
                 return true;
             }
@@ -183,43 +106,15 @@ export class InteractionSystem {
      * @returns {boolean}
      */
     hasTarget() {
-        return this.currentTarget !== null;
+        return this.currentInteraction !== null;
     }
 
     /**
      * Get current target info
-     * @returns {{ mesh: THREE.Mesh, type: string, id: string, interaction: Object } | null}
+     * @returns {{ targetId: string, targetType: string, interactions: Array, position: Object } | null}
      */
     getCurrentTarget() {
-        if (!this.currentTarget) return null;
-        const data = this.interactables.get(this.currentTarget.uuid);
-        return data ? {
-            mesh: data.mesh,
-            type: data.type,
-            id: data.id,
-            interaction: this.currentInteraction
-        } : null;
-    }
-
-    /**
-     * Set the current interaction target
-     * @private
-     */
-    _setTarget(mesh, data, hitPoint) {
-        // If same target, skip
-        if (this.currentTarget === mesh) return;
-
-        // Clear previous target
-        this._clearTarget();
-
-        this.currentTarget = mesh;
-        this.currentInteraction = data.interactions[0]; // Default to first interaction
-
-        // Add outline highlight
-        this._addOutline(mesh);
-
-        // Show prompt
-        this._showPrompt(this.currentInteraction.prompt);
+        return this.currentInteraction;
     }
 
     /**
@@ -227,89 +122,42 @@ export class InteractionSystem {
      * @private
      */
     _clearTarget() {
-        if (this.currentTarget) {
-            this._removeOutline(this.currentTarget);
-            this.currentTarget = null;
-            this.currentInteraction = null;
-            this._hidePrompt();
-        }
+        this._removeOutline();
+        this.currentInteraction = null;
+        this._hidePrompt();
     }
 
     /**
-     * Add outline highlight to a mesh or group
+     * Create outline at the target position
      * @private
      */
-    _addOutline(mesh) {
-        if (this.outlineMeshes.has(mesh.uuid)) return;
+    _createOutlineForTarget(targetId, position) {
+        if (this.outlineTargetId === targetId) return;
 
-        // Handle groups (like stations) by creating a bounding box outline
-        if (mesh.isGroup || !mesh.geometry) {
-            // Create outline from bounding box
-            const box = new THREE.Box3().setFromObject(mesh);
-            const size = new THREE.Vector3();
-            box.getSize(size);
+        this._removeOutline();
 
-            const geometry = new THREE.BoxGeometry(size.x * 1.05, size.y * 1.05, size.z * 1.05);
-            const outlineMesh = new THREE.Mesh(geometry, this.outlineMaterial);
+        // Create a simple box outline at the position
+        // Size varies by object type - use a default size
+        const size = 0.8;
+        const geometry = new THREE.BoxGeometry(size, size, size);
+        this.outlineMesh = new THREE.Mesh(geometry, this.outlineMaterial);
 
-            // Position at center of bounding box
-            const center = new THREE.Vector3();
-            box.getCenter(center);
-            outlineMesh.position.copy(center);
+        this.outlineMesh.position.set(position.x, position.y, position.z);
+        this.outlineTargetId = targetId;
 
-            outlineMesh.userData.sourceUuid = mesh.uuid;
-            outlineMesh.userData.isGroupOutline = true;
-
-            this.scene.scene.add(outlineMesh);
-            this.outlineMeshes.set(mesh.uuid, outlineMesh);
-            return;
-        }
-
-        // Clone geometry for outline (regular mesh)
-        const geometry = mesh.geometry.clone();
-        const outlineMesh = new THREE.Mesh(geometry, this.outlineMaterial);
-
-        // Scale up slightly for outline effect
-        outlineMesh.scale.copy(mesh.scale).multiplyScalar(1.05);
-
-        // Copy transform
-        outlineMesh.position.copy(mesh.position);
-        outlineMesh.rotation.copy(mesh.rotation);
-        outlineMesh.quaternion.copy(mesh.quaternion);
-
-        // Store reference to source for position updates
-        outlineMesh.userData.sourceUuid = mesh.uuid;
-
-        // Add to scene
-        this.scene.scene.add(outlineMesh);
-        this.outlineMeshes.set(mesh.uuid, outlineMesh);
+        this.scene.scene.add(this.outlineMesh);
     }
 
     /**
-     * Remove outline highlight from a mesh
+     * Remove current outline
      * @private
      */
-    _removeOutline(mesh) {
-        const outlineMesh = this.outlineMeshes.get(mesh.uuid);
-        if (outlineMesh) {
-            this.scene.scene.remove(outlineMesh);
-            outlineMesh.geometry.dispose();
-            this.outlineMeshes.delete(mesh.uuid);
-        }
-    }
-
-    /**
-     * Update outline mesh positions to follow their source meshes
-     * @private
-     */
-    _updateOutlinePositions() {
-        for (const [uuid, outlineMesh] of this.outlineMeshes) {
-            const data = this.interactables.get(uuid);
-            if (data) {
-                outlineMesh.position.copy(data.mesh.position);
-                outlineMesh.rotation.copy(data.mesh.rotation);
-                outlineMesh.quaternion.copy(data.mesh.quaternion);
-            }
+    _removeOutline() {
+        if (this.outlineMesh) {
+            this.scene.scene.remove(this.outlineMesh);
+            this.outlineMesh.geometry.dispose();
+            this.outlineMesh = null;
+            this.outlineTargetId = null;
         }
     }
 
@@ -368,13 +216,7 @@ export class InteractionSystem {
      * Dispose of all resources
      */
     dispose() {
-        // Remove all outlines
-        for (const [uuid, outlineMesh] of this.outlineMeshes) {
-            this.scene.scene.remove(outlineMesh);
-            outlineMesh.geometry.dispose();
-        }
-        this.outlineMeshes.clear();
-        this.interactables.clear();
+        this._removeOutline();
 
         // Remove prompt element
         if (this.promptElement && this.promptElement.parentNode) {
@@ -389,7 +231,6 @@ export class InteractionSystem {
         // Dispose outline material
         this.outlineMaterial.dispose();
 
-        this.currentTarget = null;
         this.currentInteraction = null;
         this.timedInteraction = null;
     }
@@ -405,12 +246,10 @@ export class InteractionSystem {
      * @param {number} duration - Duration in milliseconds
      */
     startTimedInteraction(type, targetId, duration) {
-        // Get target position from current target if available
+        // Get target position from current interaction if available
         let targetPosition = null;
-        if (this.currentTarget) {
-            const pos = new THREE.Vector3();
-            this.currentTarget.getWorldPosition(pos);
-            targetPosition = { x: pos.x, y: pos.y, z: pos.z };
+        if (this.currentInteraction && this.currentInteraction.position) {
+            targetPosition = this.currentInteraction.position;
         }
 
         this.timedInteraction = {
@@ -579,5 +418,26 @@ export class InteractionSystem {
      */
     _hideProgressBar() {
         this.progressBarElement.style.display = 'none';
+    }
+
+    // ============================================
+    // Deprecated methods for backward compatibility
+    // These are no-ops now that server handles interaction detection
+    // ============================================
+
+    registerInteractable(mesh, type, id, interactions) {
+        // No-op - server handles interaction detection
+    }
+
+    unregisterInteractable(mesh) {
+        // No-op - server handles interaction detection
+    }
+
+    updateInteractablePrompt(mesh, interactions) {
+        // No-op - server handles interaction detection
+    }
+
+    clearInteractables() {
+        // No-op - server handles interaction detection
     }
 }

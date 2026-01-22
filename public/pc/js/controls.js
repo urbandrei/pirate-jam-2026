@@ -27,6 +27,8 @@ export class Controls {
         // State
         this.isLocked = false;
         this.isGrabbed = false;
+        this.isSleeping = false;
+        this.isDead = false;
 
         // Callbacks
         this.onLeftClick = null;  // Callback for left-click interaction
@@ -54,6 +56,8 @@ export class Controls {
         // Mouse movement
         document.addEventListener('mousemove', (e) => {
             if (!this.isLocked) return;
+            // Block camera rotation when sleeping or dead
+            if (this.isSleeping || this.isDead) return;
 
             this.yaw -= e.movementX * this.sensitivity;
             this.pitch -= e.movementY * this.sensitivity;
@@ -65,6 +69,8 @@ export class Controls {
         // Keyboard input
         document.addEventListener('keydown', (e) => {
             if (!this.isLocked) return;
+            // Block movement input when sleeping or dead
+            if (this.isSleeping || this.isDead) return;
             this.handleKeyDown(e.code);
         });
 
@@ -143,9 +149,37 @@ export class Controls {
         }
     }
 
+    setSleeping(sleeping) {
+        this.isSleeping = sleeping;
+
+        if (sleeping) {
+            // Clear all movement input
+            this.input.forward = false;
+            this.input.backward = false;
+            this.input.left = false;
+            this.input.right = false;
+            this.input.jump = false;
+            // Lock camera looking straight up (lying in bed)
+            this.pitch = -Math.PI / 2 + 0.1;
+        }
+    }
+
+    setDead(dead) {
+        this.isDead = dead;
+
+        if (dead) {
+            // Clear all movement input
+            this.input.forward = false;
+            this.input.backward = false;
+            this.input.left = false;
+            this.input.right = false;
+            this.input.jump = false;
+        }
+    }
+
     getInput() {
-        // If grabbed, only allow looking (no movement)
-        if (this.isGrabbed) {
+        // If grabbed, sleeping, or dead, no movement
+        if (this.isGrabbed || this.isSleeping || this.isDead) {
             return {
                 forward: false,
                 backward: false,
