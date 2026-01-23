@@ -92,7 +92,12 @@ export const INTERACTIONS = {
     FILL_WATERING_CAN: 'fill_watering_can',
     // Consumable interactions (can be done anywhere)
     DRINK_COFFEE: 'drink_coffee',
-    DRINK_CONTAINER: 'drink_container'
+    DRINK_CONTAINER: 'drink_container',
+    // Camera interactions
+    PICKUP_CAMERA: 'pickup_camera',
+    PLACE_CAMERA: 'place_camera',
+    ADJUST_CAMERA: 'adjust_camera',
+    VIEW_CAMERA: 'view_camera'
 };
 
 export const INTERACTABLE_TYPES = {
@@ -102,7 +107,9 @@ export const INTERACTABLE_TYPES = {
     FOOD_COUNTER: 'food_counter',
     BED: 'bed',
     WORLD_ITEM: 'world_item',
-    APPLIANCE: 'appliance'
+    APPLIANCE: 'appliance',
+    CAMERA: 'camera',
+    MONITOR: 'monitor'
 };
 
 // Item definitions
@@ -172,6 +179,13 @@ export const ITEMS = {
         rotTime: null,
         thirst: 40,       // Restores 40 thirst when consumed
         charges: 3        // Can be used 3 times
+    },
+    security_camera: {
+        name: 'Security Camera',
+        color: 0x333333,  // Dark gray
+        canStack: false,
+        rotTime: null,
+        isCamera: true    // Special flag for camera items
     }
 };
 
@@ -335,3 +349,33 @@ export const WAITING_ROOM = {
 
 // Player limit system
 export const DEFAULT_PLAYER_LIMIT = 10;
+
+// Camera system
+export const CAMERA_TYPES = {
+    SECURITY: 'security',
+    STREAM: 'stream'
+};
+
+export const CAMERA_DEFAULTS = {
+    RESOLUTION: { width: 1920, height: 1080 },
+    FOV: 75,  // Same as player camera
+    RENDER_RATE: 15,  // FPS for camera feeds
+    SECURITY_LIMIT: 5,
+    STREAM_LIMIT: 5
+};
+
+// Camera item (physical object PC players pick up)
+export const CAMERA_ITEM = {
+    name: 'Security Camera',
+    color: 0x333333,
+    size: { width: 0.2, height: 0.15, depth: 0.25 }
+};
+
+// Camera mesh colors
+export const CAMERA_COLORS = {
+    BODY: 0x333333,      // Dark gray body
+    LENS: 0x111111,      // Black lens
+    MOUNT: 0x555555,     // Gray mount bracket
+    LED_ACTIVE: 0x00ff00, // Green LED when active
+    LED_INACTIVE: 0x440000 // Dim red when inactive
+};

@@ -2,7 +2,7 @@
  * Socket.IO network client for PC
  */
 
-import { MSG, createJoinMessage, createInputMessage, createInteractMessage, createTimedInteractStartMessage, createTimedInteractCancelMessage, createSleepMinigameCompleteMessage, createChatMessage, createSetNameMessage } from '../shared/protocol.js';
+import { MSG, createJoinMessage, createInputMessage, createInteractMessage, createTimedInteractStartMessage, createTimedInteractCancelMessage, createSleepMinigameCompleteMessage, createChatMessage, createSetNameMessage, createEnterCameraViewMessage, createExitCameraViewMessage } from '../shared/protocol.js';
 
 export class Network {
     constructor() {
@@ -49,6 +49,13 @@ export class Network {
 
         // Stream chat callbacks
         this.onStreamChatReceived = null;
+
+        // Camera callbacks
+        this.onCameraPlaced = null;
+        this.onCameraPickedUp = null;
+        this.onCameraAdjusted = null;
+        this.onCameraLimitsUpdated = null;
+        this.onCamerasUpdate = null;  // For STATE_UPDATE cameras array
 
         // Status element
         this.statusEl = document.getElementById('status');
@@ -119,6 +126,10 @@ export class Network {
             case MSG.STATE_UPDATE:
                 if (this.onStateUpdate) {
                     this.onStateUpdate(message.state);
+                }
+                // Also pass cameras array if present
+                if (message.cameras && this.onCamerasUpdate) {
+                    this.onCamerasUpdate(message.cameras);
                 }
                 break;
 
@@ -293,6 +304,35 @@ export class Network {
                     this.onStreamChatReceived(message);
                 }
                 break;
+
+            // Camera messages
+            case MSG.CAMERA_PLACED:
+                console.log('Camera placed:', message.camera);
+                if (this.onCameraPlaced) {
+                    this.onCameraPlaced(message.camera);
+                }
+                break;
+
+            case MSG.CAMERA_PICKED_UP:
+                console.log('Camera picked up:', message.cameraId);
+                if (this.onCameraPickedUp) {
+                    this.onCameraPickedUp(message.cameraId);
+                }
+                break;
+
+            case MSG.CAMERA_ADJUSTED:
+                console.log('Camera adjusted:', message.cameraId);
+                if (this.onCameraAdjusted) {
+                    this.onCameraAdjusted(message.cameraId, message.rotation);
+                }
+                break;
+
+            case MSG.CAMERA_LIMITS_UPDATED:
+                console.log('Camera limits updated:', message.limits);
+                if (this.onCameraLimitsUpdated) {
+                    this.onCameraLimitsUpdated(message.limits);
+                }
+                break;
         }
     }
 
@@ -336,6 +376,14 @@ export class Network {
 
     sendJoin() {
         this.send(createJoinMessage('pc'));
+    }
+
+    sendEnterCameraView(cameraId) {
+        this.send(createEnterCameraViewMessage(cameraId));
+    }
+
+    sendExitCameraView() {
+        this.send(createExitCameraViewMessage());
     }
 
     updateStatus(text) {

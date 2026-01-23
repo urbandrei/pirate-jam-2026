@@ -16,6 +16,14 @@ export const MSG = {
     SLEEP_MINIGAME_COMPLETE: 'SLEEP_MINIGAME_COMPLETE',
     REVIVE: 'REVIVE',
 
+    // Camera (Client -> Server)
+    PLACE_CAMERA: 'PLACE_CAMERA',
+    PICKUP_CAMERA: 'PICKUP_CAMERA',
+    ADJUST_CAMERA: 'ADJUST_CAMERA',
+    ENTER_CAMERA_VIEW: 'ENTER_CAMERA_VIEW',
+    EXIT_CAMERA_VIEW: 'EXIT_CAMERA_VIEW',
+    SET_CAMERA_LIMITS: 'SET_CAMERA_LIMITS',
+
     // Chat (Client -> Server)
     CHAT_MESSAGE: 'CHAT_MESSAGE',
     SET_NAME: 'SET_NAME',
@@ -38,6 +46,14 @@ export const MSG = {
     SLEEP_MINIGAME_RESULT: 'SLEEP_MINIGAME_RESULT',
     PLAYER_DIED: 'PLAYER_DIED',
     PLAYER_REVIVED: 'PLAYER_REVIVED',
+
+    // Camera (Server -> Client)
+    CAMERA_PLACED: 'CAMERA_PLACED',
+    CAMERA_PICKED_UP: 'CAMERA_PICKED_UP',
+    CAMERA_ADJUSTED: 'CAMERA_ADJUSTED',
+    CAMERA_LIMITS_UPDATED: 'CAMERA_LIMITS_UPDATED',
+    CAMERA_NOT_FOUND: 'CAMERA_NOT_FOUND',
+    PLACE_CAMERA_FAILED: 'PLACE_CAMERA_FAILED',
 
     // Chat (Server -> Client)
     CHAT_RECEIVED: 'CHAT_RECEIVED',
@@ -212,3 +228,78 @@ export function createModeratePlayerMessage(action, targetId, options = {}) {
         messageId: options.messageId || null
     };
 }
+
+// Camera message creators
+
+/**
+ * Create a place camera message (PC/VR -> Server)
+ * @param {string} cameraType - 'security' or 'stream'
+ * @param {Object} position - World position {x, y, z}
+ * @param {Object} rotation - Camera rotation {pitch, yaw, roll}
+ */
+export function createPlaceCameraMessage(cameraType, position, rotation) {
+    return {
+        type: MSG.PLACE_CAMERA,
+        cameraType,
+        position,
+        rotation
+    };
+}
+
+/**
+ * Create a pickup camera message (PC -> Server)
+ * @param {string} cameraId - ID of the camera to pick up
+ */
+export function createPickupCameraMessage(cameraId) {
+    return {
+        type: MSG.PICKUP_CAMERA,
+        cameraId
+    };
+}
+
+/**
+ * Create an adjust camera message (PC -> Server)
+ * @param {string} cameraId - ID of the camera to adjust
+ * @param {Object} rotation - New rotation {pitch, yaw, roll}
+ */
+export function createAdjustCameraMessage(cameraId, rotation) {
+    return {
+        type: MSG.ADJUST_CAMERA,
+        cameraId,
+        rotation
+    };
+}
+
+/**
+ * Create an enter camera view message (PC -> Server)
+ * @param {string} cameraId - ID of the camera to view through
+ */
+export function createEnterCameraViewMessage(cameraId) {
+    return {
+        type: MSG.ENTER_CAMERA_VIEW,
+        cameraId
+    };
+}
+
+/**
+ * Create an exit camera view message (PC -> Server)
+ */
+export function createExitCameraViewMessage() {
+    return {
+        type: MSG.EXIT_CAMERA_VIEW
+    };
+}
+
+/**
+ * Create a set camera limits message (VR -> Server)
+ * @param {number} securityLimit - Max security cameras
+ * @param {number} streamLimit - Max stream cameras
+ */
+export function createSetCameraLimitsMessage(securityLimit, streamLimit) {
+    return {
+        type: MSG.SET_CAMERA_LIMITS,
+        securityLimit,
+        streamLimit
+    };
+}
+

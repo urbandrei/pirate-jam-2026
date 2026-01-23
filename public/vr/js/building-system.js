@@ -293,6 +293,9 @@ export class BuildingSystem {
      * Handle pinch start - check if grabbing a palette block or selecting room type
      */
     handlePinchStart(hand) {
+        // Debug: confirm building system is being called
+        this.network.send({ type: 'DEBUG_LOG', source: 'BuildingSystem', message: `handlePinchStart(${hand}) called` });
+
         const pinchPoint = this.hands.getPinchPointPosition(hand);
         if (!pinchPoint) return false;
 
@@ -308,13 +311,14 @@ export class BuildingSystem {
         if (selectedType) {
             this.selectedRoomType = selectedType;
             this.updateSwatchHighlight();
-            console.log(`[BuildingSystem] Selected room type: ${selectedType}`);
+            this.network.send({ type: 'DEBUG_LOG', source: 'BuildingSystem', message: `Selected room type: ${selectedType}, returning true` });
             return true;
         }
 
         // Check if pinching a palette block (for new placement)
         const blockType = this.checkPaletteHit(pinchVR);
         if (blockType) {
+            this.network.send({ type: 'DEBUG_LOG', source: 'BuildingSystem', message: `Grabbed block type: ${blockType}, returning true` });
             this.grabBlockFromPalette(blockType, hand);
             return true;
         }
@@ -322,10 +326,12 @@ export class BuildingSystem {
         // Check if pinching an existing room in replica (for conversion)
         const hitCell = this.checkReplicaRoomHit(pinchVR);
         if (hitCell && this.selectedRoomType !== 'generic') {
+            this.network.send({ type: 'DEBUG_LOG', source: 'BuildingSystem', message: `Converting room at (${hitCell.x}, ${hitCell.z}), returning true` });
             this.requestRoomConversion(hitCell.x, hitCell.z);
             return true;
         }
 
+        this.network.send({ type: 'DEBUG_LOG', source: 'BuildingSystem', message: 'No hit, returning false' });
         return false;
     }
 

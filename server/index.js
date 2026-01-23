@@ -108,6 +108,7 @@ app.use('/pc', express.static(path.join(__dirname, '../public/pc')));
 app.use('/vr', express.static(path.join(__dirname, '../public/vr')));
 app.use('/shared', express.static(path.join(__dirname, '../public/shared')));
 app.use('/admin', express.static(path.join(__dirname, '../public/admin')));
+app.use('/camera-viewer', express.static(path.join(__dirname, '../public/camera-viewer')));
 
 // Root redirect
 app.get('/', (req, res) => {
@@ -122,6 +123,12 @@ app.get('/', (req, res) => {
                 <li><a href="/vr/" style="color: #4fc3f7;">VR Client</a> - Meta Quest WebXR</li>
             </ul>
             <p>Players connected: <span id="count">0</span></p>
+
+            <hr style="margin: 20px 0; border-color: #444;">
+            <h3>Cameras</h3>
+            <ul>
+                <li><a href="/cameras" style="color: #4fc3f7;">Camera Navigation</a> - View all camera feeds</li>
+            </ul>
 
             <hr style="margin: 20px 0; border-color: #444;">
             <h3>Admin</h3>
@@ -318,6 +325,166 @@ app.post('/api/stream/twitch/disconnect', async (req, res) => {
     res.json({ success: true });
 });
 
+// ==================== Camera Routes ====================
+
+// Camera viewer pages (public, no auth)
+app.get('/sec-cam/:id', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/camera-viewer/index.html'));
+});
+
+app.get('/stream-cam/:id', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/camera-viewer/index.html'));
+});
+
+// Camera navigation page
+app.get('/cameras', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Camera Navigation</title>
+            <style>
+                body {
+                    font-family: 'Segoe UI', sans-serif;
+                    background: #1a1a2e;
+                    color: #eee;
+                    padding: 40px;
+                    max-width: 600px;
+                    margin: 0 auto;
+                }
+                h1 { color: #4fc3f7; margin-bottom: 30px; }
+                h2 { color: #aaa; font-size: 18px; margin-top: 30px; }
+                .input-group {
+                    display: flex;
+                    gap: 10px;
+                    margin: 15px 0;
+                }
+                input[type="number"] {
+                    padding: 12px;
+                    font-size: 16px;
+                    border: 2px solid #444;
+                    border-radius: 4px;
+                    background: #2a2a4e;
+                    color: #fff;
+                    width: 100px;
+                }
+                button {
+                    padding: 12px 24px;
+                    font-size: 14px;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-weight: bold;
+                }
+                .sec-btn { background: #2196F3; color: white; }
+                .stream-btn { background: #9c27b0; color: white; }
+                button:hover { opacity: 0.9; }
+                .camera-list {
+                    margin-top: 10px;
+                    padding: 10px;
+                    background: #2a2a4e;
+                    border-radius: 4px;
+                }
+                .camera-list a {
+                    display: inline-block;
+                    margin: 5px;
+                    padding: 8px 16px;
+                    background: #444;
+                    color: #4fc3f7;
+                    text-decoration: none;
+                    border-radius: 4px;
+                }
+                .camera-list a:hover { background: #555; }
+                .empty { color: #888; font-style: italic; }
+                .back-link { margin-top: 30px; }
+                .back-link a { color: #4fc3f7; }
+            </style>
+        </head>
+        <body>
+            <h1>Camera Navigation</h1>
+
+            <h2>Quick Access</h2>
+            <div class="input-group">
+                <input type="number" id="cam-num" placeholder="Camera #" min="1">
+                <button class="sec-btn" onclick="goToSecCam()">Security Cam</button>
+                <button class="stream-btn" onclick="goToStreamCam()">Stream Cam</button>
+            </div>
+
+            <h2>Active Security Cameras</h2>
+            <div id="sec-cameras" class="camera-list"><span class="empty">Loading...</span></div>
+
+            <h2>Active Stream Cameras</h2>
+            <div id="stream-cameras" class="camera-list"><span class="empty">Loading...</span></div>
+
+            <div class="back-link">
+                <a href="/">Back to Home</a>
+            </div>
+
+            <script>
+                function goToSecCam() {
+                    const num = document.getElementById('cam-num').value;
+                    if (num) window.location.href = '/sec-cam/' + num;
+                }
+                function goToStreamCam() {
+                    const num = document.getElementById('cam-num').value;
+                    if (num) window.location.href = '/stream-cam/' + num;
+                }
+
+                // Allow Enter key to navigate
+                document.getElementById('cam-num').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') goToSecCam();
+                });
+
+                // Load camera list
+                async function loadCameras() {
+                    try {
+                        const response = await fetch('/api/cameras');
+                        const data = await response.json();
+
+                        const secDiv = document.getElementById('sec-cameras');
+                        const streamDiv = document.getElementById('stream-cameras');
+
+                        if (data.security.length > 0) {
+                            secDiv.innerHTML = data.security.map(id =>
+                                '<a href="/sec-cam/' + id.replace('cam_', '') + '">#' + id.replace('cam_', '') + '</a>'
+                            ).join('');
+                        } else {
+                            secDiv.innerHTML = '<span class="empty">No security cameras active</span>';
+                        }
+
+                        if (data.stream.length > 0) {
+                            streamDiv.innerHTML = data.stream.map(id =>
+                                '<a href="/stream-cam/' + id.replace('cam_', '') + '">#' + id.replace('cam_', '') + '</a>'
+                            ).join('');
+                        } else {
+                            streamDiv.innerHTML = '<span class="empty">No stream cameras active</span>';
+                        }
+                    } catch (e) {
+                        console.error('Failed to load cameras:', e);
+                    }
+                }
+
+                loadCameras();
+                setInterval(loadCameras, 5000);
+            </script>
+        </body>
+        </html>
+    `);
+});
+
+// API endpoint for camera list
+app.get('/api/cameras', (req, res) => {
+    const cameraSystem = messageHandler.getCameraSystem();
+    const cameras = cameraSystem.getAllCameras();
+
+    res.json({
+        security: cameras.filter(c => c.type === 'security').map(c => c.id),
+        stream: cameras.filter(c => c.type === 'stream').map(c => c.id),
+        limits: cameraSystem.getLimits(),
+        stats: cameraSystem.getCameraStats()
+    });
+});
+
 // Set dev mode flag for needs system
 NeedsSystem.setDevMode(isDevMode);
 
@@ -343,6 +510,9 @@ io.on('connection', (socket) => {
         // Check if this was an active player (opens a slot)
         const player = gameState.getPlayer(socket.id);
         const wasActivePlayer = player && player.alive;
+
+        // Clean up cameras owned by this player
+        messageHandler.handlePlayerDisconnect(socket.id);
 
         playerManager.handleDisconnection(socket.id);
 
@@ -499,15 +669,23 @@ function gameLoop() {
 
             // Only send STATE_UPDATE to playing/sleeping players (not dead/waiting)
             // Dead/waiting players have local-only waiting room experience
+            const cameraSystem = messageHandler.getCameraSystem();
             const stateMessage = {
                 type: 'STATE_UPDATE',
-                state: gameState.getSerializableState()
+                state: gameState.getSerializableState(),
+                cameras: cameraSystem.getCamerasForStateUpdate()
             };
             for (const player of gameState.getAllPlayers()) {
                 if (player.playerState === 'dead' || player.playerState === 'waiting') {
                     continue;
                 }
                 playerManager.sendTo(player.id, stateMessage);
+            }
+
+            // Also send STATE_UPDATE to web viewers
+            const webViewers = cameraSystem.webViewers;
+            for (const [viewerId] of webViewers) {
+                playerManager.sendTo(viewerId, stateMessage);
             }
         }
 

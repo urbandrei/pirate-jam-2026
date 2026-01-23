@@ -16,6 +16,7 @@ import { RemotePlayers } from './remote-players.js';
 import { BuildingSystem } from './building-system.js';
 import { StatsPanel } from './stats-panel.js';
 import { ChatPanel } from './chat-panel.js';
+import { StreamCameraSystem } from './stream-camera-system.js';
 import { NETWORK_RATE, GIANT_SCALE } from '../../pc/shared/constants.js';
 
 class VRGame {
@@ -25,6 +26,7 @@ class VRGame {
         this.network = null;
         this.remotePlayers = null;
         this.buildingSystem = null;
+        this.streamCameraSystem = null;
         this.statsPanel = null;
         this.chatPanel = null;
         this.disposed = false;
@@ -95,6 +97,10 @@ class VRGame {
         // Setup building system (after network is ready)
         this.buildingSystem = new BuildingSystem(this.scene.scene, this.hands, this.network);
         this.setupBuildingCallbacks();
+
+        // Setup stream camera system (VR camera placement)
+        this.streamCameraSystem = new StreamCameraSystem(this.scene.scene, this.hands, this.network);
+        this.setupCameraCallbacks();
 
         // Hook cleanup to VR session end
         this.scene.onSessionEnd = () => {
@@ -179,7 +185,11 @@ class VRGame {
         const originalOnPinchEnd = this.hands.onPinchEnd;
 
         this.hands.onPinchStart = (hand) => {
-            // Try building system first
+            // Try stream camera system first (it's further from building palette)
+            if (this.streamCameraSystem && this.streamCameraSystem.handlePinchStart(hand)) {
+                return; // Stream camera system handled it
+            }
+            // Try building system
             if (this.buildingSystem && this.buildingSystem.handlePinchStart(hand)) {
                 return; // Building system handled it
             }
@@ -190,13 +200,45 @@ class VRGame {
         };
 
         this.hands.onPinchEnd = (hand) => {
-            // Try building system first
+            // Try stream camera system first
+            if (this.streamCameraSystem && this.streamCameraSystem.handlePinchEnd(hand)) {
+                return; // Stream camera system handled it
+            }
+            // Try building system
             if (this.buildingSystem && this.buildingSystem.handlePinchEnd(hand)) {
                 return; // Building system handled it
             }
             // Otherwise, call original handler if exists
             if (originalOnPinchEnd) {
                 originalOnPinchEnd(hand);
+            }
+        };
+    }
+
+    setupCameraCallbacks() {
+        // Handle camera placement confirmations
+        this.network.onCameraPlaced = (camera) => {
+            if (this.streamCameraSystem) {
+                this.streamCameraSystem.onCameraPlaced(camera);
+            }
+        };
+
+        this.network.onCameraPickedUp = (cameraId) => {
+            if (this.streamCameraSystem) {
+                this.streamCameraSystem.onCameraRemoved(cameraId);
+            }
+        };
+
+        this.network.onCameraLimitsUpdated = (limits) => {
+            if (this.streamCameraSystem) {
+                this.streamCameraSystem.updateLimits(limits);
+            }
+        };
+
+        // Handle cameras in state updates
+        this.network.onCamerasUpdate = (cameras) => {
+            if (this.streamCameraSystem) {
+                this.streamCameraSystem.updateFromState(cameras);
             }
         };
     }
@@ -283,6 +325,11 @@ class VRGame {
             // Update building system
             if (this.buildingSystem) {
                 this.buildingSystem.update();
+            }
+
+            // Update stream camera system (moves grabbed camera with hand)
+            if (this.streamCameraSystem) {
+                this.streamCameraSystem.update();
             }
 
             // Send pose to server at fixed rate
@@ -441,6 +488,15 @@ class VRGame {
                 this.buildingSystem = null;
             } catch (err) {
                 console.warn('[VRGame] Error disposing building system:', err);
+            }
+        }
+
+        if (this.streamCameraSystem) {
+            try {
+                this.streamCameraSystem.dispose();
+                this.streamCameraSystem = null;
+            } catch (err) {
+                console.warn('[VRGame] Error disposing stream camera system:', err);
             }
         }
 

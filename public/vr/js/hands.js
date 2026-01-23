@@ -433,9 +433,11 @@ export class Hands {
             }
 
             // Pinch detection based on thumb-index distance
+            let isPinching = false;
+
             if (hasThumbTip && hasIndexTip) {
                 const pinchDistance = this._thumbTipPos.distanceTo(this._indexTipPos);
-                const isPinching = pinchDistance < PINCH_THRESHOLD;
+                isPinching = pinchDistance < PINCH_THRESHOLD;
 
                 // Update pinch indicator position to midpoint between thumb and index - use cached reference
                 const pinchIndicator = handName === 'left' ? this._leftPinchIndicator : this._rightPinchIndicator;
@@ -463,24 +465,32 @@ export class Hands {
                     pinchIndicator.position.copy(this._tempVec3);
                     pinchIndicator.visible = isPinching;
                 }
-
-                // Detect pinch state changes
-                const prevPinching = handName === 'left' ? this.prevLeftPinching : this.prevRightPinching;
-
-                if (isPinching && !prevPinching) {
-                    this.handlePinchStart(handName);
-                } else if (!isPinching && prevPinching) {
-                    this.handlePinchEnd(handName);
+            } else {
+                // Lost tracking of thumb or index - hide pinch indicator
+                const pinchIndicator = handName === 'left' ? this._leftPinchIndicator : this._rightPinchIndicator;
+                if (pinchIndicator) {
+                    pinchIndicator.visible = false;
                 }
+                // If we lost finger tracking, consider pinch released
+                isPinching = false;
+            }
 
-                // Update state
-                if (handName === 'left') {
-                    this.leftPinching = isPinching;
-                    this.prevLeftPinching = isPinching;
-                } else {
-                    this.rightPinching = isPinching;
-                    this.prevRightPinching = isPinching;
-                }
+            // Detect pinch state changes (OUTSIDE the if block so it works even when tracking is lost)
+            const prevPinching = handName === 'left' ? this.prevLeftPinching : this.prevRightPinching;
+
+            if (isPinching && !prevPinching) {
+                this.handlePinchStart(handName);
+            } else if (!isPinching && prevPinching) {
+                this.handlePinchEnd(handName);
+            }
+
+            // Update state
+            if (handName === 'left') {
+                this.leftPinching = isPinching;
+                this.prevLeftPinching = isPinching;
+            } else {
+                this.rightPinching = isPinching;
+                this.prevRightPinching = isPinching;
             }
         } catch (error) {
             console.warn('Error updating hand tracking:', error.message);
@@ -674,6 +684,22 @@ export class Hands {
             x: mesh.position.x * GIANT_SCALE,
             y: mesh.position.y * GIANT_SCALE,
             z: mesh.position.z * GIANT_SCALE
+        };
+    }
+
+    /**
+     * Get the hand rotation as a quaternion
+     * @param {string} hand - 'left' or 'right'
+     * @returns {Object|null} Quaternion {x, y, z, w} or null if not available
+     */
+    getHandRotation(hand = 'right') {
+        const mesh = hand === 'left' ? this.leftHandMesh : this.rightHandMesh;
+        if (!mesh.visible) return null;
+        return {
+            x: mesh.quaternion.x,
+            y: mesh.quaternion.y,
+            z: mesh.quaternion.z,
+            w: mesh.quaternion.w
         };
     }
 

@@ -9,6 +9,7 @@ const bedSystem = require('./systems/bed-system');
 const NeedsSystem = require('./systems/needs-system');
 const ChatSystem = require('./systems/chat-system');
 const ModerationSystem = require('./systems/moderation-system');
+const { CameraSystem, CAMERA_TYPES } = require('./systems/camera-system');
 
 class MessageHandler {
     constructor(gameState, playerManager, interactionSystem = null, playerQueue = null) {
@@ -20,6 +21,9 @@ class MessageHandler {
         // Initialize chat systems
         this.chatSystem = new ChatSystem(playerManager, gameState);
         this.moderationSystem = new ModerationSystem(playerManager, gameState);
+
+        // Initialize camera system
+        this.cameraSystem = new CameraSystem();
 
         // Store names received before JOIN (socketId -> name)
         this.pendingNames = new Map();
@@ -82,6 +86,31 @@ class MessageHandler {
             case 'MODERATE_PLAYER':
                 this.handleModeratePlayer(peerId, message);
                 break;
+            // Camera messages
+            case 'PLACE_CAMERA':
+                this.handlePlaceCamera(peerId, message);
+                break;
+            case 'PICKUP_CAMERA':
+                this.handlePickupCamera(peerId, message);
+                break;
+            case 'ADJUST_CAMERA':
+                this.handleAdjustCamera(peerId, message);
+                break;
+            case 'UPDATE_CAMERA':
+                this.handleUpdateCamera(peerId, message);
+                break;
+            case 'ENTER_CAMERA_VIEW':
+                this.handleEnterCameraView(peerId, message);
+                break;
+            case 'EXIT_CAMERA_VIEW':
+                this.handleExitCameraView(peerId, message);
+                break;
+            case 'SET_CAMERA_LIMITS':
+                this.handleSetCameraLimits(peerId, message);
+                break;
+            case 'DEBUG_LOG':
+                console.log(`[DEBUG ${message.source}] ${peerId}: ${message.message}`);
+                break;
             default:
                 console.warn(`Unknown message type from ${peerId}:`, message.type);
         }
@@ -89,6 +118,12 @@ class MessageHandler {
 
     handleJoin(peerId, message) {
         const playerType = message.playerType || 'pc';
+
+        // Handle viewer connections (web camera viewers)
+        if (playerType === 'viewer') {
+            this.handleViewerJoin(peerId, message);
+            return;
+        }
 
         // Check if player is banned (by session token)
         if (message.sessionToken) {
@@ -196,6 +231,20 @@ class MessageHandler {
         // Only accept poses from VR players
         const player = this.gameState.getPlayer(peerId);
         if (!player || player.type !== 'vr') return;
+
+        // Log occasionally to confirm VR is connected (every 100th message)
+        if (!this._vrPoseCount) this._vrPoseCount = {};
+        if (!this._vrPoseCount[peerId]) this._vrPoseCount[peerId] = 0;
+        this._vrPoseCount[peerId]++;
+        if (this._vrPoseCount[peerId] % 100 === 1) {
+            const lh = message.leftHand;
+            const rh = message.rightHand;
+            if (lh || rh) {
+                console.log(`[VR_POSE] ${peerId} - LH: ${lh ? `(${lh.position?.x?.toFixed(2)}, ${lh.position?.y?.toFixed(2)}, ${lh.position?.z?.toFixed(2)}) pinch=${lh.pinching}` : 'null'}, RH: ${rh ? `(${rh.position?.x?.toFixed(2)}, ${rh.position?.y?.toFixed(2)}, ${rh.position?.z?.toFixed(2)}) pinch=${rh.pinching}` : 'null'}`);
+            } else {
+                console.log(`[VR_POSE] ${peerId} - Both hands null (hand tracking not active?)`);
+            }
+        }
 
         this.gameState.updateVRPose(peerId, {
             head: message.head,
@@ -854,6 +903,295 @@ class MessageHandler {
             reason: result.reason,
             targetId: message.targetId
         });
+    }
+
+    // ==================== Camera Message Handlers ====================
+
+    /**
+     * Handle camera placement from PC (security) or VR (stream) player
+     */
+    handlePlaceCamera(peerId, message) {
+        console.log(`[MessageHandler] PLACE_CAMERA received from ${peerId}:`, JSON.stringify(message));
+
+        const player = this.gameState.getPlayer(peerId);
+        if (!player) {
+            console.warn(`[MessageHandler] PLACE_CAMERA rejected: player not found (${peerId})`);
+            return;
+        }
+
+        const { cameraType, position, rotation } = message;
+
+        // Validate camera type based on player type
+        if (player.type === 'pc' && cameraType !== CAMERA_TYPES.SECURITY) {
+            console.warn(`[MessageHandler] PLACE_CAMERA rejected: PC players can only place security cameras`);
+            this.playerManager.sendTo(peerId, {
+                type: 'PLACE_CAMERA_FAILED',
+                reason: 'PC players can only place security cameras'
+            });
+            return;
+        }
+
+        if (player.type === 'vr' && cameraType !== CAMERA_TYPES.STREAM) {
+            console.warn(`[MessageHandler] PLACE_CAMERA rejected: VR players can only place stream cameras`);
+            this.playerManager.sendTo(peerId, {
+                type: 'PLACE_CAMERA_FAILED',
+                reason: 'VR players can only place stream cameras'
+            });
+            return;
+        }
+
+        // Create the camera
+        const camera = this.cameraSystem.createCamera(cameraType, position, rotation, peerId);
+
+        if (camera) {
+            console.log(`[MessageHandler] Camera placed: ${camera.id} by ${peerId}`);
+
+            // Send confirmation to placer
+            this.playerManager.sendTo(peerId, {
+                type: 'CAMERA_PLACED',
+                camera: camera
+            });
+
+            // Broadcast to all other players
+            this.playerManager.broadcast({
+                type: 'CAMERA_PLACED',
+                camera: camera
+            }, peerId);
+        } else {
+            this.playerManager.sendTo(peerId, {
+                type: 'PLACE_CAMERA_FAILED',
+                reason: 'Camera limit reached or invalid placement'
+            });
+        }
+    }
+
+    /**
+     * Handle camera pickup from PC player
+     */
+    handlePickupCamera(peerId, message) {
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'pc') {
+            console.warn(`[MessageHandler] PICKUP_CAMERA rejected: not a PC player (${peerId})`);
+            return;
+        }
+
+        const { cameraId } = message;
+        const camera = this.cameraSystem.getCamera(cameraId);
+
+        if (!camera) {
+            console.warn(`[MessageHandler] PICKUP_CAMERA rejected: camera not found (${cameraId})`);
+            return;
+        }
+
+        // Only allow picking up security cameras
+        if (camera.type !== CAMERA_TYPES.SECURITY) {
+            console.warn(`[MessageHandler] PICKUP_CAMERA rejected: can only pick up security cameras`);
+            return;
+        }
+
+        // Remove the camera
+        if (this.cameraSystem.removeCamera(cameraId)) {
+            console.log(`[MessageHandler] Camera picked up: ${cameraId} by ${peerId}`);
+
+            // Send confirmation to player who picked up
+            this.playerManager.sendTo(peerId, {
+                type: 'CAMERA_PICKED_UP',
+                cameraId: cameraId
+            });
+
+            // Broadcast removal to all other players
+            this.playerManager.broadcast({
+                type: 'CAMERA_PICKED_UP',
+                cameraId: cameraId,
+                pickedUpBy: peerId
+            }, peerId);
+        }
+    }
+
+    /**
+     * Handle camera rotation adjustment
+     * PC players can adjust security cameras, VR players can adjust stream cameras
+     */
+    handleAdjustCamera(peerId, message) {
+        const player = this.gameState.getPlayer(peerId);
+        if (!player) {
+            console.warn(`[MessageHandler] ADJUST_CAMERA rejected: player not found (${peerId})`);
+            return;
+        }
+
+        const { cameraId, rotation } = message;
+        const camera = this.cameraSystem.getCamera(cameraId);
+
+        if (!camera) {
+            console.warn(`[MessageHandler] ADJUST_CAMERA rejected: camera not found (${cameraId})`);
+            return;
+        }
+
+        // PC players can adjust security cameras, VR players can adjust stream cameras
+        const isValidAdjustment =
+            (player.type === 'pc' && camera.type === CAMERA_TYPES.SECURITY) ||
+            (player.type === 'vr' && camera.type === CAMERA_TYPES.STREAM);
+
+        if (!isValidAdjustment) {
+            console.warn(`[MessageHandler] ADJUST_CAMERA rejected: ${player.type} player cannot adjust ${camera.type} cameras`);
+            return;
+        }
+
+        // Update the camera rotation
+        if (this.cameraSystem.updateRotation(cameraId, rotation)) {
+            // Broadcast to all players
+            this.playerManager.broadcast({
+                type: 'CAMERA_ADJUSTED',
+                cameraId: cameraId,
+                rotation: rotation
+            });
+        }
+    }
+
+    /**
+     * Handle continuous camera updates (position and/or rotation) during VR grab/rotation
+     * Used for live updates while moving/rotating cameras
+     */
+    handleUpdateCamera(peerId, message) {
+        const { cameraId, position, rotation } = message;
+        const camera = this.cameraSystem.getCamera(cameraId);
+
+        if (!camera) {
+            // Camera may not exist yet or was deleted - silently ignore
+            return;
+        }
+
+        // Update position if provided
+        if (position) {
+            this.cameraSystem.updatePosition(cameraId, position);
+        }
+
+        // Update rotation if provided
+        if (rotation) {
+            this.cameraSystem.updateRotation(cameraId, rotation);
+        }
+
+        // No broadcast needed - STATE_UPDATE will include the changes automatically
+    }
+
+    /**
+     * Handle PC player entering camera view mode
+     */
+    handleEnterCameraView(peerId, message) {
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'pc') {
+            console.warn(`[MessageHandler] ENTER_CAMERA_VIEW rejected: not a PC player (${peerId})`);
+            return;
+        }
+
+        const { cameraId } = message;
+
+        // If cameraId is provided, validate camera exists
+        if (cameraId) {
+            const camera = this.cameraSystem.getCamera(cameraId);
+            if (!camera) {
+                console.warn(`[MessageHandler] ENTER_CAMERA_VIEW rejected: camera not found (${cameraId})`);
+                return;
+            }
+        }
+
+        this.cameraSystem.setViewer(peerId, cameraId);
+        console.log(`[MessageHandler] Player ${peerId} entered camera view: ${cameraId || 'placement mode'}`);
+    }
+
+    /**
+     * Handle PC player exiting camera view mode
+     */
+    handleExitCameraView(peerId, message) {
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'pc') {
+            return;
+        }
+
+        this.cameraSystem.setViewer(peerId, null);
+        console.log(`[MessageHandler] Player ${peerId} exited camera view`);
+    }
+
+    /**
+     * Handle VR player setting camera limits
+     */
+    handleSetCameraLimits(peerId, message) {
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'vr') {
+            console.warn(`[MessageHandler] SET_CAMERA_LIMITS rejected: not a VR player (${peerId})`);
+            return;
+        }
+
+        const { securityLimit, streamLimit } = message;
+
+        this.cameraSystem.setLimits(securityLimit, streamLimit);
+
+        // Broadcast new limits to all players
+        this.playerManager.broadcast({
+            type: 'CAMERA_LIMITS_UPDATED',
+            limits: this.cameraSystem.getLimits()
+        });
+    }
+
+    /**
+     * Handle viewer connection (web camera viewer)
+     * Viewers receive STATE_UPDATE but don't participate as players
+     */
+    handleViewerJoin(peerId, message) {
+        const { cameraId } = message;
+
+        // Validate camera exists if specified
+        if (cameraId) {
+            const camera = this.cameraSystem.getCamera(cameraId);
+            if (!camera) {
+                this.playerManager.sendTo(peerId, {
+                    type: 'CAMERA_NOT_FOUND',
+                    cameraId: cameraId
+                });
+                return;
+            }
+        }
+
+        // Register as web viewer
+        this.cameraSystem.registerWebViewer(peerId, cameraId);
+
+        console.log(`[MessageHandler] Viewer ${peerId} joined for camera: ${cameraId || 'none'}`);
+
+        // Send initial state (viewers get the same state as players)
+        this.playerManager.sendTo(peerId, {
+            type: 'JOINED',
+            playerId: peerId,
+            playerType: 'viewer',
+            cameraId: cameraId,
+            state: this.gameState.getSerializableState(),
+            cameras: this.cameraSystem.getAllCameras()
+        });
+    }
+
+    /**
+     * Get camera system (for external access, e.g., state updates)
+     */
+    getCameraSystem() {
+        return this.cameraSystem;
+    }
+
+    /**
+     * Clean up cameras when a player disconnects
+     */
+    handlePlayerDisconnect(peerId) {
+        const removedCameraIds = this.cameraSystem.cleanupPlayerCameras(peerId);
+
+        // Broadcast camera removals
+        for (const cameraId of removedCameraIds) {
+            this.playerManager.broadcast({
+                type: 'CAMERA_PICKED_UP',
+                cameraId: cameraId,
+                reason: 'Owner disconnected'
+            });
+        }
+
+        // Also unregister as web viewer
+        this.cameraSystem.unregisterWebViewer(peerId);
     }
 }
 

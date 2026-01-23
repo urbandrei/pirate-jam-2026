@@ -13,6 +13,8 @@ import { SleepMinigame } from './sleep-minigame.js';
 import { ChatUI } from './chat.js';
 import { SettingsManager } from './settings-manager.js';
 import { SettingsUI } from './settings-ui.js';
+import { CameraFeedSystem } from './camera-feed-system.js';
+import { SecurityRoomRenderer } from './security-room-renderer.js';
 import { INPUT_RATE, ITEMS } from '../shared/constants.js';
 
 class Game {
@@ -28,6 +30,16 @@ class Game {
         this.chatUI = null;
         this.settingsManager = null;
         this.settingsUI = null;
+
+        // Camera systems
+        this.cameraFeedSystem = null;
+        this.securityRoomRenderer = null;
+        this.cameras = new Map();  // Track camera entities from server
+
+        // Camera view state (viewing through a camera)
+        this.isInCameraView = false;
+        this.viewingCameraId = null;
+        this.savedCameraState = null;  // { position, rotation } before entering camera view
 
         this.lastTime = performance.now();
         this.lastInputTime = 0;
@@ -75,6 +87,10 @@ class Game {
 
         // Setup interaction system
         this.interactionSystem = new InteractionSystem(this.scene, this.scene.camera);
+
+        // Setup camera systems
+        this.cameraFeedSystem = new CameraFeedSystem(this.scene.renderer, this.scene.scene);
+        this.securityRoomRenderer = new SecurityRoomRenderer(this.scene.scene);
 
         // Setup home page elements
         this.homePage = document.getElementById('home-page');
@@ -231,11 +247,20 @@ class Game {
             }
         });
 
-        // Escape key to close settings when visible
+        // Escape key to close settings when visible, or exit camera view
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && this.settingsUI.isVisible()) {
-                e.preventDefault();
-                this.settingsUI.hide();
+            if (e.key === 'Escape') {
+                // First check if in camera view
+                if (this.isInCameraView) {
+                    e.preventDefault();
+                    this.exitCameraView();
+                    return;
+                }
+                // Then check settings
+                if (this.settingsUI.isVisible()) {
+                    e.preventDefault();
+                    this.settingsUI.hide();
+                }
             }
         });
 
@@ -639,6 +664,23 @@ class Game {
             this.interactionSystem.completeTimedInteraction(); // Hide progress bar
             console.log(`Timed interaction cancelled: ${reason}`);
         };
+
+        // Camera callbacks
+        this.network.onCameraPlaced = (camera) => {
+            this.handleCameraPlaced(camera);
+        };
+
+        this.network.onCameraPickedUp = (cameraId) => {
+            this.handleCameraPickedUp(cameraId);
+        };
+
+        this.network.onCameraAdjusted = (cameraId, rotation) => {
+            this.handleCameraAdjusted(cameraId, rotation);
+        };
+
+        this.network.onCamerasUpdate = (cameras) => {
+            this.updateCamerasFromState(cameras);
+        };
     }
 
     gameLoop() {
@@ -668,6 +710,12 @@ class Game {
         // Update timed interaction progress (if active)
         if (this.interactionSystem.isInTimedInteraction()) {
             this.interactionSystem.updateTimedInteraction();
+        }
+
+        // Render camera feeds for monitors (throttled at 15fps internally)
+        if (this.cameraFeedSystem && this.cameras.size > 0) {
+            this.cameraFeedSystem.renderAllFeeds();
+            this.securityRoomRenderer.update(this.cameraFeedSystem);
         }
 
         // Send input to server at fixed rate
@@ -842,6 +890,157 @@ class Game {
         pos.z = Math.max(CENTER_Z - HALF_SIZE + RADIUS, Math.min(CENTER_Z + HALF_SIZE - RADIUS, pos.z));
 
         this.player.setPosition(pos);
+    }
+
+    /**
+     * Enter camera view mode - move player's view to a camera's position
+     * @param {string} cameraId - ID of the camera to view through
+     */
+    enterCameraView(cameraId) {
+        const camera = this.cameras.get(cameraId);
+        if (!camera) {
+            console.warn(`[Game] Cannot enter camera view: camera ${cameraId} not found`);
+            return;
+        }
+
+        if (this.isInCameraView) {
+            this.exitCameraView();
+        }
+
+        // Save current camera state
+        this.savedCameraState = {
+            position: this.scene.camera.position.clone(),
+            pitch: this.controls.pitch,
+            yaw: this.controls.yaw
+        };
+
+        // Move camera to the camera entity's position
+        this.scene.camera.position.set(camera.position.x, camera.position.y, camera.position.z);
+
+        // Lock controls to camera's rotation
+        this.controls.pitch = camera.rotation.pitch || 0;
+        this.controls.yaw = camera.rotation.yaw || 0;
+
+        // Disable player movement
+        this.controls.setCameraViewMode(true);
+
+        this.isInCameraView = true;
+        this.viewingCameraId = cameraId;
+
+        // Notify server
+        if (this.network && this.network.isConnected) {
+            this.network.sendEnterCameraView(cameraId);
+        }
+
+        console.log(`[Game] Entered camera view: ${cameraId}`);
+    }
+
+    /**
+     * Exit camera view mode - return player's view to their body
+     */
+    exitCameraView() {
+        if (!this.isInCameraView || !this.savedCameraState) {
+            return;
+        }
+
+        // Restore camera position and rotation
+        this.scene.camera.position.copy(this.savedCameraState.position);
+        this.controls.pitch = this.savedCameraState.pitch;
+        this.controls.yaw = this.savedCameraState.yaw;
+
+        // Re-enable player movement
+        this.controls.setCameraViewMode(false);
+
+        this.isInCameraView = false;
+        const exitedCameraId = this.viewingCameraId;
+        this.viewingCameraId = null;
+        this.savedCameraState = null;
+
+        // Notify server
+        if (this.network && this.network.isConnected) {
+            this.network.sendExitCameraView();
+        }
+
+        console.log(`[Game] Exited camera view: ${exitedCameraId}`);
+    }
+
+    /**
+     * Handle camera placed event from server
+     * @param {Object} camera - Camera entity data
+     */
+    handleCameraPlaced(camera) {
+        this.cameras.set(camera.id, camera);
+
+        // Create feed for render-to-texture (for monitors)
+        this.cameraFeedSystem.createFeed(camera.id, camera.position, camera.rotation);
+
+        console.log(`[Game] Camera placed: ${camera.id}`);
+    }
+
+    /**
+     * Handle camera picked up event from server
+     * @param {string} cameraId - ID of the camera that was picked up
+     */
+    handleCameraPickedUp(cameraId) {
+        // If we're viewing this camera, exit view
+        if (this.viewingCameraId === cameraId) {
+            this.exitCameraView();
+        }
+
+        this.cameras.delete(cameraId);
+        this.cameraFeedSystem.disposeFeed(cameraId);
+
+        console.log(`[Game] Camera picked up: ${cameraId}`);
+    }
+
+    /**
+     * Handle camera adjusted event from server
+     * @param {string} cameraId - Camera ID
+     * @param {Object} rotation - New rotation {pitch, yaw, roll}
+     */
+    handleCameraAdjusted(cameraId, rotation) {
+        const camera = this.cameras.get(cameraId);
+        if (camera) {
+            camera.rotation = rotation;
+            this.cameraFeedSystem.updateFeedPosition(cameraId, camera.position, rotation);
+        }
+
+        // If we're viewing this camera, update our view
+        if (this.viewingCameraId === cameraId) {
+            this.controls.pitch = rotation.pitch || 0;
+            this.controls.yaw = rotation.yaw || 0;
+        }
+
+        console.log(`[Game] Camera adjusted: ${cameraId}`);
+    }
+
+    /**
+     * Update cameras from state update
+     * @param {Array} cameras - Array of camera entities from server
+     */
+    updateCamerasFromState(cameras) {
+        if (!cameras) return;
+
+        // Update existing cameras and add new ones
+        for (const camera of cameras) {
+            const existing = this.cameras.get(camera.id);
+            if (!existing) {
+                this.handleCameraPlaced(camera);
+            } else {
+                // Update position/rotation
+                existing.position = camera.position;
+                existing.rotation = camera.rotation;
+                this.cameraFeedSystem.updateFeedPosition(camera.id, camera.position, camera.rotation);
+            }
+        }
+
+        // Remove cameras that no longer exist
+        const serverCameraIds = new Set(cameras.map(c => c.id));
+        for (const [id] of this.cameras) {
+            if (!serverCameraIds.has(id)) {
+                this.handleCameraPickedUp(id);
+            }
+        }
     }
 }
 

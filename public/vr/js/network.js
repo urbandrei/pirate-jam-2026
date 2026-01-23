@@ -20,6 +20,12 @@ export class Network {
         this.onChatReceived = null;
         this.onStreamChatReceived = null;
 
+        // Camera callbacks
+        this.onCameraPlaced = null;
+        this.onCameraPickedUp = null;
+        this.onCameraLimitsUpdated = null;
+        this.onCamerasUpdate = null;
+
         // Status element
         this.statusEl = document.getElementById('status');
     }
@@ -109,6 +115,10 @@ export class Network {
                 if (this.onStateUpdate) {
                     this.onStateUpdate(message.state);
                 }
+                // Also pass cameras array if present
+                if (message.cameras && this.onCamerasUpdate) {
+                    this.onCamerasUpdate(message.cameras);
+                }
                 break;
 
             case MSG.PLAYER_JOINED:
@@ -130,6 +140,25 @@ export class Network {
             case MSG.STREAM_CHAT_RECEIVED:
                 if (this.onStreamChatReceived) {
                     this.onStreamChatReceived(message);
+                }
+                break;
+
+            // Camera events
+            case MSG.CAMERA_PLACED:
+                if (this.onCameraPlaced) {
+                    this.onCameraPlaced(message.camera);
+                }
+                break;
+
+            case MSG.CAMERA_PICKED_UP:
+                if (this.onCameraPickedUp) {
+                    this.onCameraPickedUp(message.cameraId);
+                }
+                break;
+
+            case MSG.CAMERA_LIMITS_UPDATED:
+                if (this.onCameraLimitsUpdated) {
+                    this.onCameraLimitsUpdated(message.limits);
                 }
                 break;
         }

@@ -31,9 +31,12 @@ export class Controls {
         this.isSleeping = false;
         this.isDead = false;
         this.isSettingsOpen = false;
+        this.isCameraViewMode = false;  // Camera view mode (placing/adjusting)
 
         // Callbacks
         this.onLeftClick = null;  // Callback for left-click interaction
+        this.onAdjustCamera = null;  // Callback for E key (adjust camera)
+        this.onPickupCamera = null;  // Callback for F key (pickup camera)
 
         // Elements
         this.homePage = document.getElementById('home-page');
@@ -87,6 +90,18 @@ export class Controls {
     }
 
     handleKeyDown(code) {
+        // Camera interaction keys (E and F) - only when not in camera view mode
+        if (!this.isCameraViewMode) {
+            if (code === 'KeyE' && this.onAdjustCamera) {
+                this.onAdjustCamera();
+                return;
+            }
+            if (code === 'KeyF' && this.onPickupCamera) {
+                this.onPickupCamera();
+                return;
+            }
+        }
+
         // Use dynamic key lookup from settings manager
         const action = this.settingsManager.getActionForKey(code);
         if (action && this.input.hasOwnProperty(action)) {
@@ -157,9 +172,22 @@ export class Controls {
         }
     }
 
+    setCameraViewMode(active) {
+        this.isCameraViewMode = active;
+
+        if (active) {
+            // Clear all movement input when entering camera view
+            this.input.forward = false;
+            this.input.backward = false;
+            this.input.left = false;
+            this.input.right = false;
+            this.input.jump = false;
+        }
+    }
+
     getInput() {
-        // If grabbed, sleeping, dead, or settings open - no movement
-        if (this.isGrabbed || this.isSleeping || this.isDead || this.isSettingsOpen) {
+        // If grabbed, sleeping, dead, settings open, or camera view - no movement
+        if (this.isGrabbed || this.isSleeping || this.isDead || this.isSettingsOpen || this.isCameraViewMode) {
             return {
                 forward: false,
                 backward: false,
