@@ -7,6 +7,8 @@ const stationSystem = require('./systems/station-system');
 const applianceSystem = require('./systems/appliance-system');
 const bedSystem = require('./systems/bed-system');
 const NeedsSystem = require('./systems/needs-system');
+const ChatSystem = require('./systems/chat-system');
+const ModerationSystem = require('./systems/moderation-system');
 
 class MessageHandler {
     constructor(gameState, playerManager, interactionSystem = null, playerQueue = null) {
@@ -14,6 +16,13 @@ class MessageHandler {
         this.playerManager = playerManager;
         this.interactionSystem = interactionSystem;
         this.playerQueue = playerQueue;
+
+        // Initialize chat systems
+        this.chatSystem = new ChatSystem(playerManager, gameState);
+        this.moderationSystem = new ModerationSystem(playerManager, gameState);
+
+        // Store names received before JOIN (socketId -> name)
+        this.pendingNames = new Map();
     }
 
     /**
@@ -64,6 +73,15 @@ class MessageHandler {
             case 'JOIN_FROM_QUEUE':
                 this.handleJoinFromQueue(peerId, message);
                 break;
+            case 'SET_NAME':
+                this.handleSetName(peerId, message);
+                break;
+            case 'CHAT_MESSAGE':
+                this.handleChatMessage(peerId, message);
+                break;
+            case 'MODERATE_PLAYER':
+                this.handleModeratePlayer(peerId, message);
+                break;
             default:
                 console.warn(`Unknown message type from ${peerId}:`, message.type);
         }
@@ -71,6 +89,24 @@ class MessageHandler {
 
     handleJoin(peerId, message) {
         const playerType = message.playerType || 'pc';
+
+        // Check if player is banned (by session token)
+        if (message.sessionToken) {
+            const banInfo = this.moderationSystem.checkBan(message.sessionToken);
+            if (banInfo) {
+                console.log(`[MessageHandler] Banned player attempted to join: ${peerId}`);
+                this.playerManager.sendTo(peerId, {
+                    type: 'BANNED',
+                    expiresAt: banInfo.expiresAt,
+                    reason: banInfo.reason
+                });
+                const socket = this.playerManager.getConnection(peerId);
+                if (socket) {
+                    socket.disconnect(true);
+                }
+                return;
+            }
+        }
 
         // VR players always get in (they manage the game)
         // PC players need to check player limit
@@ -104,21 +140,38 @@ class MessageHandler {
 
         const player = this.playerManager.handleJoin(peerId, playerType);
         if (player) {
-            // Send confirmation with initial state
+            // Apply pending name if SET_NAME was received before JOIN
+            const pendingName = this.pendingNames.get(peerId);
+            if (pendingName) {
+                this.gameState.setPlayerName(peerId, pendingName);
+                this.pendingNames.delete(peerId);
+                console.log(`[MessageHandler] Applied pending name for ${peerId}: ${pendingName}`);
+            }
+
+            // Send confirmation with initial state and session token
             this.playerManager.sendTo(peerId, {
                 type: 'JOINED',
                 playerId: peerId,
+                sessionToken: player.sessionToken,
                 player: player,
                 state: this.gameState.getSerializableState()
             });
 
-            // Notify other players
+            // Send NAME_UPDATED so client updates status display
+            this.playerManager.sendTo(peerId, {
+                type: 'NAME_UPDATED',
+                name: player.displayName,
+                playerId: peerId
+            });
+
+            // Notify other players (displayName now has correct name)
             this.playerManager.broadcast({
                 type: 'PLAYER_JOINED',
                 player: {
                     id: player.id,
                     type: player.type,
-                    position: player.position
+                    position: player.position,
+                    displayName: player.displayName
                 }
             }, peerId);
         }
@@ -711,6 +764,7 @@ class MessageHandler {
             this.playerManager.sendTo(peerId, {
                 type: 'JOINED',
                 playerId: peerId,
+                sessionToken: player.sessionToken,
                 player: player,
                 state: this.gameState.getSerializableState()
             });
@@ -721,10 +775,85 @@ class MessageHandler {
                 player: {
                     id: player.id,
                     type: player.type,
-                    position: player.position
+                    position: player.position,
+                    displayName: player.displayName
                 }
             }, peerId);
         }
+    }
+
+    /**
+     * Handle set name request
+     */
+    handleSetName(peerId, message) {
+        // Check if player exists yet
+        const player = this.gameState.getPlayer(peerId);
+        if (!player) {
+            // Player hasn't joined yet - store name for when they do
+            // Validate name before storing
+            let name = message.name;
+            if (typeof name === 'string') {
+                name = name.trim();
+                if (name.length >= 1 && name.length <= 20 && /^[a-zA-Z0-9 ]+$/.test(name)) {
+                    this.pendingNames.set(peerId, name);
+                    console.log(`[MessageHandler] Stored pending name for ${peerId}: ${name}`);
+                }
+            }
+            return;
+        }
+
+        const result = this.gameState.setPlayerName(peerId, message.name);
+
+        if (result.success) {
+            // Send confirmation to player
+            this.playerManager.sendTo(peerId, {
+                type: 'NAME_UPDATED',
+                name: result.name,
+                playerId: peerId
+            });
+
+            // Broadcast name change to all other players
+            this.playerManager.broadcast({
+                type: 'NAME_UPDATED',
+                name: result.name,
+                playerId: peerId
+            }, peerId);
+        } else {
+            this.playerManager.sendTo(peerId, {
+                type: 'NAME_UPDATE_FAILED',
+                reason: result.reason
+            });
+        }
+    }
+
+    /**
+     * Handle chat message
+     */
+    handleChatMessage(peerId, message) {
+        const result = this.chatSystem.handleMessage(peerId, message, this.moderationSystem);
+
+        if (!result.success) {
+            this.playerManager.sendTo(peerId, {
+                type: 'CHAT_FAILED',
+                reason: result.reason,
+                expiresAt: result.expiresAt
+            });
+        }
+    }
+
+    /**
+     * Handle moderation action (VR-only)
+     */
+    handleModeratePlayer(peerId, message) {
+        const result = this.moderationSystem.handleModeration(peerId, message, this.chatSystem);
+
+        this.playerManager.sendTo(peerId, {
+            type: 'MODERATION_APPLIED',
+            action: message.action,
+            success: result.success,
+            reason: result.reason,
+            targetId: message.targetId
+        });
     }
 }
 

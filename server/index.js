@@ -261,6 +261,9 @@ const playerQueue = new PlayerQueue();
 const interactionSystem = new InteractionSystem(gameState, roomManager, isDevMode, playerQueue);
 const messageHandler = new MessageHandler(gameState, playerManager, interactionSystem, playerQueue);
 
+// Set dev mode flag for needs system
+NeedsSystem.setDevMode(isDevMode);
+
 // Socket.IO event handling
 io.on('connection', (socket) => {
     console.log(`Client connected: ${socket.id}`);

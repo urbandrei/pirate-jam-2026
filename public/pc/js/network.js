@@ -2,7 +2,7 @@
  * Socket.IO network client for PC
  */
 
-import { MSG, createJoinMessage, createInputMessage, createInteractMessage, createTimedInteractStartMessage, createTimedInteractCancelMessage, createSleepMinigameCompleteMessage } from '../shared/protocol.js';
+import { MSG, createJoinMessage, createInputMessage, createInteractMessage, createTimedInteractStartMessage, createTimedInteractCancelMessage, createSleepMinigameCompleteMessage, createChatMessage, createSetNameMessage } from '../shared/protocol.js';
 
 export class Network {
     constructor() {
@@ -39,6 +39,14 @@ export class Network {
         this.onWaitingRoomState = null;
         this.onDoorTimeout = null;
 
+        // Chat callbacks
+        this.onChatReceived = null;
+        this.onChatFailed = null;
+        this.onNameUpdated = null;
+        this.onNameUpdateFailed = null;
+        this.onPlayerMuted = null;
+        this.onPlayerKicked = null;
+
         // Status element
         this.statusEl = document.getElementById('status');
     }
@@ -70,11 +78,9 @@ export class Network {
                 this.playerId = this.socket.id;
                 this.isConnected = true;
                 console.log('Connected with ID:', this.playerId);
-                this.updateStatus('Connected! Click to play');
+                this.updateStatus('Connected');
 
-                // Send join request
-                this.send(createJoinMessage('pc'));
-
+                // Don't auto-join - let home page handle joining
                 if (this.onConnected) this.onConnected();
                 resolve();
             });
@@ -103,7 +109,7 @@ export class Network {
         switch (message.type) {
             case MSG.JOINED:
                 console.log('Joined game:', message);
-                this.updateStatus(`Playing as ${this.playerId.slice(0, 8)}`);
+                // Status will be set by main.js after name is confirmed
                 if (this.onJoined) this.onJoined(message.player, message.state);
                 break;
 
@@ -235,6 +241,48 @@ export class Network {
                     this.onDoorTimeout();
                 }
                 break;
+
+            // Chat messages
+            case MSG.CHAT_RECEIVED:
+                if (this.onChatReceived) {
+                    this.onChatReceived(message);
+                }
+                break;
+
+            case MSG.CHAT_FAILED:
+                console.log('Chat message failed:', message.reason);
+                if (this.onChatFailed) {
+                    this.onChatFailed(message.reason);
+                }
+                break;
+
+            case MSG.NAME_UPDATED:
+                console.log('Name updated to:', message.name);
+                if (this.onNameUpdated) {
+                    this.onNameUpdated(message.name);
+                }
+                break;
+
+            case MSG.NAME_UPDATE_FAILED:
+                console.log('Name update failed:', message.reason);
+                if (this.onNameUpdateFailed) {
+                    this.onNameUpdateFailed(message.reason);
+                }
+                break;
+
+            case MSG.PLAYER_MUTED:
+                console.log('Player muted:', message.playerId);
+                if (this.onPlayerMuted) {
+                    this.onPlayerMuted(message.playerId, message.duration);
+                }
+                break;
+
+            case MSG.PLAYER_KICKED:
+                console.log('Player kicked:', message.playerId);
+                if (this.onPlayerKicked) {
+                    this.onPlayerKicked(message.playerId);
+                }
+                break;
         }
     }
 
@@ -266,6 +314,18 @@ export class Network {
 
     sendRevive() {
         this.send({ type: MSG.REVIVE });
+    }
+
+    sendChatMessage(text) {
+        this.send(createChatMessage(text));
+    }
+
+    sendSetName(name) {
+        this.send(createSetNameMessage(name));
+    }
+
+    sendJoin() {
+        this.send(createJoinMessage('pc'));
     }
 
     updateStatus(text) {

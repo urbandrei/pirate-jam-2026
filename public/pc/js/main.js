@@ -10,6 +10,9 @@ import { RemotePlayers } from './remote-players.js';
 import { HUD } from './hud.js';
 import { InteractionSystem } from './interaction-system.js';
 import { SleepMinigame } from './sleep-minigame.js';
+import { ChatUI } from './chat.js';
+import { SettingsManager } from './settings-manager.js';
+import { SettingsUI } from './settings-ui.js';
 import { INPUT_RATE, ITEMS } from '../shared/constants.js';
 
 class Game {
@@ -22,6 +25,9 @@ class Game {
         this.hud = null;
         this.interactionSystem = null;
         this.sleepMinigame = null;
+        this.chatUI = null;
+        this.settingsManager = null;
+        this.settingsUI = null;
 
         this.lastTime = performance.now();
         this.lastInputTime = 0;
@@ -32,6 +38,15 @@ class Game {
         this.isDead = false;
         this.isInQueue = false;
         this.isInWaitingRoom = false;
+        this.isInGame = false;
+
+        // Home page elements
+        this.homePage = null;
+        this.usernameInput = null;
+        this.joinButton = null;
+        this.queueInfo = null;
+        this.homeError = null;
+        this.playerName = 'Player';
 
         this.init();
     }
@@ -43,8 +58,11 @@ class Game {
         const container = document.getElementById('game-container');
         this.scene = new Scene(container);
 
-        // Setup controls
-        this.controls = new Controls(this.scene.camera, this.scene.renderer.domElement);
+        // Setup settings manager (before controls, as controls needs it)
+        this.settingsManager = new SettingsManager();
+
+        // Setup controls (pass settings manager for dynamic keybindings)
+        this.controls = new Controls(this.scene.camera, this.scene.renderer.domElement, this.settingsManager);
 
         // Setup player (pass camera for held item display)
         this.player = new Player(this.scene, this.scene.camera);
@@ -58,14 +76,34 @@ class Game {
         // Setup interaction system
         this.interactionSystem = new InteractionSystem(this.scene, this.scene.camera);
 
+        // Setup home page elements
+        this.homePage = document.getElementById('home-page');
+        this.usernameInput = document.getElementById('username-input');
+        this.joinButton = document.getElementById('join-button');
+        this.queueInfo = document.getElementById('queue-info');
+        this.homeError = document.getElementById('home-error');
+
+        // Setup home page event listeners
+        this.setupHomePage();
+
         // Wire up click handler from controls
         this.controls.onLeftClick = () => {
             // Check for waiting room door interaction first
             if (this.isInWaitingRoom) {
                 const doorInteraction = this.scene.getWaitingRoomDoorInteraction();
                 if (doorInteraction) {
-                    // Try to join game through door
-                    this.network.sendInteract(doorInteraction.type, doorInteraction.targetId, doorInteraction.position);
+                    // Local distance check before sending to server
+                    const playerPos = this.player.getPosition();
+                    const doorPos = doorInteraction.position;
+                    const dx = playerPos.x - doorPos.x;
+                    const dz = playerPos.z - doorPos.z;
+                    const distance = Math.sqrt(dx * dx + dz * dz);
+
+                    const INTERACTION_RANGE = 2.0;
+                    if (distance <= INTERACTION_RANGE) {
+                        this.network.sendInteract(doorInteraction.type, doorInteraction.targetId, doorInteraction.position);
+                    }
+                    // If too far, simply don't send - no need for error message
                     return;
                 }
             }
@@ -122,18 +160,203 @@ class Game {
         // Setup network
         this.network = new Network();
 
+        // Setup ChatUI (needs network reference)
+        this.chatUI = new ChatUI(this.network);
+
+        // Setup SettingsUI
+        this.settingsUI = new SettingsUI(this.settingsManager);
+
+        // Wire settings close callback
+        this.settingsUI.onClose = () => {
+            this.controls.setSettingsOpen(false);
+            if (this.isInGame && !this.isSleeping) {
+                this.scene.renderer.domElement.requestPointerLock().catch(() => {});
+            }
+        };
+
+        // Wire chat return-to-game callback
+        this.chatUI.onReturnToGame = () => {
+            if (this.isInGame && !this.isSleeping) {
+                // Catch security error if browser cooldown is active
+                this.scene.renderer.domElement.requestPointerLock().catch(() => {});
+            }
+        };
+
+        // Click anywhere to return to game (either from chat, settings, or after Escape)
+        // Use mousedown instead of click for immediate response
+        document.addEventListener('mousedown', (e) => {
+            if (this.isInGame && !this.isSleeping) {
+                const chatContainer = document.getElementById('chat-container');
+                const settingsModal = document.getElementById('settings-modal');
+
+                // Check if settings is open and click is outside the modal
+                if (this.settingsUI.isVisible()) {
+                    if (!settingsModal.contains(e.target)) {
+                        this.settingsUI.hide();
+                        // Check if they clicked on chat
+                        if (chatContainer.contains(e.target)) {
+                            this.chatUI.focus();
+                        }
+                        // onClose callback handles pointer lock
+                    }
+                    return;
+                }
+
+                if (this.chatUI.isFocused()) {
+                    // In chat mode - check if click is outside chat input
+                    if (e.target !== this.chatUI.inputEl) {
+                        this.chatUI.blur();
+                        // Catch security error if user just exited pointer lock
+                        this.scene.renderer.domElement.requestPointerLock().catch(() => {});
+                    }
+                } else if (!document.pointerLockElement) {
+                    // Not in chat, pointer not locked - re-lock on click
+                    // Catch security error if user just exited pointer lock
+                    this.scene.renderer.domElement.requestPointerLock().catch(() => {});
+                }
+            }
+        });
+
+        // Track intentional pointer lock exits (for chat)
+        this.intentionalPointerExit = false;
+
+        // Enter key to open chat when playing
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && this.isInGame && !this.chatUI.isFocused() && !this.isSleeping && !this.settingsUI.isVisible()) {
+                e.preventDefault();
+                // Mark as intentional so we don't open settings
+                this.intentionalPointerExit = true;
+                document.exitPointerLock();
+                this.chatUI.focus();
+            }
+        });
+
+        // Escape key to close settings when visible
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.settingsUI.isVisible()) {
+                e.preventDefault();
+                this.settingsUI.hide();
+            }
+        });
+
+        // Detect pointer lock exit (Escape pressed while playing) to open settings
+        document.addEventListener('pointerlockchange', () => {
+            // Check if pointer lock was just lost (not gained)
+            if (!document.pointerLockElement) {
+                // If it was intentional (chat), reset flag and don't show settings
+                if (this.intentionalPointerExit) {
+                    this.intentionalPointerExit = false;
+                    return;
+                }
+                // If we're in game, not sleeping, and settings not already visible, show settings
+                if (this.isInGame && !this.isSleeping && !this.settingsUI.isVisible() && !this.chatUI.isFocused()) {
+                    this.controls.setSettingsOpen(true);
+                    this.settingsUI.show();
+                }
+            }
+        });
+
+        // Set camera reference for speech bubble billboarding
+        this.remotePlayers.setCamera(this.scene.camera);
+
         this.setupNetworkCallbacks();
 
         // Connect to server
         try {
             await this.network.connect();
             console.log('Connected to game server');
+            // Enable join button once connected
+            this.joinButton.disabled = false;
+            this.joinButton.textContent = 'Join Game';
         } catch (err) {
             console.error('Failed to connect:', err);
+            this.joinButton.textContent = 'Connection Failed';
         }
 
         // Start game loop
         this.gameLoop();
+    }
+
+    /**
+     * Setup home page event listeners
+     */
+    setupHomePage() {
+        // Join button click
+        this.joinButton.addEventListener('click', () => {
+            this.handleJoinClick();
+        });
+
+        // Enter key in username input
+        this.usernameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.handleJoinClick();
+            }
+        });
+
+        // Clear error on input
+        this.usernameInput.addEventListener('input', () => {
+            this.homeError.textContent = '';
+        });
+    }
+
+    /**
+     * Handle join button click
+     */
+    handleJoinClick() {
+        if (!this.network.isConnected) {
+            this.homeError.textContent = 'Not connected to server';
+            return;
+        }
+
+        // Validate and get name
+        let name = this.usernameInput.value.trim();
+
+        // Use default if empty
+        if (!name) {
+            name = 'Player';
+        }
+
+        // Validate: 1-20 chars, alphanumeric + spaces
+        if (name.length > 20) {
+            this.homeError.textContent = 'Name must be 20 characters or less';
+            return;
+        }
+
+        if (!/^[a-zA-Z0-9 ]+$/.test(name)) {
+            this.homeError.textContent = 'Name can only contain letters, numbers, and spaces';
+            return;
+        }
+
+        this.playerName = name;
+        this.chatUI.setLocalPlayerName(name);
+
+        // Disable button while joining
+        this.joinButton.disabled = true;
+        this.joinButton.textContent = 'Joining...';
+
+        // Send SET_NAME first so server can apply it when JOIN is processed
+        this.network.sendSetName(name);
+        this.network.sendJoin();
+    }
+
+    /**
+     * Transition from home page to game
+     */
+    enterGame() {
+        this.isInGame = true;
+
+        // Hide home page
+        this.homePage.style.display = 'none';
+
+        // Show chat
+        this.chatUI.show();
+
+        // Request pointer lock to start game
+        this.scene.renderer.domElement.requestPointerLock();
+
+        // Set local player ID for chat
+        this.chatUI.setLocalPlayerId(this.network.playerId);
     }
 
     /**
@@ -182,9 +405,51 @@ class Game {
     setupNetworkCallbacks() {
         // Handle successful join (including from queue)
         this.network.onJoined = () => {
+            // Name was sent before JOIN, server applies it before broadcasting PLAYER_JOINED
+
             if (this.isInQueue) {
                 this.handleJoinedFromQueue();
+            } else {
+                // First time joining - transition from home page
+                this.enterGame();
             }
+        };
+
+        // Chat callbacks
+        this.network.onChatReceived = (message) => {
+            const isLocal = message.senderId === this.network.playerId;
+            this.chatUI.addMessage(message.senderName, message.text, isLocal, message.senderId);
+
+            // Show speech bubble above sender (for all players including local - visible to others)
+            if (!isLocal) {
+                this.remotePlayers.showSpeechBubble(message.senderId, message.text);
+            }
+        };
+
+        this.network.onChatFailed = (reason) => {
+            this.chatUI.addSystemMessage(`Message failed: ${reason}`);
+        };
+
+        this.network.onNameUpdated = (name) => {
+            this.playerName = name;
+            this.chatUI.setLocalPlayerName(name);
+            // Update status display with player name
+            this.network.updateStatus(`Playing as ${name}`);
+        };
+
+        this.network.onPlayerJoined = (player) => {
+            if (this.isInGame) {
+                const name = player.displayName || player.id.slice(0, 8);
+                this.chatUI.addSystemMessage(`${name} joined the game`);
+            }
+        };
+
+        this.network.onPlayerMuted = (playerId, duration) => {
+            this.chatUI.addSystemMessage(`A player has been muted`);
+        };
+
+        this.network.onPlayerKicked = (playerId) => {
+            this.chatUI.addSystemMessage(`A player has been kicked`);
         };
 
         this.network.onStateUpdate = (state) => {
@@ -250,6 +515,9 @@ class Game {
 
         this.network.onPlayerLeft = (playerId) => {
             this.remotePlayers.removePlayer(playerId);
+            if (this.isInGame) {
+                this.chatUI.addSystemMessage(`A player left the game`);
+            }
         };
 
         // Interaction response callbacks
@@ -301,6 +569,12 @@ class Game {
             this.isInQueue = true;
             this.isInWaitingRoom = true;
 
+            // Hide home page since we're now in the waiting room
+            this.homePage.style.display = 'none';
+            this.chatUI.show();
+            this.chatUI.setLocalPlayerId(this.network.playerId);
+            this.chatUI.addSystemMessage(`Game is full. You are #${position} in queue.`);
+
             // Initialize player position to waiting room (critical for camera placement)
             if (waitingRoomPosition) {
                 this.player.setPosition(waitingRoomPosition);
@@ -316,6 +590,9 @@ class Game {
                 doorOpen: false,  // Door only opens when game has space
                 joinTimeRemaining: null
             });
+
+            // Request pointer lock for waiting room movement
+            this.scene.renderer.domElement.requestPointerLock();
         };
 
         this.network.onQueueJoined = (position, total) => {
@@ -376,6 +653,9 @@ class Game {
 
         // Update camera based on player position
         this.controls.update(this.player.getPosition());
+
+        // Update remote players (speech bubble animations)
+        this.remotePlayers.update(deltaTime);
 
         // Update interaction system (raycasting and highlighting)
         this.interactionSystem.update();
@@ -463,6 +743,12 @@ class Game {
 
         // Show physical waiting room
         this.scene.showWaitingRoom();
+
+        // Show death message in chat
+        const causeText = cause === 'hunger' ? 'starvation' :
+                         cause === 'thirst' ? 'dehydration' :
+                         cause === 'exhaustion' ? 'exhaustion' : cause;
+        this.chatUI.addSystemMessage(`You died from ${causeText}. Wait to rejoin.`);
 
         console.log('[Game] Player died at', deathPosition, 'cause:', cause, '- teleported to waiting room');
     }

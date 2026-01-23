@@ -3,6 +3,7 @@
  * Maintains canonical state for all players and world
  */
 
+const crypto = require('crypto');
 const WorldState = require('./world-state');
 const itemSystem = require('./systems/item-system');
 const plantSystem = require('./systems/plant-system');
@@ -90,6 +91,9 @@ class GameState {
             },
             alive: true,
             playerState: 'playing', // 'playing' | 'waiting' | 'sleeping'
+            // Chat system
+            displayName: peerId.slice(0, 8), // Default to truncated socket ID
+            sessionToken: crypto.randomUUID(), // For temp ban tracking
             // VR-specific data
             headPosition: null,
             headRotation: null,
@@ -236,6 +240,38 @@ class GameState {
         }
     }
 
+    /**
+     * Set a player's display name
+     * @param {string} peerId - Player's socket ID
+     * @param {string} name - New display name
+     * @returns {Object} Result with success flag
+     */
+    setPlayerName(peerId, name) {
+        const player = this.players.get(peerId);
+        if (!player) {
+            return { success: false, reason: 'Player not found' };
+        }
+
+        if (typeof name !== 'string') {
+            return { success: false, reason: 'Invalid name' };
+        }
+
+        name = name.trim();
+
+        if (name.length < 1 || name.length > 20) {
+            return { success: false, reason: 'Name must be 1-20 characters' };
+        }
+
+        if (!/^[a-zA-Z0-9 ]+$/.test(name)) {
+            return { success: false, reason: 'Name must be alphanumeric (letters, numbers, spaces)' };
+        }
+
+        player.displayName = name;
+        console.log(`[GameState] Player ${peerId} set name to: ${name}`);
+
+        return { success: true, name: name };
+    }
+
     updateVRPose(peerId, pose) {
         const player = this.players.get(peerId);
         if (player && player.type === 'vr') {
@@ -278,6 +314,7 @@ class GameState {
                 needs: player.needs,
                 alive: player.alive,
                 playerState: player.playerState,
+                displayName: player.displayName,
                 headPosition: player.headPosition,
                 headRotation: player.headRotation,
                 leftHand: player.leftHand,

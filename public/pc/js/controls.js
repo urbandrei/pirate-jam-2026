@@ -6,9 +6,10 @@
 import { MOVE_SPEED, PLAYER_EYE_HEIGHT } from '../shared/constants.js';
 
 export class Controls {
-    constructor(camera, domElement) {
+    constructor(camera, domElement, settingsManager) {
         this.camera = camera;
         this.domElement = domElement;
+        this.settingsManager = settingsManager;
 
         // Input state
         this.input = {
@@ -29,12 +30,13 @@ export class Controls {
         this.isGrabbed = false;
         this.isSleeping = false;
         this.isDead = false;
+        this.isSettingsOpen = false;
 
         // Callbacks
         this.onLeftClick = null;  // Callback for left-click interaction
 
         // Elements
-        this.clickToPlay = document.getElementById('click-to-play');
+        this.homePage = document.getElementById('home-page');
         this.crosshair = document.getElementById('crosshair');
         this.grabbedOverlay = document.getElementById('grabbed-overlay');
 
@@ -42,14 +44,9 @@ export class Controls {
     }
 
     setupEventListeners() {
-        // Pointer lock
-        this.clickToPlay.addEventListener('click', () => {
-            this.domElement.requestPointerLock();
-        });
-
+        // Pointer lock change handler
         document.addEventListener('pointerlockchange', () => {
             this.isLocked = document.pointerLockElement === this.domElement;
-            this.clickToPlay.style.display = this.isLocked ? 'none' : 'block';
             this.crosshair.style.display = this.isLocked ? 'block' : 'none';
         });
 
@@ -69,8 +66,10 @@ export class Controls {
         // Keyboard input
         document.addEventListener('keydown', (e) => {
             if (!this.isLocked) return;
-            // Block movement input when sleeping or dead
-            if (this.isSleeping || this.isDead) return;
+            // Block movement input when sleeping, dead, or settings open
+            if (this.isSleeping || this.isDead || this.isSettingsOpen) return;
+            // Block when typing in chat or other inputs
+            if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
             this.handleKeyDown(e.code);
         });
 
@@ -88,50 +87,18 @@ export class Controls {
     }
 
     handleKeyDown(code) {
-        switch (code) {
-            case 'KeyW':
-            case 'ArrowUp':
-                this.input.forward = true;
-                break;
-            case 'KeyS':
-            case 'ArrowDown':
-                this.input.backward = true;
-                break;
-            case 'KeyA':
-            case 'ArrowLeft':
-                this.input.left = true;
-                break;
-            case 'KeyD':
-            case 'ArrowRight':
-                this.input.right = true;
-                break;
-            case 'Space':
-                this.input.jump = true;
-                break;
+        // Use dynamic key lookup from settings manager
+        const action = this.settingsManager.getActionForKey(code);
+        if (action && this.input.hasOwnProperty(action)) {
+            this.input[action] = true;
         }
     }
 
     handleKeyUp(code) {
-        switch (code) {
-            case 'KeyW':
-            case 'ArrowUp':
-                this.input.forward = false;
-                break;
-            case 'KeyS':
-            case 'ArrowDown':
-                this.input.backward = false;
-                break;
-            case 'KeyA':
-            case 'ArrowLeft':
-                this.input.left = false;
-                break;
-            case 'KeyD':
-            case 'ArrowRight':
-                this.input.right = false;
-                break;
-            case 'Space':
-                this.input.jump = false;
-                break;
+        // Use dynamic key lookup from settings manager
+        const action = this.settingsManager.getActionForKey(code);
+        if (action && this.input.hasOwnProperty(action)) {
+            this.input[action] = false;
         }
     }
 
@@ -177,9 +144,22 @@ export class Controls {
         }
     }
 
+    setSettingsOpen(open) {
+        this.isSettingsOpen = open;
+
+        if (open) {
+            // Clear all movement input when opening settings
+            this.input.forward = false;
+            this.input.backward = false;
+            this.input.left = false;
+            this.input.right = false;
+            this.input.jump = false;
+        }
+    }
+
     getInput() {
-        // If grabbed, sleeping, or dead, no movement
-        if (this.isGrabbed || this.isSleeping || this.isDead) {
+        // If grabbed, sleeping, dead, or settings open - no movement
+        if (this.isGrabbed || this.isSleeping || this.isDead || this.isSettingsOpen) {
             return {
                 forward: false,
                 backward: false,

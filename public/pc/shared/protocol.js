@@ -16,6 +16,11 @@ export const MSG = {
     SLEEP_MINIGAME_COMPLETE: 'SLEEP_MINIGAME_COMPLETE',
     REVIVE: 'REVIVE',
 
+    // Chat (Client -> Server)
+    CHAT_MESSAGE: 'CHAT_MESSAGE',
+    SET_NAME: 'SET_NAME',
+    MODERATE_PLAYER: 'MODERATE_PLAYER',
+
     // Server -> Client
     JOINED: 'JOINED',
     PLAYER_JOINED: 'PLAYER_JOINED',
@@ -32,7 +37,19 @@ export const MSG = {
     TIMED_INTERACT_CANCELLED: 'TIMED_INTERACT_CANCELLED',
     SLEEP_MINIGAME_RESULT: 'SLEEP_MINIGAME_RESULT',
     PLAYER_DIED: 'PLAYER_DIED',
-    PLAYER_REVIVED: 'PLAYER_REVIVED'
+    PLAYER_REVIVED: 'PLAYER_REVIVED',
+
+    // Chat (Server -> Client)
+    CHAT_RECEIVED: 'CHAT_RECEIVED',
+    CHAT_DELETED: 'CHAT_DELETED',
+    CHAT_FAILED: 'CHAT_FAILED',
+    NAME_UPDATED: 'NAME_UPDATED',
+    NAME_UPDATE_FAILED: 'NAME_UPDATE_FAILED',
+    MODERATION_APPLIED: 'MODERATION_APPLIED',
+    PLAYER_MUTED: 'PLAYER_MUTED',
+    PLAYER_UNMUTED: 'PLAYER_UNMUTED',
+    PLAYER_KICKED: 'PLAYER_KICKED',
+    BANNED: 'BANNED'
 };
 
 // Message creators for type safety
@@ -151,5 +168,43 @@ export function createSleepMinigameCompleteMessage(score, multiplier) {
         type: MSG.SLEEP_MINIGAME_COMPLETE,
         score,
         multiplier
+    };
+}
+
+/**
+ * Create a chat message (PC/VR -> Server)
+ * @param {string} text - Message text (max 200 chars)
+ */
+export function createChatMessage(text) {
+    return {
+        type: MSG.CHAT_MESSAGE,
+        text: text
+    };
+}
+
+/**
+ * Create a set name message (PC/VR -> Server)
+ * @param {string} name - Display name (1-20 chars, alphanumeric + spaces)
+ */
+export function createSetNameMessage(name) {
+    return {
+        type: MSG.SET_NAME,
+        name: name
+    };
+}
+
+/**
+ * Create a moderation action message (VR -> Server)
+ * @param {string} action - 'mute', 'unmute', 'kick', 'tempban', 'delete_msg'
+ * @param {string} targetId - Player ID to moderate (or null for delete_msg)
+ * @param {Object} options - Optional: { duration, messageId }
+ */
+export function createModeratePlayerMessage(action, targetId, options = {}) {
+    return {
+        type: MSG.MODERATE_PLAYER,
+        action: action,
+        targetId: targetId,
+        duration: options.duration || 0,
+        messageId: options.messageId || null
     };
 }

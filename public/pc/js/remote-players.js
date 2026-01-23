@@ -11,11 +11,24 @@
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { GIANT_SCALE, ITEMS } from '../shared/constants.js';
 import { createPCPlayerMesh, createVRPlayerMeshForPC, FINGER_JOINTS, updateBoneBetweenPoints } from '../shared/player-mesh.js';
+import { SpeechBubble } from './speech-bubble.js';
+import { PlayerNameLabel } from './player-label.js';
 
 export class RemotePlayers {
     constructor(scene) {
         this.scene = scene;
         this.players = new Map(); // playerId -> { mesh, type, data }
+        this.speechBubbles = new Map(); // playerId -> SpeechBubble
+        this.nameLabels = new Map(); // playerId -> PlayerNameLabel
+        this.camera = null; // Set by main.js for billboard facing
+    }
+
+    /**
+     * Set the camera reference for billboard speech bubbles
+     * @param {THREE.Camera} camera
+     */
+    setCamera(camera) {
+        this.camera = camera;
     }
 
     updatePlayers(state, localPlayerId) {
@@ -71,6 +84,17 @@ export class RemotePlayers {
                     lastHeldItemKey: null
                 };
                 this.players.set(playerId, playerObj);
+
+                // Create name label for new player
+                const displayName = playerData.displayName || 'Player';
+                const nameLabel = new PlayerNameLabel(this.scene, displayName);
+                this.nameLabels.set(playerId, nameLabel);
+            }
+
+            // Update name label if player's display name changed
+            const nameLabel = this.nameLabels.get(playerId);
+            if (nameLabel && playerData.displayName) {
+                nameLabel.setName(playerData.displayName);
             }
 
             // Update target position for interpolation (reuse existing object)
@@ -353,5 +377,96 @@ export class RemotePlayers {
             this.scene.remove(playerObj.mesh);
             this.players.delete(playerId);
         }
+
+        // Clean up speech bubble
+        const bubble = this.speechBubbles.get(playerId);
+        if (bubble) {
+            bubble.dispose();
+            this.speechBubbles.delete(playerId);
+        }
+
+        // Clean up name label
+        const label = this.nameLabels.get(playerId);
+        if (label) {
+            label.dispose();
+            this.nameLabels.delete(playerId);
+        }
+    }
+
+    /**
+     * Show a speech bubble above a player
+     * @param {string} playerId - ID of the player
+     * @param {string} text - Message text to display
+     */
+    showSpeechBubble(playerId, text) {
+        let bubble = this.speechBubbles.get(playerId);
+
+        // Create bubble if it doesn't exist
+        if (!bubble) {
+            bubble = new SpeechBubble(this.scene);
+            this.speechBubbles.set(playerId, bubble);
+        }
+
+        // Show the message
+        bubble.show(text);
+
+        // Position immediately if we have the player
+        const playerObj = this.players.get(playerId);
+        if (playerObj) {
+            const pos = playerObj.mesh.position;
+            // Position above player head (mesh center at 0.9m + 1.5m = 2.4m above ground)
+            bubble.setPosition(pos.x, pos.y + 1.5, pos.z);
+        }
+    }
+
+    /**
+     * Update speech bubbles and name labels (call each frame for animations and positioning)
+     * @param {number} deltaTime - Time since last frame in seconds
+     */
+    update(deltaTime) {
+        // Update each speech bubble
+        for (const [playerId, bubble] of this.speechBubbles) {
+            // Update fade animation
+            bubble.update(deltaTime);
+
+            // Update position to follow player
+            const playerObj = this.players.get(playerId);
+            if (playerObj && bubble.isVisible) {
+                const pos = playerObj.mesh.position;
+                bubble.setPosition(pos.x, pos.y + 1.5, pos.z);
+            }
+        }
+
+        // Update name label positions
+        for (const [playerId, label] of this.nameLabels) {
+            const playerObj = this.players.get(playerId);
+            if (playerObj) {
+                const pos = playerObj.mesh.position;
+                // Position name label above player head (mesh center at 0.9m + 1.1m = 2.0m above ground)
+                label.setPosition(pos.x, pos.y + 1.1, pos.z);
+            }
+        }
+    }
+
+    /**
+     * Dispose of all resources
+     */
+    dispose() {
+        // Clean up all players
+        for (const [playerId] of this.players) {
+            this.removePlayer(playerId);
+        }
+
+        // Clean up any remaining speech bubbles
+        for (const [playerId, bubble] of this.speechBubbles) {
+            bubble.dispose();
+        }
+        this.speechBubbles.clear();
+
+        // Clean up any remaining name labels
+        for (const [playerId, label] of this.nameLabels) {
+            label.dispose();
+        }
+        this.nameLabels.clear();
     }
 }

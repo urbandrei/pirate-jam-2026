@@ -230,27 +230,13 @@ class InteractionSystem {
      * @returns {{ valid: boolean, reason?: string }}
      */
     canInteract(player, interactionType, targetId, targetPosition) {
-        // join_game is a special case - allowed when dead/waiting but needs range check
+        // join_game is a special case - allowed when dead/waiting
         if (interactionType === 'join_game') {
             // Must be in waiting room state
             if (player.playerState !== 'dead' && player.playerState !== 'waiting') {
                 return { valid: false, reason: 'Not in waiting room' };
             }
-            // Range check to door (door is at south wall of waiting room)
-            const WAITING_ROOM_CENTER_X = 500;
-            const WAITING_ROOM_CENTER_Z = 500;
-            const WAITING_ROOM_HALF_SIZE = 5;
-            const doorPos = {
-                x: WAITING_ROOM_CENTER_X,
-                y: 1.25,
-                z: WAITING_ROOM_CENTER_Z - WAITING_ROOM_HALF_SIZE  // South wall
-            };
-            const dx = player.position.x - doorPos.x;
-            const dz = player.position.z - doorPos.z;
-            const distance = Math.sqrt(dx * dx + dz * dz);
-            if (distance > INTERACTION_RANGE) {
-                return { valid: false, reason: 'Too far from door' };
-            }
+            // Distance validated client-side (waiting room is local-only experience)
             return { valid: true };
         }
 

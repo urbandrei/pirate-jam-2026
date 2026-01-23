@@ -9,12 +9,32 @@
  * When any need hits 0, the player dies.
  */
 
-// Decay rates (units per second)
-// These match the constants in public/pc/shared/constants.js
-const HUNGER_DECAY_RATE = 100 / 600;  // 0-100 over 10 minutes
-const THIRST_DECAY_RATE = 100 / 480;  // 0-100 over 8 minutes
-const REST_DECAY_RATE = 100 / 900;    // 0-100 over 15 minutes
-const REST_RESTORE_RATE = REST_DECAY_RATE * 5;  // 5x faster when sleeping
+// Dev mode flag - set via setDevMode()
+let isDevMode = false;
+
+// Normal decay rates (units per second)
+const NORMAL_HUNGER_DECAY_RATE = 100 / 600;  // 0-100 over 10 minutes
+const NORMAL_THIRST_DECAY_RATE = 100 / 480;  // 0-100 over 8 minutes
+const NORMAL_REST_DECAY_RATE = 100 / 900;    // 0-100 over 15 minutes
+
+// Active decay rates
+let HUNGER_DECAY_RATE = NORMAL_HUNGER_DECAY_RATE;
+let THIRST_DECAY_RATE = NORMAL_THIRST_DECAY_RATE;
+let REST_DECAY_RATE = NORMAL_REST_DECAY_RATE;
+let REST_RESTORE_RATE = REST_DECAY_RATE * 5;  // 5x faster when sleeping
+
+/**
+ * Set dev mode flag (no longer affects decay rates)
+ * @param {boolean} devMode - Whether dev mode is enabled
+ */
+function setDevMode(devMode) {
+    isDevMode = devMode;
+    // Always use normal decay rates (dev mode no longer speeds up decay)
+    HUNGER_DECAY_RATE = NORMAL_HUNGER_DECAY_RATE;
+    THIRST_DECAY_RATE = NORMAL_THIRST_DECAY_RATE;
+    REST_DECAY_RATE = NORMAL_REST_DECAY_RATE;
+    REST_RESTORE_RATE = REST_DECAY_RATE * 5;
+}
 
 /**
  * Update a player's needs based on elapsed time
@@ -143,9 +163,10 @@ module.exports = {
     calculateAggregateStats,
     resetNeeds,
     getDeathCause,
-    // Export constants for testing
-    HUNGER_DECAY_RATE,
-    THIRST_DECAY_RATE,
-    REST_DECAY_RATE,
-    REST_RESTORE_RATE
+    setDevMode,
+    // Export constants for testing (note: these are the normal rates)
+    HUNGER_DECAY_RATE: NORMAL_HUNGER_DECAY_RATE,
+    THIRST_DECAY_RATE: NORMAL_THIRST_DECAY_RATE,
+    REST_DECAY_RATE: NORMAL_REST_DECAY_RATE,
+    REST_RESTORE_RATE: NORMAL_REST_DECAY_RATE * 5
 };
