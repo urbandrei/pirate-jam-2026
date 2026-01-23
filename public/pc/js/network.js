@@ -47,6 +47,9 @@ export class Network {
         this.onPlayerMuted = null;
         this.onPlayerKicked = null;
 
+        // Stream chat callbacks
+        this.onStreamChatReceived = null;
+
         // Status element
         this.statusEl = document.getElementById('status');
     }
@@ -281,6 +284,13 @@ export class Network {
                 console.log('Player kicked:', message.playerId);
                 if (this.onPlayerKicked) {
                     this.onPlayerKicked(message.playerId);
+                }
+                break;
+
+            // Stream chat messages
+            case MSG.STREAM_CHAT_RECEIVED:
+                if (this.onStreamChatReceived) {
+                    this.onStreamChatReceived(message);
                 }
                 break;
         }

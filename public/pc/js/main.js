@@ -452,6 +452,11 @@ class Game {
             this.chatUI.addSystemMessage(`A player has been kicked`);
         };
 
+        // Stream chat callback (Twitch, etc.) - no speech bubbles for stream messages
+        this.network.onStreamChatReceived = (message) => {
+            this.chatUI.addStreamMessage(message.platform, message.senderName, message.text, message.color);
+        };
+
         this.network.onStateUpdate = (state) => {
             // Skip all state updates while in waiting room (local-only experience)
             // Waiting room players don't receive STATE_UPDATE from server anyway,

@@ -220,6 +220,23 @@
         .chat-message .text {
             color: #ffffff;
         }
+        /* Stream message styling */
+        .chat-message .sender.stream {
+            color: #9146ff; /* Twitch purple default */
+        }
+        .platform-badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 4px;
+            border-radius: 3px;
+            margin-right: 6px;
+            text-transform: uppercase;
+        }
+        .platform-badge.twitch {
+            background: #9146ff;
+            color: white;
+        }
         #chat-input-container {
             padding: 8px;
             border-top: 1px solid rgba(255, 255, 255, 0.1);

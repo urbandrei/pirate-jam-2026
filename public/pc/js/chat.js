@@ -144,6 +144,51 @@ export class ChatUI {
     }
 
     /**
+     * Add a stream chat message (Twitch, YouTube, etc.)
+     * @param {string} platform - Platform name ('twitch', 'youtube', etc.)
+     * @param {string} senderName - Streamer chat username
+     * @param {string} text - Message text
+     * @param {string} color - Optional platform-specific user color
+     */
+    addStreamMessage(platform, senderName, text, color = null) {
+        const messageEl = document.createElement('div');
+        messageEl.className = 'chat-message stream-message';
+
+        // Platform indicator badge
+        const platformEl = document.createElement('span');
+        platformEl.className = `platform-badge ${platform}`;
+        platformEl.textContent = platform === 'twitch' ? 'TTV' : platform.toUpperCase().slice(0, 3);
+
+        const senderEl = document.createElement('span');
+        senderEl.className = 'sender stream';
+        // Use Twitch user color if available
+        if (color) {
+            senderEl.style.color = color;
+        }
+        senderEl.textContent = this.escapeHtml(senderName) + ': ';
+
+        const textEl = document.createElement('span');
+        textEl.className = 'text';
+        textEl.textContent = this.escapeHtml(text);
+
+        messageEl.appendChild(platformEl);
+        messageEl.appendChild(senderEl);
+        messageEl.appendChild(textEl);
+        this.messagesEl.appendChild(messageEl);
+
+        this.messageCount++;
+
+        // Remove oldest messages if over limit
+        while (this.messageCount > MAX_VISIBLE_MESSAGES) {
+            this.messagesEl.removeChild(this.messagesEl.firstChild);
+            this.messageCount--;
+        }
+
+        // Auto-scroll to bottom
+        this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+    }
+
+    /**
      * Escape HTML to prevent XSS
      * @param {string} text - Raw text
      * @returns {string} - Escaped text

@@ -18,6 +18,7 @@ export class Network {
         this.onPlayerJoined = null;
         this.onPlayerLeft = null;
         this.onChatReceived = null;
+        this.onStreamChatReceived = null;
 
         // Status element
         this.statusEl = document.getElementById('status');
@@ -123,6 +124,12 @@ export class Network {
             case MSG.CHAT_RECEIVED:
                 if (this.onChatReceived) {
                     this.onChatReceived(message.senderId, message.senderName, message.text);
+                }
+                break;
+
+            case MSG.STREAM_CHAT_RECEIVED:
+                if (this.onStreamChatReceived) {
+                    this.onStreamChatReceived(message);
                 }
                 break;
         }

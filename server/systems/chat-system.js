@@ -108,6 +108,52 @@ class ChatSystem {
     }
 
     /**
+     * Handle incoming stream chat message (from Twitch, YouTube, etc.)
+     * @param {Object} streamMessage - Message from stream integration
+     *   { platform, userId, username, text, timestamp, color, badges }
+     * @returns {Object} Result with success flag
+     */
+    handleStreamMessage(streamMessage) {
+        const { platform, userId, username, text, timestamp, color, badges } = streamMessage;
+
+        // Create chat message record (with stream-specific fields)
+        const chatMessage = {
+            id: this.generateMessageId(),
+            senderId: `${platform}:${userId}`,
+            senderName: username,
+            senderType: 'stream',
+            platform: platform,
+            text: text,
+            timestamp: timestamp,
+            color: color,
+            badges: badges,
+            deleted: false
+        };
+
+        // Store in history
+        this.messageHistory.push(chatMessage);
+        if (this.messageHistory.length > MESSAGE_HISTORY_SIZE) {
+            this.messageHistory.shift();
+        }
+
+        // Broadcast to all players with stream-specific message type
+        this.playerManager.broadcast({
+            type: 'STREAM_CHAT_RECEIVED',
+            id: chatMessage.id,
+            senderId: chatMessage.senderId,
+            senderName: chatMessage.senderName,
+            platform: chatMessage.platform,
+            text: chatMessage.text,
+            timestamp: chatMessage.timestamp,
+            color: chatMessage.color
+        });
+
+        console.log(`[StreamChat] [${platform}] ${username}: ${text}`);
+
+        return { success: true, messageId: chatMessage.id };
+    }
+
+    /**
      * Delete a message by ID (for moderation)
      * @param {string} messageId - Message to delete
      * @returns {boolean} True if found and deleted

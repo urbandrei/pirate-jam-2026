@@ -158,6 +158,19 @@ class VRGame {
                 this.chatPanel.addMessage(senderId, senderName, text);
             }
         };
+
+        // Stream chat callback (Twitch, etc.)
+        this.network.onStreamChatReceived = (message) => {
+            if (this.chatPanel) {
+                this.chatPanel.addMessage(
+                    message.senderId,
+                    message.senderName,
+                    message.text,
+                    message.platform,
+                    message.color
+                );
+            }
+        };
     }
 
     setupBuildingCallbacks() {

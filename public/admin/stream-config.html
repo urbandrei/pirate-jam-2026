@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Configuration - Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 40px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 {
+            margin-bottom: 30px;
+            color: #f0f0f0;
+        }
+
+        /* Auth Section */
+        .auth-section {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        .auth-section.hidden { display: none; }
+
+        /* Config Section */
+        .config-section {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 30px;
+            border-radius: 12px;
+        }
+        .config-section.hidden { display: none; }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.8);
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            margin-bottom: 16px;
+        }
+        input:focus {
+            border-color: rgba(100, 200, 255, 0.6);
+            outline: none;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #4a9eff, #2d7dd2);
+            color: white;
+        }
+        .btn-primary:hover { transform: translateY(-2px); }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-danger:hover { background: #c82333; }
+        .btn-danger:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .hidden { display: none; }
+
+        /* Status Display */
+        .status-card {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        .status-indicator.connected { background: #28a745; }
+        .status-indicator.disconnected { background: #6c757d; }
+        .status-indicator.connecting { background: #ffc107; animation: pulse 1s infinite; }
+        .status-indicator.error { background: #dc3545; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .error-text {
+            color: #ff6b6b;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        /* Twitch branding */
+        .twitch-section h3 {
+            color: #9146ff;
+            margin-bottom: 16px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Stream Configuration</h1>
+
+        <!-- Auth Section -->
+        <div class="auth-section" id="auth-section">
+            <label for="password">Admin Password</label>
+            <input type="password" id="password" placeholder="Enter password">
+            <button class="btn-primary" id="auth-btn">Authenticate</button>
+            <div class="error-text" id="auth-error"></div>
+        </div>
+
+        <!-- Config Section (shown after auth) -->
+        <div class="config-section hidden" id="config-section">
+            <div class="twitch-section">
+                <h3>Twitch Integration</h3>
+
+                <div class="status-card">
+                    <span class="status-indicator disconnected" id="twitch-status-dot"></span>
+                    <span id="twitch-status-text">Disconnected</span>
+                    <span id="twitch-channel"></span>
+                </div>
+
+                <label for="twitch-channel-input">Channel Name</label>
+                <input type="text" id="twitch-channel-input" placeholder="e.g., ninja">
+
+                <div class="button-group">
+                    <button class="btn-primary" id="twitch-connect-btn">Connect</button>
+                    <button class="btn-danger hidden" id="twitch-disconnect-btn">Disconnect</button>
+                </div>
+
+                <div class="error-text" id="twitch-error"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE = '';
+        let authPassword = null;
+
+        // DOM elements
+        const authSection = document.getElementById('auth-section');
+        const configSection = document.getElementById('config-section');
+        const passwordInput = document.getElementById('password');
+        const authBtn = document.getElementById('auth-btn');
+        const authError = document.getElementById('auth-error');
+
+        const twitchStatusDot = document.getElementById('twitch-status-dot');
+        const twitchStatusText = document.getElementById('twitch-status-text');
+        const twitchChannelDisplay = document.getElementById('twitch-channel');
+        const twitchChannelInput = document.getElementById('twitch-channel-input');
+        const twitchConnectBtn = document.getElementById('twitch-connect-btn');
+        const twitchDisconnectBtn = document.getElementById('twitch-disconnect-btn');
+        const twitchError = document.getElementById('twitch-error');
+
+        // Auth
+        authBtn.addEventListener('click', authenticate);
+        passwordInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') authenticate();
+        });
+
+        async function authenticate() {
+            authPassword = passwordInput.value;
+
+            // Test auth by fetching status
+            try {
+                const res = await fetch(`${API_BASE}/api/stream/status?password=${encodeURIComponent(authPassword)}`);
+                if (res.status === 401) {
+                    authError.textContent = 'Invalid password';
+                    return;
+                }
+
+                // Auth successful
+                authSection.classList.add('hidden');
+                configSection.classList.remove('hidden');
+                loadStatus();
+
+                // Poll status every 5 seconds
+                setInterval(loadStatus, 5000);
+            } catch (err) {
+                authError.textContent = 'Connection error';
+            }
+        }
+
+        // Load current status
+        async function loadStatus() {
+            try {
+                const res = await fetch(`${API_BASE}/api/stream/status?password=${encodeURIComponent(authPassword)}`);
+                const data = await res.json();
+
+                updateTwitchUI(data.twitch);
+            } catch (err) {
+                console.error('Failed to load status:', err);
+            }
+        }
+
+        function updateTwitchUI(twitch) {
+            twitchStatusDot.className = `status-indicator ${twitch.status}`;
+
+            if (twitch.connected) {
+                twitchStatusText.textContent = 'Connected to';
+                twitchChannelDisplay.textContent = ` #${twitch.channel}`;
+                twitchConnectBtn.classList.add('hidden');
+                twitchDisconnectBtn.classList.remove('hidden');
+            } else {
+                twitchStatusText.textContent = twitch.status === 'connecting' ? 'Connecting...' : 'Disconnected';
+                twitchChannelDisplay.textContent = '';
+                twitchConnectBtn.classList.remove('hidden');
+                twitchDisconnectBtn.classList.add('hidden');
+            }
+
+            if (twitch.lastError) {
+                twitchError.textContent = twitch.lastError;
+            } else {
+                twitchError.textContent = '';
+            }
+        }
+
+        // Connect to Twitch
+        twitchConnectBtn.addEventListener('click', async () => {
+            const channel = twitchChannelInput.value.trim();
+            if (!channel) {
+                twitchError.textContent = 'Enter a channel name';
+                return;
+            }
+
+            twitchError.textContent = '';
+            twitchConnectBtn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_BASE}/api/stream/twitch/connect?password=${encodeURIComponent(authPassword)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ channel })
+                });
+
+                const data = await res.json();
+                if (!data.success) {
+                    twitchError.textContent = data.error || 'Connection failed';
+                }
+
+                loadStatus();
+            } catch (err) {
+                twitchError.textContent = 'Connection error';
+            } finally {
+                twitchConnectBtn.disabled = false;
+            }
+        });
+
+        // Disconnect from Twitch
+        twitchDisconnectBtn.addEventListener('click', async () => {
+            twitchDisconnectBtn.disabled = true;
+
+            try {
+                await fetch(`${API_BASE}/api/stream/twitch/disconnect?password=${encodeURIComponent(authPassword)}`, {
+                    method: 'POST'
+                });
+                loadStatus();
+            } catch (err) {
+                twitchError.textContent = 'Disconnect error';
+            } finally {
+                twitchDisconnectBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

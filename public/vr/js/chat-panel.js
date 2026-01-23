@@ -53,17 +53,29 @@ export class ChatPanel {
      * @param {string} senderId - Sender's player ID
      * @param {string} senderName - Sender's display name
      * @param {string} text - Message text
+     * @param {string} platform - Optional platform ('twitch', etc.) for stream messages
+     * @param {string} platformColor - Optional platform-specific user color
      */
-    addMessage(senderId, senderName, text) {
-        // Get or generate color for this sender
-        const color = this._getPlayerColor(senderId);
+    addMessage(senderId, senderName, text, platform = null, platformColor = null) {
+        // Get color for this sender
+        let color;
+        if (platform === 'twitch') {
+            // Use Twitch user color or default Twitch purple
+            color = platformColor || 'hsl(264, 100%, 64%)';
+        } else {
+            color = this._getPlayerColor(senderId);
+        }
+
+        // Prepend platform indicator for stream messages
+        const displayName = platform ? `[${platform.toUpperCase().slice(0, 3)}] ${senderName}` : senderName;
 
         // Add message (no limit)
         this.messages.push({
             senderId,
-            senderName,
+            senderName: displayName,
             text,
-            color
+            color,
+            isStream: !!platform
         });
 
         // Re-render

@@ -49,7 +49,11 @@ export const MSG = {
     PLAYER_MUTED: 'PLAYER_MUTED',
     PLAYER_UNMUTED: 'PLAYER_UNMUTED',
     PLAYER_KICKED: 'PLAYER_KICKED',
-    BANNED: 'BANNED'
+    BANNED: 'BANNED',
+
+    // Stream Chat (Server -> Client)
+    STREAM_CHAT_RECEIVED: 'STREAM_CHAT_RECEIVED',
+    STREAM_STATUS: 'STREAM_STATUS'
 };
 
 // Message creators for type safety

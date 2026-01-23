@@ -22,6 +22,7 @@ const itemSystem = require('./systems/item-system');
 const plantSystem = require('./systems/plant-system');
 const stationSystem = require('./systems/station-system');
 const { PlayerQueue, JOIN_TIMEOUT } = require('./systems/player-queue');
+const TwitchChat = require('./integrations/twitch-chat');
 
 // Waiting room constants (must match shared/constants.js)
 const WAITING_ROOM = {
@@ -106,6 +107,7 @@ app.get('/vr/config.js', (req, res) => {
 app.use('/pc', express.static(path.join(__dirname, '../public/pc')));
 app.use('/vr', express.static(path.join(__dirname, '../public/vr')));
 app.use('/shared', express.static(path.join(__dirname, '../public/shared')));
+app.use('/admin', express.static(path.join(__dirname, '../public/admin')));
 
 // Root redirect
 app.get('/', (req, res) => {
@@ -120,6 +122,12 @@ app.get('/', (req, res) => {
                 <li><a href="/vr/" style="color: #4fc3f7;">VR Client</a> - Meta Quest WebXR</li>
             </ul>
             <p>Players connected: <span id="count">0</span></p>
+
+            <hr style="margin: 20px 0; border-color: #444;">
+            <h3>Admin</h3>
+            <ul>
+                <li><a href="/admin/stream-config.html" style="color: #9146ff;">Stream Config</a> - Twitch chat integration</li>
+            </ul>
 
             <hr style="margin: 20px 0; border-color: #444;">
             <div id="dev-server-section" style="display: none;">
@@ -260,6 +268,55 @@ const roomManager = new RoomManager(gameState.worldState, gameState);
 const playerQueue = new PlayerQueue();
 const interactionSystem = new InteractionSystem(gameState, roomManager, isDevMode, playerQueue);
 const messageHandler = new MessageHandler(gameState, playerManager, interactionSystem, playerQueue);
+
+// Initialize Twitch chat integration
+const twitchChat = new TwitchChat((streamMessage) => {
+    messageHandler.chatSystem.handleStreamMessage(streamMessage);
+});
+
+// Stream integration API endpoints (must be after twitchChat initialization)
+
+// Get stream integration status (password protected)
+app.get('/api/stream/status', (req, res) => {
+    const password = req.query.password || req.headers['x-dev-password'];
+
+    if (password !== DEV_SERVER_PASSWORD) {
+        return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    res.json({
+        twitch: twitchChat.getStatus()
+    });
+});
+
+// Connect to Twitch channel (password protected)
+app.post('/api/stream/twitch/connect', express.json(), async (req, res) => {
+    const password = req.query.password || req.headers['x-dev-password'];
+
+    if (password !== DEV_SERVER_PASSWORD) {
+        return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    const { channel } = req.body;
+    if (!channel || typeof channel !== 'string') {
+        return res.status(400).json({ error: 'Invalid channel' });
+    }
+
+    const result = await twitchChat.connect(channel);
+    res.json(result);
+});
+
+// Disconnect from Twitch (password protected)
+app.post('/api/stream/twitch/disconnect', async (req, res) => {
+    const password = req.query.password || req.headers['x-dev-password'];
+
+    if (password !== DEV_SERVER_PASSWORD) {
+        return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    await twitchChat.disconnect();
+    res.json({ success: true });
+});
 
 // Set dev mode flag for needs system
 NeedsSystem.setDevMode(isDevMode);
