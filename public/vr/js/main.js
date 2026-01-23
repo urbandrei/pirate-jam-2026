@@ -15,6 +15,7 @@ import { Network } from './network.js';
 import { RemotePlayers } from './remote-players.js';
 import { BuildingSystem } from './building-system.js';
 import { StatsPanel } from './stats-panel.js';
+import { ChatPanel } from './chat-panel.js';
 import { NETWORK_RATE, GIANT_SCALE } from '../../pc/shared/constants.js';
 
 class VRGame {
@@ -25,6 +26,7 @@ class VRGame {
         this.remotePlayers = null;
         this.buildingSystem = null;
         this.statsPanel = null;
+        this.chatPanel = null;
         this.disposed = false;
 
         // Player count HUD
@@ -74,6 +76,11 @@ class VRGame {
             this.statsPanel.sprite.position.set(0, -0.05, 0);
             this.hudGroup.add(this.statsPanel.sprite);
         }
+
+        // Setup chat panel (bottom-left in HUD, smaller and further out)
+        this.chatPanel = new ChatPanel();
+        this.chatPanel.sprite.position.set(-0.2, -0.18, 0);
+        this.hudGroup.add(this.chatPanel.sprite);
 
         // Setup hands
         this.hands = new Hands(this.scene.scene, this.scene.renderer);
@@ -144,6 +151,12 @@ class VRGame {
 
         this.network.onPlayerLeft = (playerId) => {
             this.remotePlayers.removePlayer(playerId);
+        };
+
+        this.network.onChatReceived = (senderId, senderName, text) => {
+            if (this.chatPanel) {
+                this.chatPanel.addMessage(senderId, senderName, text);
+            }
         };
     }
 
@@ -424,6 +437,15 @@ class VRGame {
                 this.statsPanel = null;
             } catch (err) {
                 console.warn('[VRGame] Error disposing stats panel:', err);
+            }
+        }
+
+        if (this.chatPanel) {
+            try {
+                this.chatPanel.dispose();
+                this.chatPanel = null;
+            } catch (err) {
+                console.warn('[VRGame] Error disposing chat panel:', err);
             }
         }
 
