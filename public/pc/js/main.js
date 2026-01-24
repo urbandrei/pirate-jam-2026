@@ -39,6 +39,7 @@ class Game {
         this.securityRoomRenderer = null;
         this.cameras = new Map();  // Track camera entities from server
         this.targetedCamera = null;  // Currently targeted camera (for interaction)
+        this._targetedMonitor = null; // Currently targeted security monitor
 
         // Camera view state (viewing through a camera)
         this.isInCameraView = false;
@@ -107,7 +108,15 @@ class Game {
             this.scene.scene,
             () => this.scene.cameraMeshes
         );
+
+        // Set up camera feed callbacks for player visibility in feeds
+        this.cameraFeedSystem.getLocalPlayerMesh = () => this.player.mesh;
+        this.cameraFeedSystem.getLocalPlayerPosition = () => this.player.getPosition();
+        this.cameraFeedSystem.getRemotePlayers = () => this.remotePlayers;
+        this.cameraFeedSystem.getCameraData = (cameraId) => this.cameras.get(cameraId);
+
         this.securityRoomRenderer = new SecurityRoomRenderer(this.scene.scene);
+        this.scene.setSecurityRoomRenderer(this.securityRoomRenderer);
 
         // Camera placement system (wall-mounted security cameras)
         // Pass a getter function since dynamicWalls array is replaced when world rebuilds
@@ -199,6 +208,24 @@ class Game {
                         this.network.sendInteract(doorInteraction.type, doorInteraction.targetId, doorInteraction.position);
                     }
                     // If too far, simply don't send - no need for error message
+                    return;
+                }
+            }
+
+            // Check for monitor click (security room cameras)
+            if (this._targetedMonitor) {
+                const camera = this.cameras.get(this._targetedMonitor.cameraId);
+                if (camera) {
+                    const pos = new THREE.Vector3(
+                        camera.position.x,
+                        camera.position.y,
+                        camera.position.z
+                    );
+                    this.cameraViewMode.enterViewOnlyMode(
+                        camera.id,
+                        pos,
+                        camera.rotation
+                    );
                     return;
                 }
             }
@@ -350,6 +377,19 @@ class Game {
                 this.scene.renderer.domElement.requestPointerLock().catch(() => {});
             }
         };
+
+        // Wire quality change callback
+        this.settingsUI.onQualityChanged = (quality) => {
+            if (this.cameraFeedSystem) {
+                this.cameraFeedSystem.setQuality(quality);
+            }
+        };
+
+        // Apply initial quality setting
+        const initialQuality = this.settingsManager.getVideoSetting('cameraFeedQuality');
+        if (this.cameraFeedSystem && initialQuality) {
+            this.cameraFeedSystem.setQuality(initialQuality);
+        }
 
         // Wire chat return-to-game callback
         this.chatUI.onReturnToGame = () => {
@@ -720,6 +760,67 @@ class Game {
         }
     }
 
+    /**
+     * Check if player is near a security room monitor
+     * @returns {Object|null} { monitor, index, cameraId } or null
+     */
+    checkMonitorHover() {
+        // Don't show monitor interactions while in placement, adjustment, or view mode
+        if (this.cameraPlacementSystem?.isActive || this.cameraViewMode?.isActive) {
+            this._targetedMonitor = null;
+            return;
+        }
+
+        // Don't show if already targeting a camera
+        if (this.targetedCamera) {
+            this._targetedMonitor = null;
+            return;
+        }
+
+        if (!this.securityRoomRenderer) {
+            this._targetedMonitor = null;
+            return;
+        }
+
+        const playerPos = this.player.getPosition();
+        const nearestResult = this.securityRoomRenderer.findNearestMonitor(playerPos, 3.0);
+
+        if (!nearestResult) {
+            this._targetedMonitor = null;
+            return;
+        }
+
+        const monitor = nearestResult.monitor;
+
+        // Only show interaction if monitor has a camera assigned
+        if (!monitor.cameraId) {
+            this._targetedMonitor = null;
+            return;
+        }
+
+        // Check if looking at the monitor (simple raycast)
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera({ x: 0, y: 0 }, this.scene.camera);
+        raycaster.far = 3.0;
+
+        // Check both frame and screen mesh
+        const intersects = raycaster.intersectObjects([monitor.mesh, monitor.screenMesh], false);
+        if (intersects.length === 0) {
+            this._targetedMonitor = null;
+            return;
+        }
+
+        // Targeting this monitor
+        this._targetedMonitor = {
+            monitor: monitor,
+            index: nearestResult.index,
+            cameraId: monitor.cameraId
+        };
+
+        // Show interaction prompt
+        this.interactionSystem._showPrompt('View Camera Feed');
+    }
+
     setupNetworkCallbacks() {
         // Handle successful join (including from queue)
         this.network.onJoined = () => {
@@ -1022,6 +1123,9 @@ class Game {
         // Check camera hover (for interaction text on cameras)
         this.checkCameraHover();
 
+        // Check monitor hover (for viewing camera feeds)
+        this.checkMonitorHover();
+
         // Update timed interaction progress (if active)
         if (this.interactionSystem.isInTimedInteraction()) {
             this.interactionSystem.updateTimedInteraction();
@@ -1289,6 +1393,37 @@ class Game {
     }
 
     /**
+     * Auto-assign cameras to security room monitors
+     * Called when cameras change or security rooms are created
+     */
+    updateMonitorCameraAssignments() {
+        if (!this.securityRoomRenderer) return;
+
+        // Get all security cameras (including floor items and held cameras)
+        // This matches web viewer behavior - all cameras are visible
+        const allCameras = [];
+        for (const camera of this.cameras.values()) {
+            if (camera.type === 'security') {
+                allCameras.push(camera);
+            }
+        }
+
+        // Sort by ID for consistent ordering
+        allCameras.sort((a, b) => a.id.localeCompare(b.id));
+
+        // Assign to monitors in order
+        const monitors = this.securityRoomRenderer.getAllMonitors();
+        for (let i = 0; i < monitors.length; i++) {
+            if (i < allCameras.length) {
+                this.securityRoomRenderer.assignCamera(i, allCameras[i].id);
+            } else {
+                // No camera for this monitor - will show "NO SIGNAL"
+                this.securityRoomRenderer.assignCamera(i, null);
+            }
+        }
+    }
+
+    /**
      * Handle camera placed event from server
      * @param {Object} camera - Camera entity data
      */
@@ -1309,6 +1444,9 @@ class Game {
             this.cameraViewMode.enterAdjustmentMode(camera.id, pos, camera.rotation);
         }
 
+        // Update monitor assignments
+        this.updateMonitorCameraAssignments();
+
         console.log(`[Game] Camera placed: ${camera.id}`);
     }
 
@@ -1324,6 +1462,9 @@ class Game {
 
         this.cameras.delete(cameraId);
         this.cameraFeedSystem.disposeFeed(cameraId);
+
+        // Update monitor assignments
+        this.updateMonitorCameraAssignments();
 
         console.log(`[Game] Camera picked up: ${cameraId}`);
     }
@@ -1362,9 +1503,10 @@ class Game {
             if (!existing) {
                 this.handleCameraPlaced(camera);
             } else {
-                // Update position/rotation
+                // Update position/rotation/ownership
                 existing.position = camera.position;
                 existing.rotation = camera.rotation;
+                existing.ownerId = camera.ownerId;
                 this.cameraFeedSystem.updateFeedPosition(camera.id, camera.position, camera.rotation);
             }
         }

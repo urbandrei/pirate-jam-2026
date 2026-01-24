@@ -63,7 +63,8 @@ export const ROOM_TYPES = {
     processing: { name: 'Kitchen', color: 0xCD853F },
     cafeteria: { name: 'Cafeteria', color: 0xFFD700 },
     dorm: { name: 'Dormitory', color: 0x4169E1 },
-    waiting: { name: 'Waiting Room', color: 0x808080 }
+    waiting: { name: 'Waiting Room', color: 0x808080 },
+    security: { name: 'Security', color: 0x1a1a3e }
 };
 export const DEFAULT_ROOM_TYPE = 'generic';
 
@@ -362,6 +363,13 @@ export const CAMERA_DEFAULTS = {
     RENDER_RATE: 15,  // FPS for camera feeds
     SECURITY_LIMIT: 5,
     STREAM_LIMIT: 5
+};
+
+// Camera feed quality presets for performance settings
+export const CAMERA_QUALITY_PRESETS = {
+    low: { width: 320, height: 180, fps: 5 },      // Mobile/low-end
+    medium: { width: 640, height: 360, fps: 10 },  // Laptops
+    high: { width: 1280, height: 720, fps: 15 }    // Desktop (default)
 };
 
 // Camera item (physical object PC players pick up)

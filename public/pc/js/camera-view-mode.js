@@ -17,8 +17,8 @@ export class CameraViewMode {
 
         // State
         this.isActive = false;
-        this.mode = null;  // 'placing' or 'adjusting'
-        this.cameraId = null;  // For adjusting mode
+        this.mode = null;  // 'placing', 'adjusting', or 'viewing'
+        this.cameraId = null;  // For adjusting/viewing mode
 
         // Camera for the view
         this.viewCamera = new THREE.PerspectiveCamera(
@@ -128,6 +128,7 @@ export class CameraViewMode {
             border-radius: 4px;
         `;
         hint.textContent = 'Mouse: Aim | Left-Click: Confirm | Escape: Cancel';
+        this.hintText = hint;  // Store reference for updating
         this.overlay.appendChild(hint);
 
         // Crosshair
@@ -199,6 +200,38 @@ export class CameraViewMode {
         }
 
         console.log(`[CameraViewMode] Entered adjustment mode for camera: ${cameraId}`);
+    }
+
+    /**
+     * Enter camera view mode for viewing only (no adjustment)
+     * Used for security room monitors
+     * @param {string} cameraId - Camera ID being viewed
+     * @param {THREE.Vector3} position - Camera position
+     * @param {Object} rotation - Camera rotation {pitch, yaw, roll}
+     */
+    enterViewOnlyMode(cameraId, position, rotation) {
+        this.isActive = true;
+        this.mode = 'viewing';
+        this.cameraId = cameraId;
+
+        this.position.copy(position);
+        this.rotation = { ...rotation };
+
+        this._updateViewCamera();
+        this._showOverlay('VIEWING CAMERA');
+
+        // Only listen for Escape key in view mode, no mouse input
+        document.addEventListener('keydown', this._onKeyDown);
+
+        // Show player mesh so they can see themselves through the camera
+        this._showPlayerMesh();
+
+        // Notify controls to disable player movement
+        if (this.controls.setCameraViewMode) {
+            this.controls.setCameraViewMode(true);
+        }
+
+        console.log(`[CameraViewMode] Entered view-only mode for camera: ${cameraId}`);
     }
 
     /**
@@ -312,6 +345,16 @@ export class CameraViewMode {
 
     _showOverlay(text) {
         this.infoText.textContent = text;
+
+        // Update hint based on mode
+        if (this.hintText) {
+            if (this.mode === 'viewing') {
+                this.hintText.textContent = 'Escape: Exit';
+            } else {
+                this.hintText.textContent = 'Mouse: Aim | Left-Click: Confirm | Escape: Cancel';
+            }
+        }
+
         this.overlay.style.display = 'block';
     }
 
@@ -333,6 +376,7 @@ export class CameraViewMode {
 
     _handleMouseMove(event) {
         if (!this.isActive) return;
+        if (this.mode === 'viewing') return;  // No mouse input in view-only mode
 
         // Only capture mouse movement when pointer is locked
         if (document.pointerLockElement) {
@@ -361,6 +405,7 @@ export class CameraViewMode {
 
     _handleMouseDown(event) {
         if (!this.isActive) return;
+        if (this.mode === 'viewing') return;  // No click confirm in view-only mode
 
         // Left-click confirms
         if (event.button === 0) {

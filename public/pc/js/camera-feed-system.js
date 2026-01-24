@@ -6,7 +6,7 @@
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { CAMERA_DEFAULTS } from '../shared/constants.js';
+import { CAMERA_DEFAULTS, CAMERA_QUALITY_PRESETS } from '../shared/constants.js';
 
 export class CameraFeedSystem {
     constructor(renderer, scene, getCameraMeshes = null) {
@@ -26,6 +26,12 @@ export class CameraFeedSystem {
         // Track last render time for throttling
         this.lastRenderTime = 0;
         this.minRenderInterval = 1000 / CAMERA_DEFAULTS.RENDER_RATE;  // ~66ms for 15fps
+
+        // Callbacks for player visibility during rendering
+        this.getLocalPlayerMesh = null;      // () => THREE.Group
+        this.getLocalPlayerPosition = null;  // () => {x, y, z}
+        this.getRemotePlayers = null;        // () => RemotePlayers instance
+        this.getCameraData = null;           // (cameraId) => camera data with ownerId
     }
 
     /**
@@ -111,6 +117,29 @@ export class CameraFeedSystem {
         // Get camera meshes map (if available)
         const cameraMeshes = this.getCameraMeshes ? this.getCameraMeshes() : null;
 
+        // Add local player mesh to scene so cameras can see the player
+        let localPlayerMesh = null;
+        let localPlayerWasInScene = false;
+        if (this.getLocalPlayerMesh) {
+            localPlayerMesh = this.getLocalPlayerMesh();
+            if (localPlayerMesh) {
+                localPlayerWasInScene = localPlayerMesh.parent === this.scene;
+                if (!localPlayerWasInScene) {
+                    this.scene.add(localPlayerMesh);
+                }
+                // Update position
+                if (this.getLocalPlayerPosition) {
+                    const pos = this.getLocalPlayerPosition();
+                    if (pos) {
+                        localPlayerMesh.position.set(pos.x, pos.y, pos.z);
+                    }
+                }
+            }
+        }
+
+        // Get remote players for hiding carriers
+        const remotePlayers = this.getRemotePlayers ? this.getRemotePlayers() : null;
+
         // Render each camera feed
         for (const [cameraId, renderTarget] of this.renderTargets) {
             const camera = this.feedCameras.get(cameraId);
@@ -127,8 +156,24 @@ export class CameraFeedSystem {
                 }
             }
 
+            // Check if this camera is being held - if so, hide the carrier
+            let carrierId = null;
+            let carrierVisibility = null;
+            if (this.getCameraData) {
+                const cameraData = this.getCameraData(cameraId);
+                if (cameraData && cameraData.ownerId && cameraData.ownerId.startsWith('held_')) {
+                    carrierId = cameraData.ownerId.replace('held_', '');
+                    carrierVisibility = this._hidePlayer(remotePlayers, carrierId);
+                }
+            }
+
             this.renderer.setRenderTarget(renderTarget);
             this.renderer.render(this.scene, camera);
+
+            // Restore carrier visibility
+            if (carrierId && carrierVisibility) {
+                this._restorePlayer(remotePlayers, carrierId, carrierVisibility);
+            }
 
             // Restore camera mesh visibility
             if (cameraMesh) {
@@ -136,8 +181,68 @@ export class CameraFeedSystem {
             }
         }
 
+        // Remove local player mesh if we added it
+        if (localPlayerMesh && !localPlayerWasInScene) {
+            this.scene.remove(localPlayerMesh);
+        }
+
         // Restore original target
         this.renderer.setRenderTarget(currentTarget);
+    }
+
+    /**
+     * Hide a remote player's mesh, held item, and name label
+     * @param {RemotePlayers} remotePlayers - RemotePlayers instance
+     * @param {string} playerId - Player ID to hide
+     * @returns {Object|null} Visibility state to restore later
+     */
+    _hidePlayer(remotePlayers, playerId) {
+        if (!remotePlayers) return null;
+
+        const playerData = remotePlayers.players.get(playerId);
+        const nameLabel = remotePlayers.nameLabels.get(playerId);
+
+        if (!playerData) return null;
+
+        const state = {
+            meshVisible: playerData.mesh.visible,
+            heldItemVisible: playerData.heldItemMesh ? playerData.heldItemMesh.visible : false,
+            nameLabelVisible: nameLabel && nameLabel.sprite ? nameLabel.sprite.visible : false
+        };
+
+        // Hide everything
+        playerData.mesh.visible = false;
+        if (playerData.heldItemMesh) {
+            playerData.heldItemMesh.visible = false;
+        }
+        if (nameLabel && nameLabel.sprite) {
+            nameLabel.sprite.visible = false;
+        }
+
+        return state;
+    }
+
+    /**
+     * Restore a remote player's visibility state
+     * @param {RemotePlayers} remotePlayers - RemotePlayers instance
+     * @param {string} playerId - Player ID to restore
+     * @param {Object} state - Visibility state from _hidePlayer
+     */
+    _restorePlayer(remotePlayers, playerId, state) {
+        if (!remotePlayers || !state) return;
+
+        const playerData = remotePlayers.players.get(playerId);
+        const nameLabel = remotePlayers.nameLabels.get(playerId);
+
+        if (!playerData) return;
+
+        playerData.mesh.visible = state.meshVisible;
+        if (playerData.heldItemMesh) {
+            playerData.heldItemMesh.visible = state.heldItemVisible;
+        }
+        if (nameLabel && nameLabel.sprite) {
+            nameLabel.sprite.visible = state.nameLabelVisible;
+        }
     }
 
     /**
@@ -215,6 +320,38 @@ export class CameraFeedSystem {
         }
 
         console.log(`[CameraFeedSystem] Resolution changed to ${width}x${height}`);
+    }
+
+    /**
+     * Set quality preset (adjusts resolution and frame rate)
+     * @param {string} preset - 'low', 'medium', or 'high'
+     */
+    setQuality(preset) {
+        const config = CAMERA_QUALITY_PRESETS[preset];
+        if (!config) {
+            console.warn(`[CameraFeedSystem] Unknown quality preset: ${preset}`);
+            return;
+        }
+
+        // Update resolution
+        this.setResolution(config.width, config.height);
+
+        // Update frame rate
+        this.minRenderInterval = 1000 / config.fps;
+
+        console.log(`[CameraFeedSystem] Quality set to ${preset}: ${config.width}x${config.height} @ ${config.fps}fps`);
+    }
+
+    /**
+     * Get current quality settings
+     * @returns {Object} { width, height, fps }
+     */
+    getQuality() {
+        return {
+            width: this.resolution.width,
+            height: this.resolution.height,
+            fps: Math.round(1000 / this.minRenderInterval)
+        };
     }
 
     /**

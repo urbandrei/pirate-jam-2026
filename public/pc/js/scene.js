@@ -50,6 +50,9 @@ export class Scene {
         // Waiting room renderer
         this.waitingRoomRenderer = null;
 
+        // Security room renderer (set by main.js)
+        this.securityRoomRenderer = null;
+
         // Miniature replica (same as VR players see)
         // VR uses miniatureScale = 0.005 at 1/10 world scale
         // PC is at real-world scale, so we need 0.005 * GIANT_SCALE = 0.05
@@ -219,6 +222,7 @@ export class Scene {
         this.clearStations();
         this.clearAppliances();
         this.clearBeds();
+        this.clearSecurityMonitors();
 
         // Build walls and floors for each cell in the grid
         for (const cell of worldState.grid) {
@@ -243,6 +247,11 @@ export class Scene {
             // Create beds for dorm rooms
             if (cell.roomType === 'dorm') {
                 this.createBedsForCell(cell);
+            }
+
+            // Create monitors for security rooms
+            if (cell.roomType === 'security') {
+                this.createMonitorsForCell(cell);
             }
         }
 
@@ -339,6 +348,23 @@ export class Scene {
     }
 
     /**
+     * Clear all security room monitors
+     */
+    clearSecurityMonitors() {
+        if (this.securityRoomRenderer) {
+            this.securityRoomRenderer.clear();
+        }
+    }
+
+    /**
+     * Set the security room renderer (called by main.js)
+     * @param {SecurityRoomRenderer} renderer - The security room renderer
+     */
+    setSecurityRoomRenderer(renderer) {
+        this.securityRoomRenderer = renderer;
+    }
+
+    /**
      * Create stations for a processing cell
      * @param {Object} cell - Cell data with x, z coordinates
      */
@@ -404,6 +430,38 @@ export class Scene {
         }
 
         console.log(`[Scene] Created ${beds.length} beds for cell (${cell.x}, ${cell.z})`);
+    }
+
+    /**
+     * Create monitors for a security room cell
+     * @param {Object} cell - Cell data with x, z coordinates
+     */
+    createMonitorsForCell(cell) {
+        if (!this.securityRoomRenderer) {
+            console.warn('[Scene] SecurityRoomRenderer not set, skipping monitors for security room');
+            return;
+        }
+
+        const cellSize = SMALL_ROOM_SIZE;
+        const centerX = cell.x * cellSize;
+        const centerZ = cell.z * cellSize;
+
+        // Position monitors on north wall (back of cell)
+        const wallOffset = cellSize / 2 - 0.2;  // Slight inset from wall
+
+        const position = {
+            x: centerX,
+            y: 1.5,  // Eye height for comfortable viewing
+            z: centerZ - wallOffset
+        };
+
+        // Monitors face south (toward room center), rotation = 0
+        const rotation = 0;
+
+        // Create 2x2 grid of monitors
+        this.securityRoomRenderer.createMonitors(position, rotation, 4, 'grid');
+
+        console.log(`[Scene] Created 4 monitors for security room at cell (${cell.x}, ${cell.z})`);
     }
 
     /**

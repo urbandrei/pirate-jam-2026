@@ -46,7 +46,8 @@ class WorldState {
             { x: -1, z: -2, type: 'farming' },
             { x: 2, z: -1, type: 'cafeteria' },
             { x: -2, z: -1, type: 'processing' },
-            { x: -1, z: 2, type: 'dorm' }
+            { x: -1, z: 2, type: 'dorm' },
+            { x: 2, z: 0, type: 'security' }
         ];
 
         for (const room of devRooms) {
@@ -209,7 +210,7 @@ class WorldState {
             return { success: false, reason: 'Cell does not exist' };
         }
 
-        const validTypes = ['generic', 'farming', 'processing', 'cafeteria', 'dorm', 'waiting'];
+        const validTypes = ['generic', 'farming', 'processing', 'cafeteria', 'dorm', 'waiting', 'security'];
         if (!validTypes.includes(roomType)) {
             return { success: false, reason: 'Invalid room type' };
         }

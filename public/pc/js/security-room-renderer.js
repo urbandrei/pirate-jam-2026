@@ -293,6 +293,20 @@ export class SecurityRoomRenderer {
     }
 
     /**
+     * Clear all monitors without disposing shared resources
+     * Use this when rebuilding rooms, not when fully disposing
+     */
+    clear() {
+        for (const monitor of this.monitors) {
+            this.scene.remove(monitor.mesh);
+            this.scene.remove(monitor.screenMesh);
+            monitor.material.dispose();
+        }
+        this.monitors = [];
+        console.log('[SecurityRoomRenderer] Cleared all monitors');
+    }
+
+    /**
      * Dispose all resources
      */
     dispose() {

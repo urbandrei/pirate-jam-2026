@@ -467,6 +467,30 @@
             from { border-color: #4a9eff; }
             to { border-color: #2d7dd2; }
         }
+        .settings-select {
+            min-width: 140px;
+            padding: 8px 12px;
+            font-size: 14px;
+            font-family: inherit;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .settings-select:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+        .settings-select:focus {
+            outline: none;
+            border-color: #4a9eff;
+        }
+        .settings-select option {
+            background: #1a1a1a;
+            color: white;
+        }
         .settings-buttons {
             display: flex;
             gap: 10px;
@@ -576,6 +600,17 @@
                     <div class="keybinding-row">
                         <span>Jump</span>
                         <button class="keybind-btn" data-action="jump">Space</button>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3>Video</h3>
+                    <div class="keybinding-row">
+                        <span>Camera Feed Quality</span>
+                        <select id="camera-quality-select" class="settings-select">
+                            <option value="low">Low (320x180)</option>
+                            <option value="medium">Medium (640x360)</option>
+                            <option value="high">High (1280x720)</option>
+                        </select>
                     </div>
                 </div>
                 <div class="settings-buttons">

@@ -279,6 +279,11 @@ const messageHandler = new MessageHandler(gameState, playerManager, interactionS
 // Link camera system to game state so camera items can create linked camera entities
 gameState.setCameraSystem(messageHandler.getCameraSystem());
 
+// Initialize dev mode cameras
+if (isDevMode) {
+    messageHandler.getCameraSystem().initializeDevCameras();
+}
+
 // Initialize Twitch chat integration
 const twitchChat = new TwitchChat((streamMessage) => {
     messageHandler.chatSystem.handleStreamMessage(streamMessage);

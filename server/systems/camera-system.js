@@ -395,6 +395,35 @@ class CameraSystem {
     }
 
     /**
+     * Initialize dev mode cameras - 4 security cameras in spawn room
+     * Called when server starts in dev mode
+     */
+    initializeDevCameras() {
+        console.log('[CameraSystem] Dev mode: Creating 4 starting security cameras');
+
+        // Place 4 cameras in the center of the spawn room (at origin)
+        // Arranged in a 2x2 grid on the floor, facing outward
+        const devCameras = [
+            { x: -1, z: -1, yaw: Math.PI * 0.75 },   // NW corner, facing SE
+            { x: 1, z: -1, yaw: Math.PI * 0.25 },    // NE corner, facing SW
+            { x: -1, z: 1, yaw: -Math.PI * 0.75 },   // SW corner, facing NE
+            { x: 1, z: 1, yaw: -Math.PI * 0.25 }     // SE corner, facing NW
+        ];
+
+        for (const cam of devCameras) {
+            const camera = this.createCamera(
+                CAMERA_TYPES.SECURITY,
+                { x: cam.x, y: 0.3, z: cam.z },  // y=0.3 for floor level
+                { pitch: 0, yaw: cam.yaw, roll: 0 },
+                'floor_item'  // ownerId indicates it's on the floor
+            );
+            if (camera) {
+                console.log(`[CameraSystem] Dev mode: Created camera ${camera.id} at (${cam.x}, ${cam.z})`);
+            }
+        }
+    }
+
+    /**
      * Get a numeric camera ID from the full camera ID (for web routes)
      * @param {string} cameraId - Full camera ID (e.g., 'cam_1')
      * @returns {number} Numeric ID

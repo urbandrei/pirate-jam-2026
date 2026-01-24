@@ -1,6 +1,6 @@
 /**
  * Settings UI for PC client
- * Modal for configuring keybindings
+ * Modal for configuring keybindings and video settings
  */
 
 export class SettingsUI {
@@ -11,11 +11,13 @@ export class SettingsUI {
 
         // Callbacks
         this.onClose = null;
+        this.onQualityChanged = null;  // (quality) => void
 
         // Cache DOM references
         this.modal = document.getElementById('settings-modal');
         this.closeBtn = document.getElementById('settings-close');
         this.resetBtn = document.getElementById('settings-reset');
+        this.qualitySelect = document.getElementById('camera-quality-select');
 
         // Get all keybind buttons
         this.keybindButtons = {};
@@ -27,6 +29,7 @@ export class SettingsUI {
 
         this.setupEventListeners();
         this.updateButtonLabels();
+        this.updateVideoSettings();
     }
 
     setupEventListeners() {
@@ -46,8 +49,27 @@ export class SettingsUI {
         // Reset button
         this.resetBtn.addEventListener('click', () => {
             this.settingsManager.reset();
+            this.settingsManager.resetVideoSettings();
             this.updateButtonLabels();
+            this.updateVideoSettings();
+
+            // Notify about quality change
+            if (this.onQualityChanged) {
+                this.onQualityChanged(this.settingsManager.getVideoSetting('cameraFeedQuality'));
+            }
         });
+
+        // Camera quality dropdown
+        if (this.qualitySelect) {
+            this.qualitySelect.addEventListener('change', () => {
+                const quality = this.qualitySelect.value;
+                this.settingsManager.setVideoSetting('cameraFeedQuality', quality);
+
+                if (this.onQualityChanged) {
+                    this.onQualityChanged(quality);
+                }
+            });
+        }
 
         // Keybind buttons - click to start listening
         for (const [action, btn] of Object.entries(this.keybindButtons)) {
@@ -128,6 +150,16 @@ export class SettingsUI {
         for (const [action, btn] of Object.entries(this.keybindButtons)) {
             const keyCode = this.settingsManager.getKeyForAction(action);
             btn.textContent = this.settingsManager.getKeyDisplayName(keyCode);
+        }
+    }
+
+    /**
+     * Update video settings UI to reflect current settings
+     */
+    updateVideoSettings() {
+        if (this.qualitySelect) {
+            const quality = this.settingsManager.getVideoSetting('cameraFeedQuality');
+            this.qualitySelect.value = quality;
         }
     }
 

@@ -1,6 +1,6 @@
 /**
  * Settings Manager for PC client
- * Handles keybinding storage and lookup with localStorage persistence
+ * Handles keybinding and video settings storage with localStorage persistence
  */
 
 const STORAGE_KEY = 'pirate-jam-settings';
@@ -15,25 +15,37 @@ export class SettingsManager {
             jump: 'Space'
         };
 
-        this.keybindings = this.load();
+        this.DEFAULT_VIDEO_SETTINGS = {
+            cameraFeedQuality: 'high'  // 'low', 'medium', or 'high'
+        };
+
+        const loaded = this.load();
+        this.keybindings = loaded.keybindings;
+        this.videoSettings = loaded.videoSettings;
     }
 
     /**
      * Load settings from localStorage
-     * @returns {Object} Keybindings object
+     * @returns {Object} { keybindings, videoSettings }
      */
     load() {
         try {
             const saved = localStorage.getItem(STORAGE_KEY);
             if (saved) {
                 const parsed = JSON.parse(saved);
-                // Merge with defaults in case new keybindings are added
-                return { ...this.DEFAULT_KEYBINDINGS, ...parsed.keybindings };
+                // Merge with defaults in case new settings are added
+                return {
+                    keybindings: { ...this.DEFAULT_KEYBINDINGS, ...parsed.keybindings },
+                    videoSettings: { ...this.DEFAULT_VIDEO_SETTINGS, ...parsed.videoSettings }
+                };
             }
         } catch (e) {
             console.warn('[SettingsManager] Failed to load settings:', e);
         }
-        return { ...this.DEFAULT_KEYBINDINGS };
+        return {
+            keybindings: { ...this.DEFAULT_KEYBINDINGS },
+            videoSettings: { ...this.DEFAULT_VIDEO_SETTINGS }
+        };
     }
 
     /**
@@ -42,7 +54,8 @@ export class SettingsManager {
     save() {
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify({
-                keybindings: this.keybindings
+                keybindings: this.keybindings,
+                videoSettings: this.videoSettings
             }));
         } catch (e) {
             console.warn('[SettingsManager] Failed to save settings:', e);
@@ -94,6 +107,33 @@ export class SettingsManager {
      */
     reset() {
         this.keybindings = { ...this.DEFAULT_KEYBINDINGS };
+        this.save();
+    }
+
+    /**
+     * Get a video setting
+     * @param {string} key - Setting key (e.g., 'cameraFeedQuality')
+     * @returns {*} Setting value
+     */
+    getVideoSetting(key) {
+        return this.videoSettings[key] ?? this.DEFAULT_VIDEO_SETTINGS[key];
+    }
+
+    /**
+     * Set a video setting
+     * @param {string} key - Setting key
+     * @param {*} value - Setting value
+     */
+    setVideoSetting(key, value) {
+        this.videoSettings[key] = value;
+        this.save();
+    }
+
+    /**
+     * Reset video settings to defaults
+     */
+    resetVideoSettings() {
+        this.videoSettings = { ...this.DEFAULT_VIDEO_SETTINGS };
         this.save();
     }
 
