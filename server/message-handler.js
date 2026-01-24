@@ -105,6 +105,12 @@ class MessageHandler {
             case 'EXIT_CAMERA_VIEW':
                 this.handleExitCameraView(peerId, message);
                 break;
+            case 'START_ADJUST_CAMERA':
+                this.handleStartAdjustCamera(peerId, message);
+                break;
+            case 'STOP_ADJUST_CAMERA':
+                this.handleStopAdjustCamera(peerId, message);
+                break;
             case 'SET_CAMERA_LIMITS':
                 this.handleSetCameraLimits(peerId, message);
                 break;
@@ -931,6 +937,18 @@ class MessageHandler {
             return;
         }
 
+        // For PC players, validate they're holding a security camera item
+        if (player.type === 'pc') {
+            if (!player.heldItem || player.heldItem.type !== 'security_camera') {
+                console.warn(`[MessageHandler] PLACE_CAMERA rejected: PC player not holding a security camera`);
+                this.playerManager.sendTo(peerId, {
+                    type: 'PLACE_CAMERA_FAILED',
+                    reason: 'Must be holding a security camera'
+                });
+                return;
+            }
+        }
+
         if (player.type === 'vr' && cameraType !== CAMERA_TYPES.STREAM) {
             console.warn(`[MessageHandler] PLACE_CAMERA rejected: VR players can only place stream cameras`);
             this.playerManager.sendTo(peerId, {
@@ -940,11 +958,35 @@ class MessageHandler {
             return;
         }
 
-        // Create the camera
-        const camera = this.cameraSystem.createCamera(cameraType, position, rotation, peerId);
+        let camera = null;
+
+        // For PC players with a linked camera, update existing camera instead of creating new
+        if (player.type === 'pc' && player.heldItem?.linkedCameraId) {
+            const linkedCameraId = player.heldItem.linkedCameraId;
+            const existingCamera = this.cameraSystem.getCamera(linkedCameraId);
+
+            if (existingCamera) {
+                // Update existing camera position and rotation
+                this.cameraSystem.updatePosition(linkedCameraId, position);
+                this.cameraSystem.updateRotation(linkedCameraId, rotation);
+                existingCamera.ownerId = peerId;  // Mark as placed by this player
+                camera = existingCamera;
+                console.log(`[MessageHandler] Camera updated (linked): ${camera.id} by ${peerId}`);
+            }
+        }
+
+        // If no linked camera was found, create a new one
+        if (!camera) {
+            camera = this.cameraSystem.createCamera(cameraType, position, rotation, peerId);
+        }
 
         if (camera) {
             console.log(`[MessageHandler] Camera placed: ${camera.id} by ${peerId}`);
+
+            // For PC players, consume the held camera item
+            if (player.type === 'pc' && player.heldItem?.type === 'security_camera') {
+                player.heldItem = null;
+            }
 
             // Send confirmation to placer
             this.playerManager.sendTo(peerId, {
@@ -966,12 +1008,18 @@ class MessageHandler {
     }
 
     /**
-     * Handle camera pickup from PC player
+     * Handle camera pickup from PC player (picking up placed wall-mounted camera)
      */
     handlePickupCamera(peerId, message) {
         const player = this.gameState.getPlayer(peerId);
         if (!player || player.type !== 'pc') {
             console.warn(`[MessageHandler] PICKUP_CAMERA rejected: not a PC player (${peerId})`);
+            return;
+        }
+
+        // Player must not be holding anything to pick up a camera
+        if (player.heldItem) {
+            console.warn(`[MessageHandler] PICKUP_CAMERA rejected: player already holding an item`);
             return;
         }
 
@@ -989,23 +1037,73 @@ class MessageHandler {
             return;
         }
 
-        // Remove the camera
-        if (this.cameraSystem.removeCamera(cameraId)) {
-            console.log(`[MessageHandler] Camera picked up: ${cameraId} by ${peerId}`);
-
-            // Send confirmation to player who picked up
-            this.playerManager.sendTo(peerId, {
-                type: 'CAMERA_PICKED_UP',
-                cameraId: cameraId
-            });
-
-            // Broadcast removal to all other players
-            this.playerManager.broadcast({
-                type: 'CAMERA_PICKED_UP',
-                cameraId: cameraId,
-                pickedUpBy: peerId
-            }, peerId);
+        // Check if camera is being adjusted by someone
+        const adjuster = this.cameraSystem.getAdjustingPlayer(cameraId);
+        if (adjuster) {
+            console.warn(`[MessageHandler] PICKUP_CAMERA rejected: camera ${cameraId} is being adjusted by ${adjuster}`);
+            return;
         }
+
+        // Check range - wall cameras have longer range (4m) than floor cameras (2m)
+        const isWallCamera = camera.ownerId && camera.ownerId !== 'floor_item' && !camera.ownerId.startsWith('held_');
+        const maxRange = isWallCamera ? 4.0 : 2.0;
+        const dx = player.position.x - camera.position.x;
+        const dz = player.position.z - camera.position.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+        if (distance > maxRange) {
+            console.warn(`[MessageHandler] PICKUP_CAMERA rejected: player too far (${distance.toFixed(2)}m > ${maxRange}m)`);
+            return;
+        }
+
+        // DON'T remove the camera entity - keep it for always-on feed
+        // Just transfer ownership to the held item
+        console.log(`[MessageHandler] Camera picked up: ${cameraId} by ${peerId}`);
+
+        // Check if this is a floor camera (has an existing floor item)
+        if (camera.ownerId === 'floor_item') {
+            // Find the floor item with this linkedCameraId
+            let floorItem = null;
+            for (const [itemId, item] of this.gameState.worldObjects) {
+                if (item.type === 'security_camera' && item.linkedCameraId === cameraId) {
+                    floorItem = item;
+                    break;
+                }
+            }
+
+            if (floorItem) {
+                // Remove from world and give to player
+                this.gameState.worldObjects.delete(floorItem.id);
+                player.heldItem = floorItem;
+                console.log(`[MessageHandler] Floor camera item picked up: ${floorItem.id} (linked to ${cameraId})`);
+            } else {
+                // Fallback: create new item (shouldn't happen normally)
+                console.warn(`[MessageHandler] Floor camera item not found for camera ${cameraId}, creating new item`);
+                const itemSystem = require('./systems/item-system');
+                player.heldItem = itemSystem.createItem('security_camera', player.position);
+                player.heldItem.linkedCameraId = cameraId;
+            }
+        } else {
+            // Wall camera - create a new item linked to existing camera
+            const itemSystem = require('./systems/item-system');
+            player.heldItem = itemSystem.createItem('security_camera', player.position);
+            player.heldItem.linkedCameraId = cameraId;  // Link to existing camera entity
+        }
+
+        // Update camera owner to indicate it's held (not wall-mounted)
+        camera.ownerId = `held_${peerId}`;
+
+        // Send confirmation to player who picked up
+        this.playerManager.sendTo(peerId, {
+            type: 'CAMERA_PICKED_UP',
+            cameraId: cameraId
+        });
+
+        // Broadcast to all other players (camera still exists, just being held now)
+        this.playerManager.broadcast({
+            type: 'CAMERA_PICKED_UP',
+            cameraId: cameraId,
+            pickedUpBy: peerId
+        }, peerId);
     }
 
     /**
@@ -1037,6 +1135,13 @@ class MessageHandler {
             return;
         }
 
+        // Only allow final adjustment from the player who has the lock
+        const adjuster = this.cameraSystem.getAdjustingPlayer(cameraId);
+        if (adjuster && adjuster !== peerId) {
+            console.warn(`[MessageHandler] ADJUST_CAMERA rejected: camera ${cameraId} is being adjusted by ${adjuster}, not ${peerId}`);
+            return;
+        }
+
         // Update the camera rotation
         if (this.cameraSystem.updateRotation(cameraId, rotation)) {
             // Broadcast to all players
@@ -1058,6 +1163,13 @@ class MessageHandler {
 
         if (!camera) {
             // Camera may not exist yet or was deleted - silently ignore
+            return;
+        }
+
+        // Only allow updates from the player who has the adjustment lock
+        const adjuster = this.cameraSystem.getAdjustingPlayer(cameraId);
+        if (adjuster && adjuster !== peerId) {
+            console.warn(`[MessageHandler] UPDATE_CAMERA rejected: camera ${cameraId} is being adjusted by ${adjuster}, not ${peerId}`);
             return;
         }
 
@@ -1110,6 +1222,63 @@ class MessageHandler {
 
         this.cameraSystem.setViewer(peerId, null);
         console.log(`[MessageHandler] Player ${peerId} exited camera view`);
+    }
+
+    /**
+     * Handle PC player starting to adjust a camera (locks it)
+     */
+    handleStartAdjustCamera(peerId, message) {
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'pc') {
+            return;
+        }
+
+        const { cameraId } = message;
+        const camera = this.cameraSystem.getCamera(cameraId);
+
+        if (!camera) {
+            console.warn(`[MessageHandler] START_ADJUST_CAMERA rejected: camera not found (${cameraId})`);
+            return;
+        }
+
+        // Try to lock the camera
+        if (this.cameraSystem.startAdjusting(cameraId, peerId)) {
+            console.log(`[MessageHandler] Player ${peerId} started adjusting camera ${cameraId}`);
+            // Broadcast that this camera is now being adjusted
+            this.playerManager.broadcast({
+                type: 'CAMERA_ADJUST_STARTED',
+                cameraId: cameraId,
+                playerId: peerId
+            });
+        } else {
+            const adjuster = this.cameraSystem.getAdjustingPlayer(cameraId);
+            console.warn(`[MessageHandler] START_ADJUST_CAMERA rejected: camera ${cameraId} already being adjusted by ${adjuster}`);
+            this.playerManager.sendTo(peerId, {
+                type: 'ADJUST_CAMERA_FAILED',
+                cameraId: cameraId,
+                reason: 'Camera is being adjusted by another player'
+            });
+        }
+    }
+
+    /**
+     * Handle PC player stopping camera adjustment (unlocks it)
+     */
+    handleStopAdjustCamera(peerId, message) {
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'pc') {
+            return;
+        }
+
+        const { cameraId } = message;
+        this.cameraSystem.stopAdjusting(cameraId, peerId);
+        console.log(`[MessageHandler] Player ${peerId} stopped adjusting camera ${cameraId}`);
+
+        // Broadcast that this camera is no longer being adjusted
+        this.playerManager.broadcast({
+            type: 'CAMERA_ADJUST_STOPPED',
+            cameraId: cameraId
+        });
     }
 
     /**
@@ -1187,6 +1356,15 @@ class MessageHandler {
                 type: 'CAMERA_PICKED_UP',
                 cameraId: cameraId,
                 reason: 'Owner disconnected'
+            });
+        }
+
+        // Clear any camera adjustments this player was doing
+        const clearedAdjustments = this.cameraSystem.clearPlayerAdjustments(peerId);
+        for (const cameraId of clearedAdjustments) {
+            this.playerManager.broadcast({
+                type: 'CAMERA_ADJUST_STOPPED',
+                cameraId: cameraId
             });
         }
 

@@ -28,6 +28,10 @@ export class CameraViewMode {
             1000
         );
 
+        // Enable view camera to see both layer 0 (world) and layer 1 (player mesh)
+        this.viewCamera.layers.enable(0);
+        this.viewCamera.layers.enable(1);
+
         // Camera position and rotation
         this.position = new THREE.Vector3();
         this.rotation = { pitch: 0, yaw: 0, roll: 0 };
@@ -35,10 +39,23 @@ export class CameraViewMode {
         // Callbacks
         this.onPlaceConfirmed = null;  // (position, rotation) => void
         this.onAdjustConfirmed = null; // (cameraId, rotation) => void
+        this.onRotationUpdate = null;  // (cameraId, rotation) => void - real-time updates
         this.onExit = null;            // () => void
+
+        // External references for rendering
+        this.getCameraMeshes = null;   // () => Map<cameraId, mesh>
+        this.getPlayerMesh = null;     // () => THREE.Group
+        this.getPlayerPosition = null; // () => {x, y, z}
+
+        // Player mesh visibility state
+        this._playerMeshWasInScene = false;
 
         // Sensitivity for mouse look
         this.sensitivity = 0.002;
+
+        // Throttle for real-time updates (send at most every 50ms)
+        this._lastUpdateTime = 0;
+        this._updateInterval = 50;
 
         // HUD overlay
         this.overlay = null;
@@ -173,6 +190,9 @@ export class CameraViewMode {
         this._showOverlay('ADJUSTING CAMERA');
         this._enableInputCapture();
 
+        // Show player mesh so they can see themselves through the camera
+        this._showPlayerMesh();
+
         // Notify controls to disable player movement
         if (this.controls.setCameraViewMode) {
             this.controls.setCameraViewMode(true);
@@ -191,6 +211,9 @@ export class CameraViewMode {
         this.isActive = false;
         this._hideOverlay();
         this._disableInputCapture();
+
+        // Hide player mesh again
+        this._hidePlayerMesh();
 
         // Notify controls to re-enable player movement
         if (this.controls.setCameraViewMode) {
@@ -236,7 +259,29 @@ export class CameraViewMode {
     render(scene) {
         if (!this.isActive) return;
 
+        // Update player mesh position before rendering
+        this._updatePlayerMeshPosition();
+
+        // Hide the camera mesh we're viewing through (camera can't see itself)
+        let cameraMesh = null;
+        let wasVisible = false;
+        if (this.cameraId && this.getCameraMeshes) {
+            const cameraMeshes = this.getCameraMeshes();
+            if (cameraMeshes) {
+                cameraMesh = cameraMeshes.get(this.cameraId);
+                if (cameraMesh) {
+                    wasVisible = cameraMesh.visible;
+                    cameraMesh.visible = false;
+                }
+            }
+        }
+
         this.renderer.render(scene, this.viewCamera);
+
+        // Restore camera mesh visibility
+        if (cameraMesh) {
+            cameraMesh.visible = wasVisible;
+        }
     }
 
     /**
@@ -302,6 +347,15 @@ export class CameraViewMode {
             this.rotation.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, this.rotation.pitch));
 
             this._updateViewCamera();
+
+            // Send real-time rotation updates (throttled)
+            if (this.mode === 'adjusting' && this.onRotationUpdate) {
+                const now = performance.now();
+                if (now - this._lastUpdateTime >= this._updateInterval) {
+                    this._lastUpdateTime = now;
+                    this.onRotationUpdate(this.cameraId, { ...this.rotation });
+                }
+            }
         }
     }
 
@@ -325,6 +379,54 @@ export class CameraViewMode {
     }
 
     /**
+     * Show player mesh in scene so camera can see the player
+     */
+    _showPlayerMesh() {
+        if (!this.getPlayerMesh) return;
+
+        const playerMesh = this.getPlayerMesh();
+        if (!playerMesh) return;
+
+        // Check if already in scene
+        this._playerMeshWasInScene = playerMesh.parent === this.scene;
+
+        if (!this._playerMeshWasInScene) {
+            this.scene.add(playerMesh);
+        }
+
+        // Update position immediately
+        this._updatePlayerMeshPosition();
+    }
+
+    /**
+     * Hide player mesh from scene
+     */
+    _hidePlayerMesh() {
+        if (!this.getPlayerMesh) return;
+
+        const playerMesh = this.getPlayerMesh();
+        if (!playerMesh) return;
+
+        // Only remove if we added it
+        if (!this._playerMeshWasInScene && playerMesh.parent === this.scene) {
+            this.scene.remove(playerMesh);
+        }
+    }
+
+    /**
+     * Update player mesh position to match current player position
+     */
+    _updatePlayerMeshPosition() {
+        if (!this.getPlayerMesh || !this.getPlayerPosition) return;
+
+        const playerMesh = this.getPlayerMesh();
+        const playerPos = this.getPlayerPosition();
+        if (!playerMesh || !playerPos) return;
+
+        playerMesh.position.set(playerPos.x, playerPos.y, playerPos.z);
+    }
+
+    /**
      * Handle window resize
      */
     onResize() {
@@ -337,6 +439,7 @@ export class CameraViewMode {
      */
     dispose() {
         this._disableInputCapture();
+        this._hidePlayerMesh();
 
         if (this.overlay && this.overlay.parentNode) {
             this.overlay.parentNode.removeChild(this.overlay);

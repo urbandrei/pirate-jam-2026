@@ -8,6 +8,7 @@ import * as FarmingRenderer from './farming-renderer.js';
 import * as StationRenderer from './station-renderer.js';
 import * as ApplianceRenderer from './appliance-renderer.js';
 import * as BedRenderer from './bed-renderer.js';
+import * as CameraRenderer from './camera-renderer.js';
 import { WaitingRoomRenderer } from './waiting-room-renderer.js';
 
 export class Scene {
@@ -39,6 +40,9 @@ export class Scene {
 
         // Player body meshes (dead players)
         this.bodyMeshes = new Map(); // bodyId -> mesh
+
+        // Camera meshes (placed cameras in the world)
+        this.cameraMeshes = new Map(); // cameraId -> THREE.Group
 
         // Wall material (shared)
         this.wallMaterial = null;
@@ -1037,6 +1041,51 @@ export class Scene {
     }
 
     /**
+     * Update camera meshes in the scene from server state
+     * @param {Array} cameras - Array of camera entities from server
+     * @param {string} localPlayerId - Local player's socket ID (to skip held camera meshes)
+     */
+    updateCameras(cameras, localPlayerId = null) {
+        if (!cameras) return;
+
+        const currentIds = new Set(cameras.map(c => c.id));
+
+        // Remove deleted cameras
+        for (const [id, mesh] of this.cameraMeshes) {
+            if (!currentIds.has(id)) {
+                this.scene.remove(mesh);
+                CameraRenderer.disposeCameraMesh(mesh);
+                this.cameraMeshes.delete(id);
+            }
+        }
+
+        // Add/update cameras
+        for (const camera of cameras) {
+            // Skip ALL held cameras (they're rendered as part of the player mesh instead)
+            if (camera.ownerId && camera.ownerId.startsWith('held_')) {
+                // Remove mesh if it exists (camera was just picked up)
+                if (this.cameraMeshes.has(camera.id)) {
+                    this.scene.remove(this.cameraMeshes.get(camera.id));
+                    CameraRenderer.disposeCameraMesh(this.cameraMeshes.get(camera.id));
+                    this.cameraMeshes.delete(camera.id);
+                }
+                continue;
+            }
+
+            if (!this.cameraMeshes.has(camera.id)) {
+                const mesh = CameraRenderer.createCameraMesh(camera);
+                this.cameraMeshes.set(camera.id, mesh);
+                this.scene.add(mesh);
+            } else {
+                CameraRenderer.updateCameraMesh(
+                    this.cameraMeshes.get(camera.id),
+                    camera
+                );
+            }
+        }
+    }
+
+    /**
      * Update item meshes (non-plant world objects)
      * @private
      */
@@ -1059,6 +1108,22 @@ export class Scene {
 
         // Create or update meshes for objects in state
         for (const obj of items) {
+            // Skip security_camera items with linked cameras - they have their own camera mesh
+            if (obj.type === 'security_camera' && obj.linkedCameraId) {
+                // Clean up any existing mesh for this item
+                if (this.worldObjectMeshes.has(obj.id)) {
+                    const oldMesh = this.worldObjectMeshes.get(obj.id);
+                    this.scene.remove(oldMesh);
+                    if (oldMesh.geometry) oldMesh.geometry.dispose();
+                    if (oldMesh.material) oldMesh.material.dispose();
+                    if (interactionSystem) {
+                        interactionSystem.unregisterInteractable(oldMesh);
+                    }
+                    this.worldObjectMeshes.delete(obj.id);
+                }
+                continue;
+            }
+
             if (!this.worldObjectMeshes.has(obj.id)) {
                 // Create new mesh
                 const mesh = this.createWorldObjectMesh(obj);

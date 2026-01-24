@@ -1114,6 +1114,17 @@ class InteractionSystem {
         this.gameState.removeWorldObject(itemId);
         player.heldItem = obj;
 
+        // Update linked camera ownerId for security cameras
+        if (obj.type === 'security_camera' && obj.linkedCameraId) {
+            const cameraSystem = this.gameState.cameraSystem;
+            if (cameraSystem) {
+                const camera = cameraSystem.getCamera(obj.linkedCameraId);
+                if (camera) {
+                    camera.ownerId = `held_${player.id}`;
+                }
+            }
+        }
+
         console.log(`[InteractionSystem] Player ${player.id} picked up ${obj.type} (${itemId})`);
         return { success: true, item: obj };
     }
@@ -1140,6 +1151,27 @@ class InteractionSystem {
                 y: 0.25,
                 z: player.position.z
             };
+        }
+
+        // Update linked camera for security cameras
+        if (item.type === 'security_camera' && item.linkedCameraId) {
+            const cameraSystem = this.gameState.cameraSystem;
+            if (cameraSystem) {
+                const camera = cameraSystem.getCamera(item.linkedCameraId);
+                if (camera) {
+                    // Set camera to floor item state
+                    camera.ownerId = 'floor_item';
+                    // Update camera position to match the dropped item
+                    camera.position = { ...item.position };
+                    // Set rotation to face player's look direction
+                    camera.rotation = {
+                        yaw: player.lookRotation?.y || 0,
+                        pitch: 0,  // Keep level on floor
+                        roll: 0
+                    };
+                    console.log(`[InteractionSystem] Updated linked camera ${item.linkedCameraId} to floor_item facing yaw=${camera.rotation.yaw.toFixed(2)}`);
+                }
+            }
         }
 
         // Add back to world and clear from player

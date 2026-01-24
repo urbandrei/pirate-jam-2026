@@ -43,6 +43,63 @@ class CameraSystem {
         // Track web viewers requesting frames
         // Map of socketId -> { cameraId, lastRequestTime }
         this.webViewers = new Map();
+
+        // Track cameras being adjusted (locked from interaction)
+        // Map of cameraId -> playerId adjusting it
+        this.adjustingCameras = new Map();
+    }
+
+    /**
+     * Start adjusting a camera (locks it from other interactions)
+     * @param {string} cameraId - Camera being adjusted
+     * @param {string} playerId - Player adjusting it
+     * @returns {boolean} True if lock acquired
+     */
+    startAdjusting(cameraId, playerId) {
+        // Check if already being adjusted by someone else
+        const existingAdjuster = this.adjustingCameras.get(cameraId);
+        if (existingAdjuster && existingAdjuster !== playerId) {
+            return false;
+        }
+        this.adjustingCameras.set(cameraId, playerId);
+        return true;
+    }
+
+    /**
+     * Stop adjusting a camera (unlocks it)
+     * @param {string} cameraId - Camera to unlock
+     * @param {string} playerId - Player releasing the lock
+     */
+    stopAdjusting(cameraId, playerId) {
+        const adjuster = this.adjustingCameras.get(cameraId);
+        if (adjuster === playerId) {
+            this.adjustingCameras.delete(cameraId);
+        }
+    }
+
+    /**
+     * Check if a camera is being adjusted
+     * @param {string} cameraId - Camera to check
+     * @returns {string|null} Player ID adjusting it, or null
+     */
+    getAdjustingPlayer(cameraId) {
+        return this.adjustingCameras.get(cameraId) || null;
+    }
+
+    /**
+     * Clear all adjustments by a player (on disconnect/death)
+     * @param {string} playerId - Player who disconnected/died
+     * @returns {Array} Array of camera IDs that were being adjusted
+     */
+    clearPlayerAdjustments(playerId) {
+        const clearedIds = [];
+        for (const [cameraId, adjusterId] of this.adjustingCameras) {
+            if (adjusterId === playerId) {
+                this.adjustingCameras.delete(cameraId);
+                clearedIds.push(cameraId);
+            }
+        }
+        return clearedIds;
     }
 
     /**

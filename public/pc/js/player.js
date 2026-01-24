@@ -4,6 +4,7 @@
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { COLORS, PLAYER_HEIGHT, PLAYER_RADIUS, GROUND_LEVEL, ITEMS } from '../shared/constants.js';
+import { createHeldCameraMesh, disposeCameraMesh } from './camera-renderer.js';
 
 export class Player {
     constructor(scene, camera) {
@@ -64,6 +65,11 @@ export class Player {
         bottomSphere.position.y = -cylinderHeight / 2;
         group.add(bottomSphere);
 
+        // Put player mesh ONLY on layer 1 (invisible to main camera on layer 0)
+        // This allows camera previews to see the player without the player seeing themselves
+        group.layers.set(1);
+        group.traverse(child => child.layers.set(1));
+
         return group;
     }
 
@@ -117,8 +123,13 @@ export class Player {
         // Remove existing held item mesh
         if (this.heldItemMesh) {
             this.camera.remove(this.heldItemMesh);
-            if (this.heldItemMesh.geometry) this.heldItemMesh.geometry.dispose();
-            if (this.heldItemMesh.material) this.heldItemMesh.material.dispose();
+            // Handle both simple meshes and groups (like camera mesh)
+            if (this.heldItemMesh.isGroup) {
+                disposeCameraMesh(this.heldItemMesh);
+            } else {
+                if (this.heldItemMesh.geometry) this.heldItemMesh.geometry.dispose();
+                if (this.heldItemMesh.material) this.heldItemMesh.material.dispose();
+            }
             this.heldItemMesh = null;
         }
 
@@ -134,9 +145,14 @@ export class Player {
     /**
      * Create a mesh for the held item
      * @param {Object} item - Item data
-     * @returns {THREE.Mesh}
+     * @returns {THREE.Mesh|THREE.Group}
      */
     createHeldItemMesh(item) {
+        // Special handling for security camera
+        if (item.type === 'security_camera') {
+            return createHeldCameraMesh();
+        }
+
         // Get item definition for color
         const itemDef = ITEMS[item.type];
 

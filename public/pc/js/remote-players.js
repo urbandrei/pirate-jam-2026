@@ -31,7 +31,7 @@ export class RemotePlayers {
         this.camera = camera;
     }
 
-    updatePlayers(state, localPlayerId) {
+    updatePlayers(state, localPlayerId, hidePlayerId = null) {
         if (!state || !state.players) return;
 
         const currentPlayerIds = new Set(Object.keys(state.players));
@@ -106,6 +106,27 @@ export class RemotePlayers {
                 this.updateVRPlayer(playerObj, playerData);
             } else {
                 this.updatePCPlayer(playerObj, playerData);
+            }
+
+            // Hide player if they are the camera holder (for camera viewer)
+            // nameLabel already retrieved above at line 95
+            if (hidePlayerId && playerId === hidePlayerId) {
+                console.log(`[RemotePlayers] Hiding player ${playerId} (camera holder)`);
+                playerObj.mesh.visible = false;
+                if (playerObj.heldItemMesh) {
+                    playerObj.heldItemMesh.visible = false;
+                }
+                if (nameLabel && nameLabel.sprite) {
+                    nameLabel.sprite.visible = false;
+                }
+            } else {
+                playerObj.mesh.visible = true;
+                if (playerObj.heldItemMesh) {
+                    playerObj.heldItemMesh.visible = true;
+                }
+                if (nameLabel && nameLabel.sprite) {
+                    nameLabel.sprite.visible = true;
+                }
             }
         }
     }

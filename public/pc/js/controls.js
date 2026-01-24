@@ -50,14 +50,14 @@ export class Controls {
         // Pointer lock change handler
         document.addEventListener('pointerlockchange', () => {
             this.isLocked = document.pointerLockElement === this.domElement;
-            this.crosshair.style.display = this.isLocked ? 'block' : 'none';
+            this.updateCrosshairVisibility();
         });
 
         // Mouse movement
         document.addEventListener('mousemove', (e) => {
             if (!this.isLocked) return;
-            // Block camera rotation when sleeping or dead
-            if (this.isSleeping || this.isDead) return;
+            // Block camera rotation when sleeping, dead, or in camera view mode
+            if (this.isSleeping || this.isDead || this.isCameraViewMode) return;
 
             this.yaw -= e.movementX * this.sensitivity;
             this.pitch -= e.movementY * this.sensitivity;
@@ -170,6 +170,26 @@ export class Controls {
             this.input.right = false;
             this.input.jump = false;
         }
+    }
+
+    setCameraViewMode(active) {
+        this.isCameraViewMode = active;
+        this.updateCrosshairVisibility();
+
+        if (active) {
+            // Clear all movement input when entering camera view mode
+            this.input.forward = false;
+            this.input.backward = false;
+            this.input.left = false;
+            this.input.right = false;
+            this.input.jump = false;
+        }
+    }
+
+    updateCrosshairVisibility() {
+        // Hide crosshair if not locked OR in camera view mode
+        const shouldShow = this.isLocked && !this.isCameraViewMode;
+        this.crosshair.style.display = shouldShow ? 'block' : 'none';
     }
 
     setCameraViewMode(active) {

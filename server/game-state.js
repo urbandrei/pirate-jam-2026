@@ -28,6 +28,9 @@ class GameState {
         // World objects (pickable items, etc.)
         this.worldObjects = new Map();
 
+        // Camera system reference (set by setCameraSystem)
+        this.cameraSystem = null;
+
         // Add test items at spawn room center
         const testSeed = itemSystem.createItem('seed', { x: 0, y: 0.25, z: 0 });
         this.worldObjects.set(testSeed.id, testSeed);
@@ -38,10 +41,60 @@ class GameState {
         const testMeal = itemSystem.createItem('basic_meal', { x: -2, y: 0.25, z: 0 });
         this.worldObjects.set(testMeal.id, testMeal);
 
+        // Security camera items will be created after cameraSystem is set
+        // Store spawn positions for later initialization
+        this._pendingCameraSpawns = [
+            { x: 3, y: 0.25, z: 3 },
+            { x: -3, y: 0.25, z: 3 }
+        ];
+
         // In dev mode, create room-specific objects for the perimeter rooms
         if (isDevMode) {
             this._createDevRoomObjects();
         }
+    }
+
+    /**
+     * Set the camera system reference and initialize camera items
+     * @param {CameraSystem} cameraSystem - The camera system instance
+     */
+    setCameraSystem(cameraSystem) {
+        this.cameraSystem = cameraSystem;
+
+        // Now create security camera items with linked camera entities
+        for (const pos of this._pendingCameraSpawns) {
+            this.createSecurityCameraItem(pos);
+        }
+        this._pendingCameraSpawns = [];
+    }
+
+    /**
+     * Create a security camera item with a linked camera entity
+     * The camera entity persists throughout the item's lifecycle (floor/held/placed)
+     * @param {Object} position - World position {x, y, z}
+     * @returns {Object} The created item with linkedCameraId
+     */
+    createSecurityCameraItem(position) {
+        const item = itemSystem.createItem('security_camera', position);
+
+        // Create linked camera entity if camera system is available
+        if (this.cameraSystem) {
+            // Camera starts facing forward (+Z direction) from floor level
+            const cameraEntity = this.cameraSystem.createCamera(
+                'security',
+                { x: position.x, y: position.y + 0.1, z: position.z },
+                { pitch: 0, yaw: 0, roll: 0 },
+                'floor_item' // ownerId indicates this is a floor item, not player-placed
+            );
+
+            if (cameraEntity) {
+                item.linkedCameraId = cameraEntity.id;
+                console.log(`[GameState] Created security camera item with linked camera: ${item.id} -> ${cameraEntity.id}`);
+            }
+        }
+
+        this.worldObjects.set(item.id, item);
+        return item;
     }
 
     /**
@@ -123,6 +176,40 @@ class GameState {
     }
 
     removePlayer(peerId) {
+        const player = this.players.get(peerId);
+
+        // Drop held item if player was holding something
+        if (player && player.heldItem) {
+            const item = player.heldItem;
+
+            // Set drop position at player's feet
+            item.position = {
+                x: player.position.x,
+                y: 0.25,
+                z: player.position.z
+            };
+
+            // Update linked camera for security cameras
+            if (item.type === 'security_camera' && item.linkedCameraId && this.cameraSystem) {
+                const camera = this.cameraSystem.getCamera(item.linkedCameraId);
+                if (camera) {
+                    camera.ownerId = 'floor_item';
+                    camera.position = { ...item.position };
+                    // Face player's last look direction
+                    camera.rotation = {
+                        yaw: player.lookRotation?.y || 0,
+                        pitch: 0,
+                        roll: 0
+                    };
+                    console.log(`[GameState] Disconnecting player ${peerId} dropped camera ${item.linkedCameraId} to floor`);
+                }
+            }
+
+            // Add item back to world
+            this.worldObjects.set(item.id, item);
+            console.log(`[GameState] Player ${peerId} disconnected, dropped ${item.type} at (${item.position.x.toFixed(2)}, ${item.position.y.toFixed(2)}, ${item.position.z.toFixed(2)})`);
+        }
+
         this.players.delete(peerId);
     }
 

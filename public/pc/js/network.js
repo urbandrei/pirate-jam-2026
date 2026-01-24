@@ -2,7 +2,7 @@
  * Socket.IO network client for PC
  */
 
-import { MSG, createJoinMessage, createInputMessage, createInteractMessage, createTimedInteractStartMessage, createTimedInteractCancelMessage, createSleepMinigameCompleteMessage, createChatMessage, createSetNameMessage, createEnterCameraViewMessage, createExitCameraViewMessage } from '../shared/protocol.js';
+import { MSG, createJoinMessage, createInputMessage, createInteractMessage, createTimedInteractStartMessage, createTimedInteractCancelMessage, createSleepMinigameCompleteMessage, createChatMessage, createSetNameMessage, createEnterCameraViewMessage, createExitCameraViewMessage, createPlaceCameraMessage, createPickupCameraMessage, createAdjustCameraMessage } from '../shared/protocol.js';
 
 export class Network {
     constructor() {
@@ -56,6 +56,8 @@ export class Network {
         this.onCameraAdjusted = null;
         this.onCameraLimitsUpdated = null;
         this.onCamerasUpdate = null;  // For STATE_UPDATE cameras array
+        this.onCameraAdjustStarted = null;  // Camera being adjusted by a player
+        this.onCameraAdjustStopped = null;  // Camera no longer being adjusted
 
         // Status element
         this.statusEl = document.getElementById('status');
@@ -333,6 +335,20 @@ export class Network {
                     this.onCameraLimitsUpdated(message.limits);
                 }
                 break;
+
+            case 'CAMERA_ADJUST_STARTED':
+                console.log('Camera adjust started:', message.cameraId, 'by', message.playerId);
+                if (this.onCameraAdjustStarted) {
+                    this.onCameraAdjustStarted(message.cameraId, message.playerId);
+                }
+                break;
+
+            case 'CAMERA_ADJUST_STOPPED':
+                console.log('Camera adjust stopped:', message.cameraId);
+                if (this.onCameraAdjustStopped) {
+                    this.onCameraAdjustStopped(message.cameraId);
+                }
+                break;
         }
     }
 
@@ -384,6 +400,35 @@ export class Network {
 
     sendExitCameraView() {
         this.send(createExitCameraViewMessage());
+    }
+
+    sendPlaceCamera(type, position, rotation) {
+        this.send(createPlaceCameraMessage(type, position, rotation));
+    }
+
+    sendAdjustCamera(cameraId, rotation) {
+        this.send(createAdjustCameraMessage(cameraId, rotation));
+    }
+
+    sendPickupCamera(cameraId) {
+        this.send(createPickupCameraMessage(cameraId));
+    }
+
+    sendStartAdjustCamera(cameraId) {
+        this.send({ type: 'START_ADJUST_CAMERA', cameraId });
+    }
+
+    sendStopAdjustCamera(cameraId) {
+        this.send({ type: 'STOP_ADJUST_CAMERA', cameraId });
+    }
+
+    sendUpdateCamera(cameraId, position, rotation) {
+        this.send({
+            type: 'UPDATE_CAMERA',
+            cameraId,
+            position,
+            rotation
+        });
     }
 
     updateStatus(text) {

@@ -9,9 +9,10 @@ import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { CAMERA_DEFAULTS } from '../shared/constants.js';
 
 export class CameraFeedSystem {
-    constructor(renderer, scene) {
+    constructor(renderer, scene, getCameraMeshes = null) {
         this.renderer = renderer;
         this.scene = scene;
+        this.getCameraMeshes = getCameraMeshes;  // Optional getter for camera meshes (for hiding during render)
 
         // Map of cameraId -> WebGLRenderTarget
         this.renderTargets = new Map();
@@ -59,6 +60,10 @@ export class CameraFeedSystem {
             1000
         );
 
+        // Enable feed camera to see both layer 0 (world) and layer 1 (player mesh)
+        camera.layers.enable(0);
+        camera.layers.enable(1);
+
         // Set position and rotation
         camera.position.set(position.x, position.y, position.z);
         camera.rotation.order = 'YXZ';
@@ -103,13 +108,32 @@ export class CameraFeedSystem {
         // Save current render target
         const currentTarget = this.renderer.getRenderTarget();
 
+        // Get camera meshes map (if available)
+        const cameraMeshes = this.getCameraMeshes ? this.getCameraMeshes() : null;
+
         // Render each camera feed
         for (const [cameraId, renderTarget] of this.renderTargets) {
             const camera = this.feedCameras.get(cameraId);
             if (!camera) continue;
 
+            // Hide this camera's mesh before rendering its feed (camera can't see itself)
+            let cameraMesh = null;
+            let wasVisible = false;
+            if (cameraMeshes) {
+                cameraMesh = cameraMeshes.get(cameraId);
+                if (cameraMesh) {
+                    wasVisible = cameraMesh.visible;
+                    cameraMesh.visible = false;
+                }
+            }
+
             this.renderer.setRenderTarget(renderTarget);
             this.renderer.render(this.scene, camera);
+
+            // Restore camera mesh visibility
+            if (cameraMesh) {
+                cameraMesh.visible = wasVisible;
+            }
         }
 
         // Restore original target

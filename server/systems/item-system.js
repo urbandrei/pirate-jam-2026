@@ -56,6 +56,13 @@ const ITEMS = {
         color: 0x4a4a4a,
         canStack: false,
         rotTime: null
+    },
+    security_camera: {
+        name: 'Security Camera',
+        color: 0x333333,
+        canStack: false,
+        rotTime: null,
+        isCamera: true
     }
 };
 

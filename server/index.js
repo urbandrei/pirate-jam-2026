@@ -276,6 +276,9 @@ const playerQueue = new PlayerQueue();
 const interactionSystem = new InteractionSystem(gameState, roomManager, isDevMode, playerQueue);
 const messageHandler = new MessageHandler(gameState, playerManager, interactionSystem, playerQueue);
 
+// Link camera system to game state so camera items can create linked camera entities
+gameState.setCameraSystem(messageHandler.getCameraSystem());
+
 // Initialize Twitch chat integration
 const twitchChat = new TwitchChat((streamMessage) => {
     messageHandler.chatSystem.handleStreamMessage(streamMessage);
@@ -564,6 +567,27 @@ function gameLoop() {
     const tickDelta = (now - lastTickTime) / 1000;
     if (tickDelta >= 1 / TICK_RATE) {
         physicsValidator.tick(tickDelta);
+
+        // Update camera positions for held security cameras
+        const cameraSystem = messageHandler.getCameraSystem();
+        for (const player of gameState.players.values()) {
+            if (player.heldItem?.type === 'security_camera' && player.heldItem.linkedCameraId) {
+                const cameraId = player.heldItem.linkedCameraId;
+                // Position camera at player eye level
+                cameraSystem.updatePosition(cameraId, {
+                    x: player.position.x,
+                    y: player.position.y + 0.6, // Eye-ish height relative to capsule center
+                    z: player.position.z
+                });
+                // Rotation from player's look direction
+                cameraSystem.updateRotation(cameraId, {
+                    pitch: player.lookRotation?.x || 0,
+                    yaw: player.lookRotation?.y || 0,
+                    roll: 0
+                });
+            }
+        }
+
         lastTickTime = now;
     }
 
@@ -588,6 +612,17 @@ function gameLoop() {
                 player.alive = false;
                 player.playerState = 'dead';
                 player.deathTime = now;
+
+                // Clear any camera adjustments (camera stays on wall in last position)
+                const cameraSystem = messageHandler.getCameraSystem();
+                const clearedCameraIds = cameraSystem.clearPlayerAdjustments(player.id);
+                // Broadcast so other clients know each camera is no longer being adjusted
+                for (const cameraId of clearedCameraIds) {
+                    playerManager.broadcast({
+                        type: 'CAMERA_ADJUST_STOPPED',
+                        cameraId: cameraId
+                    });
+                }
 
                 // Teleport player to waiting room
                 player.position.x = WAITING_ROOM.SPAWN_POSITION.x;

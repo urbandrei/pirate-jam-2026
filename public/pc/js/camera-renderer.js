@@ -27,11 +27,6 @@ function initMaterials() {
             roughness: 0.2,
             metalness: 0.8
         }),
-        mount: new THREE.MeshStandardMaterial({
-            color: CAMERA_COLORS.MOUNT,
-            roughness: 0.8,
-            metalness: 0.2
-        }),
         ledActive: new THREE.MeshBasicMaterial({
             color: CAMERA_COLORS.LED_ACTIVE
         }),
@@ -91,23 +86,6 @@ export function createCameraMesh(cameraData) {
     const glass = new THREE.Mesh(glassGeometry, glassMaterial);
     glass.position.z = -CAMERA_ITEM.size.depth / 2 - lensLength - 0.001;
     group.add(glass);
-
-    // Mount bracket (L-shape)
-    const mountThickness = 0.03;
-    const mountWidth = CAMERA_ITEM.size.width * 0.6;
-    const mountHeight = CAMERA_ITEM.size.height * 0.8;
-
-    // Vertical part of mount
-    const mountVertGeometry = new THREE.BoxGeometry(mountThickness, mountHeight, mountThickness);
-    const mountVert = new THREE.Mesh(mountVertGeometry, materials.mount);
-    mountVert.position.set(0, CAMERA_ITEM.size.height / 2 + mountHeight / 2, CAMERA_ITEM.size.depth / 2);
-    group.add(mountVert);
-
-    // Horizontal part of mount (top)
-    const mountHorizGeometry = new THREE.BoxGeometry(mountThickness, mountThickness, CAMERA_ITEM.size.depth * 0.5);
-    const mountHoriz = new THREE.Mesh(mountHorizGeometry, materials.mount);
-    mountHoriz.position.set(0, CAMERA_ITEM.size.height / 2 + mountHeight, CAMERA_ITEM.size.depth / 4);
-    group.add(mountHoriz);
 
     // LED indicator (small sphere on top-front)
     const ledGeometry = new THREE.SphereGeometry(0.015, 8, 8);

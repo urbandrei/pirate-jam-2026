@@ -197,10 +197,21 @@ export class InteractionSystem {
 
     /**
      * Show interaction prompt
+     * @param {string|Array} textOrInteractions - Either a simple string or array of {prompt, key} objects
      * @private
      */
-    _showPrompt(text) {
-        this.promptElement.textContent = `Click to ${text}`;
+    _showPrompt(textOrInteractions) {
+        if (Array.isArray(textOrInteractions)) {
+            // Multiple interactions with different keys
+            const parts = textOrInteractions.map(i => {
+                const keyText = i.key || 'Click';
+                return `${keyText}: ${i.prompt}`;
+            });
+            this.promptElement.textContent = parts.join(' | ');
+        } else {
+            // Simple string - default to "Click to {text}"
+            this.promptElement.textContent = `Click to ${textOrInteractions}`;
+        }
         this.promptElement.style.display = 'block';
     }
 

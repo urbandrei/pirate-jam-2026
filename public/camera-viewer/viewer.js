@@ -127,10 +127,9 @@ class CameraViewer {
                 break;
 
             case 'CAMERA_PICKED_UP':
-                this.cameras.delete(msg.cameraId);
-                if (msg.cameraId === this.cameraId) {
-                    this.showError('Camera was picked up');
-                }
+                // Don't delete the camera - it still exists, just being held now
+                // The camera data will be updated in the next STATE_UPDATE with new ownerId
+                console.log(`[CameraViewer] Camera ${msg.cameraId} picked up by ${msg.pickedUpBy}`);
                 break;
 
             case 'CAMERA_ADJUSTED':
@@ -160,11 +159,18 @@ class CameraViewer {
             this.scene.updateWorldObjects(state.worldObjects, null, null, null);
         }
 
-        // Update remote players (pass empty string as localPlayerId so all players render)
-        this.remotePlayers.updatePlayers(state, '');
-
-        // Find our camera and position the view
+        // Find our camera to check if it's held by a player
         const myCam = this.cameras.get(this.cameraId);
+
+        // Detect if viewing a held camera and hide the owner's mesh
+        let heldByPlayerId = null;
+        if (myCam && myCam.ownerId && myCam.ownerId.startsWith('held_')) {
+            heldByPlayerId = myCam.ownerId.substring(5); // Extract player ID after 'held_'
+            console.log(`[CameraViewer] Camera ${this.cameraId} is held by player ${heldByPlayerId}`);
+        }
+
+        // Update remote players (hide the holder if viewing their held camera)
+        this.remotePlayers.updatePlayers(state, '', heldByPlayerId);
         if (myCam) {
             // Update camera position/rotation
             this.scene.camera.position.set(

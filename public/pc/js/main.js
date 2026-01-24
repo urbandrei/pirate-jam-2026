@@ -15,7 +15,10 @@ import { SettingsManager } from './settings-manager.js';
 import { SettingsUI } from './settings-ui.js';
 import { CameraFeedSystem } from './camera-feed-system.js';
 import { SecurityRoomRenderer } from './security-room-renderer.js';
+import { CameraPlacementSystem } from './camera-placement-system.js';
+import { CameraViewMode } from './camera-view-mode.js';
 import { INPUT_RATE, ITEMS } from '../shared/constants.js';
+import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 
 class Game {
     constructor() {
@@ -35,11 +38,20 @@ class Game {
         this.cameraFeedSystem = null;
         this.securityRoomRenderer = null;
         this.cameras = new Map();  // Track camera entities from server
+        this.targetedCamera = null;  // Currently targeted camera (for interaction)
 
         // Camera view state (viewing through a camera)
         this.isInCameraView = false;
         this.viewingCameraId = null;
         this.savedCameraState = null;  // { position, rotation } before entering camera view
+
+        // Camera placement state
+        this.cameraPlacementSystem = null;
+        this.cameraViewMode = null;
+        this.pendingCameraPlacement = false;  // True when waiting for server to confirm our placement
+        this._lastHeldItemType = null;  // Track held item type for auto-enter placement mode
+        this.adjustingCameraId = null;  // Camera ID currently being adjusted by local player
+        this.camerasBeingAdjusted = new Set();  // Camera IDs being adjusted by any player
 
         this.lastTime = performance.now();
         this.lastInputTime = 0;
@@ -89,8 +101,68 @@ class Game {
         this.interactionSystem = new InteractionSystem(this.scene, this.scene.camera);
 
         // Setup camera systems
-        this.cameraFeedSystem = new CameraFeedSystem(this.scene.renderer, this.scene.scene);
+        // Pass getter for camera meshes so cameras don't see themselves in their own feed
+        this.cameraFeedSystem = new CameraFeedSystem(
+            this.scene.renderer,
+            this.scene.scene,
+            () => this.scene.cameraMeshes
+        );
         this.securityRoomRenderer = new SecurityRoomRenderer(this.scene.scene);
+
+        // Camera placement system (wall-mounted security cameras)
+        // Pass a getter function since dynamicWalls array is replaced when world rebuilds
+        this.cameraPlacementSystem = new CameraPlacementSystem(
+            this.scene.scene,
+            this.scene.camera,
+            () => this.scene.dynamicWalls,
+            this.scene.renderer
+        );
+
+        // Set up camera placement callbacks for player visibility in preview
+        this.cameraPlacementSystem.getPlayerMesh = () => this.player.mesh;
+        this.cameraPlacementSystem.getPlayerPosition = () => this.player.getPosition();
+
+        // Camera view mode (for adjusting camera aim)
+        this.cameraViewMode = new CameraViewMode(
+            this.scene.scene,
+            this.scene.renderer,
+            this.controls
+        );
+
+        // Set up camera view mode callbacks for player/camera visibility
+        this.cameraViewMode.getCameraMeshes = () => this.scene.cameraMeshes;
+        this.cameraViewMode.getPlayerMesh = () => this.player.mesh;
+        this.cameraViewMode.getPlayerPosition = () => this.player.getPosition();
+
+        // Wire camera placement callback
+        this.cameraPlacementSystem.onPlaced = (position, rotation) => {
+            this.pendingCameraPlacement = true;
+            this.network.sendPlaceCamera('security', position, rotation);
+        };
+
+        // Wire camera adjustment callback (final confirmation)
+        this.cameraViewMode.onAdjustConfirmed = (cameraId, rotation) => {
+            this.network.sendAdjustCamera(cameraId, rotation);
+            // Also release the adjustment lock (onExit is not called when confirmed=true)
+            if (this.adjustingCameraId) {
+                this.network.sendStopAdjustCamera(this.adjustingCameraId);
+                this.adjustingCameraId = null;
+            }
+        };
+
+        // Wire exit callback to stop adjusting lock
+        this.cameraViewMode.onExit = () => {
+            // If we were adjusting a camera, release the lock
+            if (this.adjustingCameraId) {
+                this.network.sendStopAdjustCamera(this.adjustingCameraId);
+                this.adjustingCameraId = null;
+            }
+        };
+
+        // Wire real-time rotation updates during adjustment
+        this.cameraViewMode.onRotationUpdate = (cameraId, rotation) => {
+            this.network.sendUpdateCamera(cameraId, null, rotation);
+        };
 
         // Setup home page elements
         this.homePage = document.getElementById('home-page');
@@ -104,6 +176,13 @@ class Game {
 
         // Wire up click handler from controls
         this.controls.onLeftClick = () => {
+            // Check for camera placement first
+            if (this.cameraPlacementSystem.isActive) {
+                if (this.cameraPlacementSystem.confirmPlacement()) {
+                    return; // Placement handled
+                }
+            }
+
             // Check for waiting room door interaction first
             if (this.isInWaitingRoom) {
                 const doorInteraction = this.scene.getWaitingRoomDoorInteraction();
@@ -150,6 +229,73 @@ class Game {
             // If neither, do nothing
         };
 
+        // Wire up F key (camera placement OR adjust wall camera)
+        this.controls.onPickupCamera = () => {
+            const heldItem = this.player.getHeldItem();
+            console.log('[Game] F key pressed, held item:', heldItem?.type);
+
+            if (heldItem?.type === 'security_camera') {
+                // Holding camera - try to place
+                if (this.cameraPlacementSystem.isActive) {
+                    this.cameraPlacementSystem.confirmPlacement();
+                } else {
+                    this.cameraPlacementSystem.activate();
+                }
+            } else if (!heldItem) {
+                // Not holding anything - try to adjust targeted wall camera
+                // Use targeted camera if available, otherwise find nearest
+                const camera = this.targetedCamera || this.findNearestCamera('security');
+                if (camera) {
+                    // Only adjust wall cameras (not floor cameras)
+                    const isWallCamera = camera.ownerId && !camera.ownerId.startsWith('held_') && camera.ownerId !== 'floor_item';
+                    // Skip if camera is being adjusted by someone else
+                    if (isWallCamera && !this.camerasBeingAdjusted.has(camera.id)) {
+                        console.log('[Game] Adjusting wall camera:', camera.id);
+                        // Lock the camera for adjustment
+                        this.adjustingCameraId = camera.id;
+                        this.network.sendStartAdjustCamera(camera.id);
+                        const pos = new THREE.Vector3(
+                            camera.position.x,
+                            camera.position.y,
+                            camera.position.z
+                        );
+                        this.cameraViewMode.enterAdjustmentMode(
+                            camera.id,
+                            pos,
+                            camera.rotation
+                        );
+                    }
+                }
+            }
+        };
+
+        // Wire up E key (adjust nearby camera - same as F for compatibility)
+        this.controls.onAdjustCamera = () => {
+            const heldItem = this.player.getHeldItem();
+            if (!heldItem) {
+                const camera = this.targetedCamera || this.findNearestCamera('security');
+                if (camera) {
+                    const isWallCamera = camera.ownerId && !camera.ownerId.startsWith('held_') && camera.ownerId !== 'floor_item';
+                    // Skip if camera is being adjusted by someone else
+                    if (isWallCamera && !this.camerasBeingAdjusted.has(camera.id)) {
+                        // Lock the camera for adjustment
+                        this.adjustingCameraId = camera.id;
+                        this.network.sendStartAdjustCamera(camera.id);
+                        const pos = new THREE.Vector3(
+                            camera.position.x,
+                            camera.position.y,
+                            camera.position.z
+                        );
+                        this.cameraViewMode.enterAdjustmentMode(
+                            camera.id,
+                            pos,
+                            camera.rotation
+                        );
+                    }
+                }
+            }
+        };
+
         // Wire up interaction callback to network
         this.interactionSystem.onInteract = (interactionType, targetId, targetPosition) => {
             if (this.network && this.network.isConnected) {
@@ -160,6 +306,21 @@ class Game {
                     // Sleep interaction - send to server and start minigame on success
                     this.network.sendInteract(interactionType, targetId, targetPosition);
                     // Minigame will start when we receive INTERACT_SUCCESS for sleep
+                } else if (interactionType === 'pickup_camera') {
+                    // Camera pickup - check if it's a wall camera or floor camera
+                    const camera = this.cameras.get(targetId);
+                    if (camera) {
+                        if (camera.ownerId === 'floor_item') {
+                            // Floor camera - pickup via linked item
+                            // Find the floor item with this linkedCameraId
+                            // The item ID is stored on the camera, or we need to search
+                            // For now, send PICKUP_CAMERA which the server can handle
+                            this.network.sendPickupCamera(targetId);
+                        } else {
+                            // Wall camera - pickup directly
+                            this.network.sendPickupCamera(targetId);
+                        }
+                    }
                 } else {
                     this.network.sendInteract(interactionType, targetId, targetPosition);
                 }
@@ -427,6 +588,138 @@ class Game {
         }
     }
 
+    /**
+     * Find the nearest camera of a specific type within range
+     * @param {string} type - Camera type ('security' or 'stream')
+     * @param {boolean} wallOnly - If true, only find wall-mounted cameras
+     * @returns {Object|null} Nearest camera data or null
+     */
+    findNearestCamera(type, wallOnly = false) {
+        const playerPos = this.player.getPosition();
+        const FLOOR_CAMERA_RANGE = 2.0;
+        const WALL_CAMERA_RANGE = 4.0;
+        let nearest = null;
+        let nearestDist = Infinity;
+
+        for (const camera of this.cameras.values()) {
+            if (camera.type !== type) continue;
+
+            // Determine camera type
+            const isWallCamera = camera.ownerId && !camera.ownerId.startsWith('held_') && camera.ownerId !== 'floor_item';
+
+            // Skip floor cameras if wallOnly
+            if (wallOnly && !isWallCamera) continue;
+
+            // Skip held cameras
+            if (camera.ownerId && camera.ownerId.startsWith('held_')) continue;
+
+            // Skip cameras being adjusted
+            if (this.camerasBeingAdjusted.has(camera.id)) continue;
+            if (this.adjustingCameraId === camera.id) continue;
+
+            const range = isWallCamera ? WALL_CAMERA_RANGE : FLOOR_CAMERA_RANGE;
+
+            const dx = camera.position.x - playerPos.x;
+            const dz = camera.position.z - playerPos.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+
+            if (dist < range && dist < nearestDist) {
+                nearestDist = dist;
+                nearest = camera;
+            }
+        }
+        return nearest;
+    }
+
+    /**
+     * Check if player is looking at a camera and update interaction prompt
+     * Also stores the target camera for click handling
+     */
+    checkCameraHover() {
+        // Don't show camera interactions while in placement or adjustment mode
+        if (this.cameraPlacementSystem?.isActive || this.cameraViewMode?.isActive) {
+            this.targetedCamera = null;
+            return;
+        }
+
+        const playerPos = this.player.getPosition();
+        const FLOOR_CAMERA_RANGE = 2.0;
+        const WALL_CAMERA_RANGE = 4.0;  // Larger range for wall-mounted cameras
+        this.targetedCamera = null;
+
+        // Check all cameras in range
+        for (const camera of this.cameras.values()) {
+            // Skip held cameras
+            if (camera.ownerId && camera.ownerId.startsWith('held_')) continue;
+
+            // Skip cameras being adjusted by any player (including local player)
+            if (this.camerasBeingAdjusted.has(camera.id)) continue;
+            if (this.adjustingCameraId === camera.id) continue;
+
+            // Determine if wall camera or floor camera
+            const isFloorCamera = camera.ownerId === 'floor_item';
+            const isWallCamera = camera.ownerId && !camera.ownerId.startsWith('held_') && camera.ownerId !== 'floor_item';
+            const range = isWallCamera ? WALL_CAMERA_RANGE : FLOOR_CAMERA_RANGE;
+
+            const dx = camera.position.x - playerPos.x;
+            const dy = camera.position.y - playerPos.y;
+            const dz = camera.position.z - playerPos.z;
+            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+            if (dist > range) continue;
+
+            // Check if player is looking at this camera (raycast)
+            const cameraMesh = this.scene.cameraMeshes.get(camera.id);
+            if (!cameraMesh) continue;
+
+            // Simple raycast from camera center in look direction
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera({ x: 0, y: 0 }, this.scene.camera);
+            raycaster.far = range;
+
+            const intersects = raycaster.intersectObject(cameraMesh, true);
+            if (intersects.length > 0) {
+                this.targetedCamera = camera;
+
+                // Only show interaction if not holding anything
+                const heldItem = this.player.getHeldItem();
+                if (heldItem) {
+                    // Holding something - can't interact with camera
+                    return;
+                }
+
+                // Create interaction based on camera type
+                if (isWallCamera) {
+                    // Wall camera: Click to pickup, F to adjust
+                    this.interactionSystem.setAvailableInteraction({
+                        targetId: camera.id,
+                        targetType: 'camera',
+                        interactions: [
+                            { type: 'pickup_camera', prompt: 'Pickup' }
+                        ],
+                        position: camera.position
+                    });
+                    // Override prompt with multi-action format
+                    this.interactionSystem._showPrompt([
+                        { key: 'Click', prompt: 'Pickup' },
+                        { key: 'F', prompt: 'Adjust' }
+                    ]);
+                } else if (isFloorCamera) {
+                    // Floor camera: Click to pickup only
+                    this.interactionSystem.setAvailableInteraction({
+                        targetId: camera.id,
+                        targetType: 'camera',
+                        interactions: [
+                            { type: 'pickup_camera', prompt: 'Pickup Camera' }
+                        ],
+                        position: camera.position
+                    });
+                }
+                return; // Found a targeted camera, don't check more
+            }
+        }
+    }
+
     setupNetworkCallbacks() {
         // Handle successful join (including from queue)
         this.network.onJoined = () => {
@@ -503,6 +796,15 @@ class Game {
                 // Update held item display (both 3D and HUD)
                 this.player.updateHeldItem(myState.heldItem);
                 this.hud.updateHeldItem(myState.heldItem);
+
+                // Auto-enter placement mode when picking up a security camera
+                const newItemType = myState.heldItem?.type || null;
+                if (newItemType === 'security_camera' && this._lastHeldItemType !== 'security_camera') {
+                    // Just picked up a camera - auto-enter placement mode
+                    console.log('[Game] Security camera picked up - auto-entering placement mode');
+                    this.cameraPlacementSystem.activate();
+                }
+                this._lastHeldItemType = newItemType;
 
                 // Check if we're grabbed
                 if (myState.isGrabbed && !this.isGrabbed) {
@@ -678,6 +980,16 @@ class Game {
             this.handleCameraAdjusted(cameraId, rotation);
         };
 
+        this.network.onCameraAdjustStarted = (cameraId, playerId) => {
+            this.camerasBeingAdjusted.add(cameraId);
+            console.log(`[Game] Camera ${cameraId} is now being adjusted by ${playerId}`);
+        };
+
+        this.network.onCameraAdjustStopped = (cameraId) => {
+            this.camerasBeingAdjusted.delete(cameraId);
+            console.log(`[Game] Camera ${cameraId} is no longer being adjusted`);
+        };
+
         this.network.onCamerasUpdate = (cameras) => {
             this.updateCamerasFromState(cameras);
         };
@@ -707,6 +1019,9 @@ class Game {
         // Update interaction system (raycasting and highlighting)
         this.interactionSystem.update();
 
+        // Check camera hover (for interaction text on cameras)
+        this.checkCameraHover();
+
         // Update timed interaction progress (if active)
         if (this.interactionSystem.isInTimedInteraction()) {
             this.interactionSystem.updateTimedInteraction();
@@ -716,6 +1031,11 @@ class Game {
         if (this.cameraFeedSystem && this.cameras.size > 0) {
             this.cameraFeedSystem.renderAllFeeds();
             this.securityRoomRenderer.update(this.cameraFeedSystem);
+        }
+
+        // Update camera placement preview (if active)
+        if (this.cameraPlacementSystem.isActive) {
+            this.cameraPlacementSystem.update();
         }
 
         // Send input to server at fixed rate
@@ -732,8 +1052,12 @@ class Game {
             this.lastInputTime = now;
         }
 
-        // Render
-        this.scene.render();
+        // Render (camera view mode or normal scene)
+        if (this.cameraViewMode && this.cameraViewMode.isInCameraView()) {
+            this.cameraViewMode.render(this.scene.scene);
+        } else {
+            this.scene.render();
+        }
     }
 
     /**
@@ -974,6 +1298,17 @@ class Game {
         // Create feed for render-to-texture (for monitors)
         this.cameraFeedSystem.createFeed(camera.id, camera.position, camera.rotation);
 
+        // If we just placed this camera, enter adjustment mode
+        if (this.pendingCameraPlacement) {
+            this.pendingCameraPlacement = false;
+            const pos = new THREE.Vector3(
+                camera.position.x,
+                camera.position.y,
+                camera.position.z
+            );
+            this.cameraViewMode.enterAdjustmentMode(camera.id, pos, camera.rotation);
+        }
+
         console.log(`[Game] Camera placed: ${camera.id}`);
     }
 
@@ -1041,6 +1376,9 @@ class Game {
                 this.handleCameraPickedUp(id);
             }
         }
+
+        // Update scene camera meshes (pass local player ID to skip rendering held camera mesh)
+        this.scene.updateCameras(cameras, this.network.playerId);
     }
 }
 
