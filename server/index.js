@@ -279,9 +279,19 @@ const messageHandler = new MessageHandler(gameState, playerManager, interactionS
 // Link camera system to game state so camera items can create linked camera entities
 gameState.setCameraSystem(messageHandler.getCameraSystem());
 
-// Initialize dev mode cameras
+// Initialize dev mode cameras and monitors
 if (isDevMode) {
     messageHandler.getCameraSystem().initializeDevCameras();
+    // Initialize monitors for the dev security room at (2, 0)
+    messageHandler.getMonitorSystem().initializeRoomMonitors({ x: 2, z: 0 }, 4);
+
+    // Assign cameras to monitors
+    const cameraSystem = messageHandler.getCameraSystem();
+    const monitorSystem = messageHandler.getMonitorSystem();
+    const cameras = cameraSystem.getCamerasByType('security');
+    for (let i = 0; i < Math.min(4, cameras.length); i++) {
+        monitorSystem.assignCamera(`monitor_2_0_${i}`, cameras[i].id);
+    }
 }
 
 // Initialize Twitch chat integration
@@ -710,10 +720,12 @@ function gameLoop() {
             // Only send STATE_UPDATE to playing/sleeping players (not dead/waiting)
             // Dead/waiting players have local-only waiting room experience
             const cameraSystem = messageHandler.getCameraSystem();
+            const monitorSystem = messageHandler.getMonitorSystem();
             const stateMessage = {
                 type: 'STATE_UPDATE',
                 state: gameState.getSerializableState(),
-                cameras: cameraSystem.getCamerasForStateUpdate()
+                cameras: cameraSystem.getCamerasForStateUpdate(),
+                monitors: monitorSystem.getAllMonitorsForStateUpdate()
             };
             for (const player of gameState.getAllPlayers()) {
                 if (player.playerState === 'dead' || player.playerState === 'waiting') {

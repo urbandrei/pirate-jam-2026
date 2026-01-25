@@ -22,8 +22,11 @@ export class SecurityRoomRenderer {
     constructor(scene) {
         this.scene = scene;
 
-        // Array of { mesh, screenMesh, cameraId, material }
+        // Array of { mesh, screenMesh, cameraId, material, monitorId }
         this.monitors = [];
+
+        // Map of monitorId -> monitor object for quick lookup
+        this.monitorById = new Map();
 
         // Shared geometries for performance
         this.frameGeometry = null;
@@ -101,9 +104,10 @@ export class SecurityRoomRenderer {
      * @param {Object} rotation - Wall rotation in radians (y-axis)
      * @param {number} count - Number of monitors to create
      * @param {string} layout - 'horizontal' or 'grid'
+     * @param {Object} roomCell - Room cell {x, z} for generating monitor IDs
      * @returns {Array} Array of created monitor objects
      */
-    createMonitors(position, rotation = 0, count = 4, layout = 'horizontal') {
+    createMonitors(position, rotation = 0, count = 4, layout = 'horizontal', roomCell = null) {
         const created = [];
         const spacing = MONITOR_CONFIG.width + 0.1;
 
@@ -115,13 +119,17 @@ export class SecurityRoomRenderer {
                 const offset = new THREE.Vector3(startX + i * spacing, 0, 0);
                 offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotation);
 
+                // Generate monitor ID matching server format
+                const monitorId = roomCell ? `monitor_${roomCell.x}_${roomCell.z}_${i}` : null;
+
                 const monitor = this.createSingleMonitor(
                     {
                         x: position.x + offset.x,
                         y: position.y,
                         z: position.z + offset.z
                     },
-                    rotation
+                    rotation,
+                    monitorId
                 );
                 created.push(monitor);
             }
@@ -140,13 +148,17 @@ export class SecurityRoomRenderer {
                     const offset = new THREE.Vector3(offsetX, offsetY, 0);
                     offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotation);
 
+                    // Generate monitor ID matching server format
+                    const monitorId = roomCell ? `monitor_${roomCell.x}_${roomCell.z}_${idx}` : null;
+
                     const monitor = this.createSingleMonitor(
                         {
                             x: position.x + offset.x,
                             y: position.y + offset.y,
                             z: position.z + offset.z
                         },
-                        rotation
+                        rotation,
+                        monitorId
                     );
                     created.push(monitor);
                     idx++;
@@ -161,9 +173,10 @@ export class SecurityRoomRenderer {
      * Create a single monitor
      * @param {Object} position - Monitor position {x, y, z}
      * @param {number} rotation - Y-axis rotation in radians
-     * @returns {Object} Monitor object { mesh, screenMesh, cameraId, material }
+     * @param {string} monitorId - Optional server-assigned monitor ID
+     * @returns {Object} Monitor object { mesh, screenMesh, cameraId, material, monitorId }
      */
-    createSingleMonitor(position, rotation) {
+    createSingleMonitor(position, rotation, monitorId = null) {
         // Create frame mesh
         const frameMesh = new THREE.Mesh(this.frameGeometry, this.frameMaterial);
         frameMesh.position.set(position.x, position.y, position.z);
@@ -189,6 +202,10 @@ export class SecurityRoomRenderer {
         this.scene.add(frameMesh);
         this.scene.add(screenMesh);
 
+        // Generate monitorId if not provided
+        const idx = this.monitors.length;
+        const actualMonitorId = monitorId || `local_monitor_${idx}`;
+
         // Store monitor data
         const monitor = {
             mesh: frameMesh,
@@ -196,18 +213,20 @@ export class SecurityRoomRenderer {
             material: screenMaterial,
             cameraId: null,
             position: { ...position },
-            rotation: rotation
+            rotation: rotation,
+            monitorId: actualMonitorId
         };
 
         this.monitors.push(monitor);
+        this.monitorById.set(actualMonitorId, monitor);
 
-        console.log(`[SecurityRoomRenderer] Created monitor at (${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)})`);
+        console.log(`[SecurityRoomRenderer] Created monitor ${actualMonitorId} at (${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)})`);
 
         return monitor;
     }
 
     /**
-     * Assign a camera to a monitor
+     * Assign a camera to a monitor by index
      * @param {number} monitorIndex - Monitor index
      * @param {string} cameraId - Camera ID to display
      */
@@ -219,6 +238,51 @@ export class SecurityRoomRenderer {
 
         this.monitors[monitorIndex].cameraId = cameraId;
         console.log(`[SecurityRoomRenderer] Assigned camera ${cameraId} to monitor ${monitorIndex}`);
+    }
+
+    /**
+     * Update a monitor's camera assignment by monitor ID
+     * @param {string} monitorId - Server-assigned monitor ID
+     * @param {string} cameraId - Camera ID to display (null for no signal)
+     * @param {CameraFeedSystem} cameraFeedSystem - Optional camera feed system to update texture immediately
+     */
+    updateMonitorCamera(monitorId, cameraId, cameraFeedSystem = null) {
+        const monitor = this.monitorById.get(monitorId);
+        if (!monitor) {
+            // Monitor might not exist yet (scene not rebuilt)
+            return;
+        }
+
+        // Skip if assignment hasn't changed
+        if (monitor.cameraId === cameraId) {
+            return;
+        }
+
+        const oldCameraId = monitor.cameraId;
+        monitor.cameraId = cameraId;
+
+        // Immediately update texture if feed system provided
+        if (cameraFeedSystem && cameraId) {
+            const texture = cameraFeedSystem.getTexture(cameraId);
+            if (texture) {
+                monitor.material.map = texture;
+                monitor.material.needsUpdate = true;
+            }
+        } else if (!cameraId) {
+            monitor.material.map = this.noSignalTexture;
+            monitor.material.needsUpdate = true;
+        }
+
+        console.log(`[SecurityRoomRenderer] Updated monitor ${monitorId}: ${oldCameraId} -> ${cameraId}`);
+    }
+
+    /**
+     * Get a monitor by its ID
+     * @param {string} monitorId - Monitor ID
+     * @returns {Object|null} Monitor object or null
+     */
+    getMonitorById(monitorId) {
+        return this.monitorById.get(monitorId) || null;
     }
 
     /**
@@ -303,6 +367,7 @@ export class SecurityRoomRenderer {
             monitor.material.dispose();
         }
         this.monitors = [];
+        this.monitorById.clear();
         console.log('[SecurityRoomRenderer] Cleared all monitors');
     }
 
@@ -317,6 +382,7 @@ export class SecurityRoomRenderer {
         }
 
         this.monitors = [];
+        this.monitorById.clear();
 
         if (this.frameGeometry) this.frameGeometry.dispose();
         if (this.screenGeometry) this.screenGeometry.dispose();

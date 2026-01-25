@@ -32,6 +32,7 @@ export class Controls {
         this.isDead = false;
         this.isSettingsOpen = false;
         this.isCameraViewMode = false;  // Camera view mode (placing/adjusting)
+        this.isMonitorViewMode = false; // Monitor view mode (free cursor)
 
         // Callbacks
         this.onLeftClick = null;  // Callback for left-click interaction
@@ -187,16 +188,17 @@ export class Controls {
     }
 
     updateCrosshairVisibility() {
-        // Hide crosshair if not locked OR in camera view mode
-        const shouldShow = this.isLocked && !this.isCameraViewMode;
+        // Hide crosshair if not locked OR in camera/monitor view mode
+        const shouldShow = this.isLocked && !this.isCameraViewMode && !this.isMonitorViewMode;
         this.crosshair.style.display = shouldShow ? 'block' : 'none';
     }
 
-    setCameraViewMode(active) {
-        this.isCameraViewMode = active;
+    setMonitorViewMode(active) {
+        this.isMonitorViewMode = active;
+        this.updateCrosshairVisibility();
 
         if (active) {
-            // Clear all movement input when entering camera view
+            // Clear all movement input when entering monitor view
             this.input.forward = false;
             this.input.backward = false;
             this.input.left = false;
@@ -206,8 +208,8 @@ export class Controls {
     }
 
     getInput() {
-        // If grabbed, sleeping, dead, settings open, or camera view - no movement
-        if (this.isGrabbed || this.isSleeping || this.isDead || this.isSettingsOpen || this.isCameraViewMode) {
+        // If grabbed, sleeping, dead, settings open, or camera/monitor view - no movement
+        if (this.isGrabbed || this.isSleeping || this.isDead || this.isSettingsOpen || this.isCameraViewMode || this.isMonitorViewMode) {
             return {
                 forward: false,
                 backward: false,

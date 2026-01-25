@@ -17,8 +17,11 @@ export class CameraViewMode {
 
         // State
         this.isActive = false;
-        this.mode = null;  // 'placing', 'adjusting', or 'viewing'
+        this.mode = null;  // 'placing', 'adjusting', 'viewing', or 'monitor'
         this.cameraId = null;  // For adjusting/viewing mode
+        this.monitorId = null; // For monitor mode
+        this.cameraIds = [];   // All available camera IDs for navigation
+        this.currentCameraIndex = -1;  // Current index in cameraIds
 
         // Camera for the view
         this.viewCamera = new THREE.PerspectiveCamera(
@@ -41,11 +44,16 @@ export class CameraViewMode {
         this.onAdjustConfirmed = null; // (cameraId, rotation) => void
         this.onRotationUpdate = null;  // (cameraId, rotation) => void - real-time updates
         this.onExit = null;            // () => void
+        this.onMonitorCameraChange = null;  // (monitorId, cameraId) => void - navigation in monitor mode
+        this.onMonitorExit = null;     // (monitorId) => void - exiting monitor mode
 
         // External references for rendering
         this.getCameraMeshes = null;   // () => Map<cameraId, mesh>
         this.getPlayerMesh = null;     // () => THREE.Group
+        this.getHeldItemMesh = null;   // () => THREE.Mesh (local player's held item)
         this.getPlayerPosition = null; // () => {x, y, z}
+        this.getRemotePlayers = null;  // () => RemotePlayers instance
+        this.getCameraData = null;     // (cameraId) => camera data with ownerId
 
         // Player mesh visibility state
         this._playerMeshWasInScene = false;
@@ -61,10 +69,16 @@ export class CameraViewMode {
         this.overlay = null;
         this.createOverlay();
 
+        // Monitor overlay
+        this.monitorOverlay = null;
+        this.cameraCounter = null;
+        this.createMonitorOverlay();
+
         // Bind event handlers
         this._onMouseMove = this._handleMouseMove.bind(this);
         this._onMouseDown = this._handleMouseDown.bind(this);
         this._onKeyDown = this._handleKeyDown.bind(this);
+        this._onMonitorClick = this._handleMonitorClick.bind(this);
     }
 
     /**
@@ -146,6 +160,128 @@ export class CameraViewMode {
         this.overlay.appendChild(crosshair);
 
         document.body.appendChild(this.overlay);
+    }
+
+    /**
+     * Create the HUD overlay for monitor viewing mode
+     * Different from camera view - has navigation buttons
+     */
+    createMonitorOverlay() {
+        this.monitorOverlay = document.createElement('div');
+        this.monitorOverlay.id = 'monitor-view-overlay';
+        this.monitorOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            z-index: 100;
+            cursor: default;
+        `;
+
+        // Dark border to indicate monitor view
+        const border = document.createElement('div');
+        border.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border: 4px solid #2196F3;
+            box-sizing: border-box;
+            pointer-events: none;
+        `;
+        this.monitorOverlay.appendChild(border);
+
+        // Navigation container (top-right corner)
+        const navContainer = document.createElement('div');
+        navContainer.id = 'monitor-nav-container';
+        navContainer.style.cssText = `
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 15px;
+            border-radius: 8px;
+            pointer-events: auto;
+        `;
+
+        // Previous button
+        const prevBtn = document.createElement('button');
+        prevBtn.id = 'monitor-prev-btn';
+        prevBtn.textContent = '◀';
+        prevBtn.style.cssText = `
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 4px;
+        `;
+        prevBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._navigateCamera(-1);
+        });
+        navContainer.appendChild(prevBtn);
+
+        // Camera counter
+        this.cameraCounter = document.createElement('span');
+        this.cameraCounter.id = 'monitor-camera-counter';
+        this.cameraCounter.style.cssText = `
+            color: white;
+            font-family: monospace;
+            font-size: 16px;
+            min-width: 50px;
+            text-align: center;
+        `;
+        this.cameraCounter.textContent = '0/0';
+        navContainer.appendChild(this.cameraCounter);
+
+        // Next button
+        const nextBtn = document.createElement('button');
+        nextBtn.id = 'monitor-next-btn';
+        nextBtn.textContent = '▶';
+        nextBtn.style.cssText = `
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 4px;
+        `;
+        nextBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._navigateCamera(1);
+        });
+        navContainer.appendChild(nextBtn);
+
+        this.monitorOverlay.appendChild(navContainer);
+
+        // Hint at bottom
+        const hint = document.createElement('div');
+        hint.style.cssText = `
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 20px;
+            font-family: monospace;
+            font-size: 12px;
+            border-radius: 4px;
+            pointer-events: none;
+        `;
+        hint.textContent = 'Click outside buttons or press ESC to exit';
+        this.monitorOverlay.appendChild(hint);
+
+        document.body.appendChild(this.monitorOverlay);
     }
 
     /**
@@ -235,22 +371,191 @@ export class CameraViewMode {
     }
 
     /**
+     * Enter monitor viewing mode with free mouse and navigation
+     * @param {string} monitorId - Monitor ID being viewed
+     * @param {string} cameraId - Currently assigned camera ID (can be null)
+     * @param {Array<string>} cameraIds - All available camera IDs for navigation
+     * @param {Object} cameraData - Map of cameraId -> {position, rotation, ownerId}
+     * @param {string} localPlayerId - Local player's ID for visibility check
+     */
+    enterMonitorViewMode(monitorId, cameraId, cameraIds, cameraData, localPlayerId = null) {
+        this.isActive = true;
+        this.mode = 'monitor';
+        this.monitorId = monitorId;
+        this.cameraIds = cameraIds || [];
+        this.currentCameraIndex = cameraId ? this.cameraIds.indexOf(cameraId) : -1;
+
+        let cameraOwnerId = null;
+
+        // If we have a camera, set up the view
+        if (cameraId && cameraData && cameraData[cameraId]) {
+            const camData = cameraData[cameraId];
+            this.cameraId = cameraId;
+            this.position.set(camData.position.x, camData.position.y, camData.position.z);
+            this.rotation = {
+                pitch: camData.rotation.pitch || 0,
+                yaw: camData.rotation.yaw || 0,
+                roll: camData.rotation.roll || 0
+            };
+            cameraOwnerId = camData.ownerId;
+        } else {
+            // No camera assigned - show static
+            this.cameraId = null;
+            this.position.set(0, 0, 0);
+            this.rotation = { pitch: 0, yaw: 0, roll: 0 };
+        }
+
+        this._updateViewCamera();
+        this._showMonitorOverlay();
+
+        // Show player mesh only if camera is not held by local player
+        const isHeldByLocalPlayer = cameraOwnerId && cameraOwnerId === `held_${localPlayerId}`;
+        if (!isHeldByLocalPlayer) {
+            this._showPlayerMesh();
+        }
+
+        // Release pointer lock for free mouse
+        if (document.pointerLockElement) {
+            document.exitPointerLock();
+        }
+
+        // Listen for clicks outside buttons and keyboard
+        document.addEventListener('keydown', this._onKeyDown);
+        this.monitorOverlay.addEventListener('click', this._onMonitorClick);
+
+        // Notify controls to disable player movement but allow mouse
+        if (this.controls.setMonitorViewMode) {
+            this.controls.setMonitorViewMode(true);
+        }
+
+        console.log(`[CameraViewMode] Entered monitor view mode for: ${monitorId}, camera: ${cameraId}`);
+    }
+
+    /**
+     * Update monitor view camera when camera changes
+     * @param {string} cameraId - New camera ID
+     * @param {Object} cameraData - Camera data with position and rotation
+     */
+    updateMonitorCamera(cameraId, cameraData) {
+        if (this.mode !== 'monitor') return;
+
+        this.cameraId = cameraId;
+        this.currentCameraIndex = this.cameraIds.indexOf(cameraId);
+
+        if (cameraData) {
+            this.position.set(cameraData.position.x, cameraData.position.y, cameraData.position.z);
+            this.rotation = {
+                pitch: cameraData.rotation.pitch || 0,
+                yaw: cameraData.rotation.yaw || 0,
+                roll: cameraData.rotation.roll || 0
+            };
+        }
+
+        this._updateViewCamera();
+        this._updateCameraCounter();
+    }
+
+    /**
+     * Update the camera view position from current camera state (called each frame)
+     * This ensures the view updates when the camera moves (e.g., held by player)
+     * @param {Object} cameraData - Current camera data { position, rotation, ownerId }
+     * @param {string} localPlayerId - The local player's ID
+     */
+    updateFromCameraState(cameraData, localPlayerId) {
+        if (!this.isActive || !this.cameraId) return;
+        if (this.mode !== 'monitor' && this.mode !== 'viewing') return;
+
+        if (cameraData) {
+            // Update position and rotation from current state
+            this.position.set(cameraData.position.x, cameraData.position.y, cameraData.position.z);
+            this.rotation = {
+                pitch: cameraData.rotation.pitch || 0,
+                yaw: cameraData.rotation.yaw || 0,
+                roll: cameraData.rotation.roll || 0
+            };
+            this._updateViewCamera();
+
+            // Hide player mesh if camera is held by local player (can't see yourself from your own camera)
+            this._updatePlayerMeshVisibility(cameraData.ownerId, localPlayerId);
+        }
+    }
+
+    /**
+     * Update player mesh visibility based on camera ownership
+     * Hide if the camera is held by the local player
+     * @param {string} cameraOwnerId - The camera's owner ID
+     * @param {string} localPlayerId - The local player's ID
+     */
+    _updatePlayerMeshVisibility(cameraOwnerId, localPlayerId) {
+        if (!this.getPlayerMesh) return;
+        const playerMesh = this.getPlayerMesh();
+        if (!playerMesh) return;
+
+        // Camera is held by local player if ownerId is 'held_<localPlayerId>'
+        const isHeldByLocalPlayer = cameraOwnerId === `held_${localPlayerId}`;
+
+        // this.scene IS the THREE.Scene (passed directly from main.js)
+        const threeScene = this.scene;
+
+        if (isHeldByLocalPlayer) {
+            // Hide player mesh - can't see yourself from camera you're holding
+            if (playerMesh.parent === threeScene) {
+                this.scene.remove(playerMesh);
+            }
+            // Also hide held item (attached to player camera)
+            if (this.getHeldItemMesh) {
+                const heldItemMesh = this.getHeldItemMesh();
+                if (heldItemMesh) {
+                    heldItemMesh.visible = false;
+                }
+            }
+        } else {
+            // Show player mesh - can see yourself from external camera
+            if (playerMesh.parent !== threeScene) {
+                this.scene.add(playerMesh);
+            }
+            // Show held item
+            if (this.getHeldItemMesh) {
+                const heldItemMesh = this.getHeldItemMesh();
+                if (heldItemMesh) {
+                    heldItemMesh.visible = true;
+                }
+            }
+        }
+    }
+
+    /**
      * Exit camera view mode
      * @param {boolean} confirmed - Whether the action was confirmed
      */
     exit(confirmed = false) {
         if (!this.isActive) return;
 
+        const wasMonitorMode = this.mode === 'monitor';
+        const exitMonitorId = this.monitorId;
+
         this.isActive = false;
         this._hideOverlay();
+        this._hideMonitorOverlay();
         this._disableInputCapture();
+
+        // Remove monitor-specific listeners
+        if (wasMonitorMode) {
+            this.monitorOverlay.removeEventListener('click', this._onMonitorClick);
+        }
 
         // Hide player mesh again
         this._hidePlayerMesh();
 
         // Notify controls to re-enable player movement
-        if (this.controls.setCameraViewMode) {
-            this.controls.setCameraViewMode(false);
+        if (wasMonitorMode) {
+            if (this.controls.setMonitorViewMode) {
+                this.controls.setMonitorViewMode(false);
+            }
+        } else {
+            if (this.controls.setCameraViewMode) {
+                this.controls.setCameraViewMode(false);
+            }
         }
 
         if (confirmed) {
@@ -262,12 +567,17 @@ export class CameraViewMode {
             } else if (this.mode === 'adjusting' && this.onAdjustConfirmed) {
                 this.onAdjustConfirmed(this.cameraId, { ...this.rotation });
             }
+        } else if (wasMonitorMode && this.onMonitorExit) {
+            this.onMonitorExit(exitMonitorId);
         } else if (this.onExit) {
             this.onExit();
         }
 
         this.mode = null;
         this.cameraId = null;
+        this.monitorId = null;
+        this.cameraIds = [];
+        this.currentCameraIndex = -1;
 
         console.log(`[CameraViewMode] Exited (confirmed: ${confirmed})`);
     }
@@ -292,6 +602,15 @@ export class CameraViewMode {
     render(scene) {
         if (!this.isActive) return;
 
+        // In monitor mode with no camera, render a "no signal" screen
+        if (this.mode === 'monitor' && !this.cameraId) {
+            // Just render black (camera is at origin facing nothing)
+            this.renderer.setClearColor(0x111111);
+            this.renderer.clear();
+            this.renderer.setClearColor(0x000000);
+            return;
+        }
+
         // Update player mesh position before rendering
         this._updatePlayerMeshPosition();
 
@@ -309,11 +628,82 @@ export class CameraViewMode {
             }
         }
 
+        // Hide the camera carrier (player holding the camera) during rendering
+        let carrierId = null;
+        let carrierVisibility = null;
+        if (this.cameraId && this.getCameraData) {
+            const cameraData = this.getCameraData(this.cameraId);
+            if (cameraData && cameraData.ownerId && cameraData.ownerId.startsWith('held_')) {
+                carrierId = cameraData.ownerId.replace('held_', '');
+                carrierVisibility = this._hideCarrier(carrierId);
+            }
+        }
+
         this.renderer.render(scene, this.viewCamera);
+
+        // Restore carrier visibility
+        if (carrierId && carrierVisibility) {
+            this._restoreCarrier(carrierId, carrierVisibility);
+        }
 
         // Restore camera mesh visibility
         if (cameraMesh) {
             cameraMesh.visible = wasVisible;
+        }
+    }
+
+    /**
+     * Hide a remote player (carrier) during camera view rendering
+     * @param {string} playerId - Player ID to hide
+     * @returns {Object|null} Visibility state to restore later
+     */
+    _hideCarrier(playerId) {
+        const remotePlayers = this.getRemotePlayers ? this.getRemotePlayers() : null;
+        if (!remotePlayers) return null;
+
+        const playerData = remotePlayers.players.get(playerId);
+        const nameLabel = remotePlayers.nameLabels.get(playerId);
+
+        if (!playerData) return null;
+
+        const state = {
+            meshVisible: playerData.mesh.visible,
+            heldItemVisible: playerData.heldItemMesh ? playerData.heldItemMesh.visible : false,
+            nameLabelVisible: nameLabel && nameLabel.sprite ? nameLabel.sprite.visible : false
+        };
+
+        // Hide everything
+        playerData.mesh.visible = false;
+        if (playerData.heldItemMesh) {
+            playerData.heldItemMesh.visible = false;
+        }
+        if (nameLabel && nameLabel.sprite) {
+            nameLabel.sprite.visible = false;
+        }
+
+        return state;
+    }
+
+    /**
+     * Restore a remote player's visibility state after rendering
+     * @param {string} playerId - Player ID to restore
+     * @param {Object} state - Visibility state from _hideCarrier
+     */
+    _restoreCarrier(playerId, state) {
+        const remotePlayers = this.getRemotePlayers ? this.getRemotePlayers() : null;
+        if (!remotePlayers || !state) return;
+
+        const playerData = remotePlayers.players.get(playerId);
+        const nameLabel = remotePlayers.nameLabels.get(playerId);
+
+        if (!playerData) return;
+
+        playerData.mesh.visible = state.meshVisible;
+        if (playerData.heldItemMesh) {
+            playerData.heldItemMesh.visible = state.heldItemVisible;
+        }
+        if (nameLabel && nameLabel.sprite) {
+            nameLabel.sprite.visible = state.nameLabelVisible;
         }
     }
 
@@ -360,6 +750,59 @@ export class CameraViewMode {
 
     _hideOverlay() {
         this.overlay.style.display = 'none';
+    }
+
+    _showMonitorOverlay() {
+        this._updateCameraCounter();
+        this.monitorOverlay.style.display = 'block';
+    }
+
+    _hideMonitorOverlay() {
+        this.monitorOverlay.style.display = 'none';
+    }
+
+    _updateCameraCounter() {
+        if (!this.cameraCounter) return;
+        const current = this.currentCameraIndex >= 0 ? this.currentCameraIndex + 1 : 0;
+        const total = this.cameraIds.length;
+        this.cameraCounter.textContent = `${current}/${total}`;
+    }
+
+    /**
+     * Navigate to next/previous camera
+     * @param {number} direction - 1 for next, -1 for previous
+     */
+    _navigateCamera(direction) {
+        if (this.mode !== 'monitor' || this.cameraIds.length === 0) return;
+
+        // Calculate new index with wrap-around
+        let newIndex = this.currentCameraIndex + direction;
+        if (newIndex < 0) {
+            newIndex = this.cameraIds.length - 1;
+        } else if (newIndex >= this.cameraIds.length) {
+            newIndex = 0;
+        }
+
+        // Get the new camera ID
+        const newCameraId = this.cameraIds[newIndex];
+
+        // Notify callback to change the monitor's camera
+        if (this.onMonitorCameraChange) {
+            this.onMonitorCameraChange(this.monitorId, newCameraId);
+        }
+    }
+
+    /**
+     * Handle click on monitor overlay (exit if not on buttons)
+     */
+    _handleMonitorClick(event) {
+        if (this.mode !== 'monitor') return;
+
+        // Check if click was on a button (buttons have pointer-events: auto)
+        // The container has pointer-events, so we check if target is the overlay itself
+        if (event.target === this.monitorOverlay) {
+            this.exit(false);
+        }
     }
 
     _enableInputCapture() {
@@ -432,8 +875,11 @@ export class CameraViewMode {
         const playerMesh = this.getPlayerMesh();
         if (!playerMesh) return;
 
+        // this.scene IS the THREE.Scene (passed directly from main.js)
+        const threeScene = this.scene;
+
         // Check if already in scene
-        this._playerMeshWasInScene = playerMesh.parent === this.scene;
+        this._playerMeshWasInScene = playerMesh.parent === threeScene;
 
         if (!this._playerMeshWasInScene) {
             this.scene.add(playerMesh);
@@ -452,9 +898,20 @@ export class CameraViewMode {
         const playerMesh = this.getPlayerMesh();
         if (!playerMesh) return;
 
+        // this.scene IS the THREE.Scene (passed directly from main.js)
+        const threeScene = this.scene;
+
         // Only remove if we added it
-        if (!this._playerMeshWasInScene && playerMesh.parent === this.scene) {
+        if (!this._playerMeshWasInScene && playerMesh.parent === threeScene) {
             this.scene.remove(playerMesh);
+        }
+
+        // Always restore held item visibility when hiding player mesh (exiting view mode)
+        if (this.getHeldItemMesh) {
+            const heldItemMesh = this.getHeldItemMesh();
+            if (heldItemMesh) {
+                heldItemMesh.visible = true;
+            }
         }
     }
 

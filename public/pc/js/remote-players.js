@@ -111,7 +111,6 @@ export class RemotePlayers {
             // Hide player if they are the camera holder (for camera viewer)
             // nameLabel already retrieved above at line 95
             if (hidePlayerId && playerId === hidePlayerId) {
-                console.log(`[RemotePlayers] Hiding player ${playerId} (camera holder)`);
                 playerObj.mesh.visible = false;
                 if (playerObj.heldItemMesh) {
                     playerObj.heldItemMesh.visible = false;

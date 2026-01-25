@@ -54,6 +54,10 @@ class Game {
         this.adjustingCameraId = null;  // Camera ID currently being adjusted by local player
         this.camerasBeingAdjusted = new Set();  // Camera IDs being adjusted by any player
 
+        // Monitor viewing state
+        this.viewingMonitorId = null;  // Monitor ID currently being viewed
+        this.monitorConfigs = new Map();  // Server-provided monitor configs
+
         this.lastTime = performance.now();
         this.lastInputTime = 0;
         this.inputInterval = 1000 / INPUT_RATE;
@@ -141,7 +145,10 @@ class Game {
         // Set up camera view mode callbacks for player/camera visibility
         this.cameraViewMode.getCameraMeshes = () => this.scene.cameraMeshes;
         this.cameraViewMode.getPlayerMesh = () => this.player.mesh;
+        this.cameraViewMode.getHeldItemMesh = () => this.player.heldItemMesh;
         this.cameraViewMode.getPlayerPosition = () => this.player.getPosition();
+        this.cameraViewMode.getRemotePlayers = () => this.remotePlayers;
+        this.cameraViewMode.getCameraData = (cameraId) => this.cameras.get(cameraId);
 
         // Wire camera placement callback
         this.cameraPlacementSystem.onPlaced = (position, rotation) => {
@@ -171,6 +178,24 @@ class Game {
         // Wire real-time rotation updates during adjustment
         this.cameraViewMode.onRotationUpdate = (cameraId, rotation) => {
             this.network.sendUpdateCamera(cameraId, null, rotation);
+        };
+
+        // Wire monitor navigation callback
+        this.cameraViewMode.onMonitorCameraChange = (monitorId, cameraId) => {
+            console.log(`[Game] Changing monitor ${monitorId} to camera ${cameraId}`);
+            this.network.sendChangeMonitorCamera(monitorId, cameraId);
+        };
+
+        // Wire monitor exit callback
+        this.cameraViewMode.onMonitorExit = (monitorId) => {
+            console.log(`[Game] Exiting monitor view: ${monitorId}`);
+            this.network.sendStopMonitorView(monitorId);
+            this.viewingMonitorId = null;
+
+            // Re-lock pointer for normal gameplay
+            if (this.isInGame && !this.isSleeping) {
+                this.scene.renderer.domElement.requestPointerLock().catch(() => {});
+            }
         };
 
         // Setup home page elements
@@ -214,18 +239,11 @@ class Game {
 
             // Check for monitor click (security room cameras)
             if (this._targetedMonitor) {
-                const camera = this.cameras.get(this._targetedMonitor.cameraId);
-                if (camera) {
-                    const pos = new THREE.Vector3(
-                        camera.position.x,
-                        camera.position.y,
-                        camera.position.z
-                    );
-                    this.cameraViewMode.enterViewOnlyMode(
-                        camera.id,
-                        pos,
-                        camera.rotation
-                    );
+                // Request to view this monitor (server will lock it for us)
+                const monitorId = this._targetedMonitor.monitor.monitorId;
+                if (monitorId) {
+                    console.log('[Game] Requesting to view monitor:', monitorId);
+                    this.network.sendStartMonitorView(monitorId);
                     return;
                 }
             }
@@ -426,8 +444,8 @@ class Game {
                         // Catch security error if user just exited pointer lock
                         this.scene.renderer.domElement.requestPointerLock().catch(() => {});
                     }
-                } else if (!document.pointerLockElement) {
-                    // Not in chat, pointer not locked - re-lock on click
+                } else if (!document.pointerLockElement && !this.cameraViewMode?.isActive) {
+                    // Not in chat, pointer not locked, not in camera/monitor view - re-lock on click
                     // Catch security error if user just exited pointer lock
                     this.scene.renderer.domElement.requestPointerLock().catch(() => {});
                 }
@@ -472,6 +490,10 @@ class Game {
                 // If it was intentional (chat), reset flag and don't show settings
                 if (this.intentionalPointerExit) {
                     this.intentionalPointerExit = false;
+                    return;
+                }
+                // Don't open settings when in camera view mode (includes monitor viewing)
+                if (this.cameraViewMode?.isActive) {
                     return;
                 }
                 // If we're in game, not sleeping, and settings not already visible, show settings
@@ -792,12 +814,6 @@ class Game {
 
         const monitor = nearestResult.monitor;
 
-        // Only show interaction if monitor has a camera assigned
-        if (!monitor.cameraId) {
-            this._targetedMonitor = null;
-            return;
-        }
-
         // Check if looking at the monitor (simple raycast)
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera({ x: 0, y: 0 }, this.scene.camera);
@@ -818,7 +834,8 @@ class Game {
         };
 
         // Show interaction prompt
-        this.interactionSystem._showPrompt('View Camera Feed');
+        const promptText = monitor.cameraId ? 'View Camera Feed' : 'Configure Monitor';
+        this.interactionSystem._showPrompt(promptText);
     }
 
     setupNetworkCallbacks() {
@@ -1094,6 +1111,78 @@ class Game {
         this.network.onCamerasUpdate = (cameras) => {
             this.updateCamerasFromState(cameras);
         };
+
+        // Monitor callbacks
+        this.network.onMonitorViewStarted = (monitorId, cameraId, cameraIds, currentIndex) => {
+            console.log(`[Game] Monitor view started: ${monitorId}, camera: ${cameraId}`);
+            this.viewingMonitorId = monitorId;
+
+            // Build camera data map (including ownerId for visibility check)
+            const cameraData = {};
+            for (const camId of cameraIds) {
+                const cam = this.cameras.get(camId);
+                if (cam) {
+                    cameraData[camId] = {
+                        position: cam.position,
+                        rotation: cam.rotation,
+                        ownerId: cam.ownerId
+                    };
+                }
+            }
+
+            // Enter monitor view mode (pass local player ID for visibility check)
+            this.cameraViewMode.enterMonitorViewMode(monitorId, cameraId, cameraIds, cameraData, this.network.playerId);
+        };
+
+        this.network.onMonitorViewDenied = (monitorId, reason) => {
+            console.log(`[Game] Monitor view denied: ${monitorId}, reason: ${reason}`);
+            // Could show a notification to user here
+        };
+
+        this.network.onMonitorViewerLocked = (monitorId, viewerId) => {
+            // Another player is viewing this monitor
+            const config = this.monitorConfigs.get(monitorId);
+            if (config) {
+                config.viewerId = viewerId;
+            }
+        };
+
+        this.network.onMonitorViewerReleased = (monitorId) => {
+            const config = this.monitorConfigs.get(monitorId);
+            if (config) {
+                config.viewerId = null;
+            }
+        };
+
+        this.network.onMonitorCameraChanged = (monitorId, cameraId) => {
+            console.log(`[Game] Monitor camera changed: ${monitorId} -> ${cameraId}`);
+
+            // Update local config
+            const config = this.monitorConfigs.get(monitorId);
+            if (config) {
+                config.cameraId = cameraId;
+            }
+
+            // Update security room renderer
+            if (this.securityRoomRenderer) {
+                this.securityRoomRenderer.updateMonitorCamera(monitorId, cameraId, this.cameraFeedSystem);
+            }
+
+            // If we're viewing this monitor, update the view
+            if (this.viewingMonitorId === monitorId && this.cameraViewMode.mode === 'monitor') {
+                const camera = this.cameras.get(cameraId);
+                if (camera) {
+                    this.cameraViewMode.updateMonitorCamera(cameraId, {
+                        position: camera.position,
+                        rotation: camera.rotation
+                    });
+                }
+            }
+        };
+
+        this.network.onMonitorsUpdate = (monitors) => {
+            this.updateMonitorsFromState(monitors);
+        };
     }
 
     gameLoop() {
@@ -1154,6 +1243,14 @@ class Game {
                 }
             }
             this.lastInputTime = now;
+        }
+
+        // Update camera view mode from current camera state (for held cameras)
+        if (this.cameraViewMode && this.cameraViewMode.isActive && this.cameraViewMode.cameraId) {
+            const currentCamera = this.cameras.get(this.cameraViewMode.cameraId);
+            if (currentCamera) {
+                this.cameraViewMode.updateFromCameraState(currentCamera, this.network.playerId);
+            }
         }
 
         // Render (camera view mode or normal scene)
@@ -1521,6 +1618,29 @@ class Game {
 
         // Update scene camera meshes (pass local player ID to skip rendering held camera mesh)
         this.scene.updateCameras(cameras, this.network.playerId);
+    }
+
+    updateMonitorsFromState(monitors) {
+        if (!monitors) return;
+
+        // Update local monitor configs
+        for (const monitor of monitors) {
+            this.monitorConfigs.set(monitor.monitorId, {
+                cameraId: monitor.cameraId,
+                roomCell: monitor.roomCell,
+                index: monitor.index,
+                viewerId: monitor.viewerId
+            });
+
+            // Update security room renderer with camera assignments
+            if (this.securityRoomRenderer) {
+                this.securityRoomRenderer.updateMonitorCamera(
+                    monitor.monitorId,
+                    monitor.cameraId,
+                    this.cameraFeedSystem
+                );
+            }
+        }
     }
 }
 

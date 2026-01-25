@@ -59,6 +59,14 @@ export class Network {
         this.onCameraAdjustStarted = null;  // Camera being adjusted by a player
         this.onCameraAdjustStopped = null;  // Camera no longer being adjusted
 
+        // Monitor callbacks
+        this.onMonitorViewStarted = null;   // Successfully started viewing a monitor
+        this.onMonitorViewDenied = null;    // Failed to view monitor (in use)
+        this.onMonitorViewerLocked = null;  // Another player started viewing a monitor
+        this.onMonitorViewerReleased = null; // Monitor viewer released
+        this.onMonitorCameraChanged = null;  // Monitor camera assignment changed
+        this.onMonitorsUpdate = null;        // For STATE_UPDATE monitors array
+
         // Status element
         this.statusEl = document.getElementById('status');
     }
@@ -132,6 +140,10 @@ export class Network {
                 // Also pass cameras array if present
                 if (message.cameras && this.onCamerasUpdate) {
                     this.onCamerasUpdate(message.cameras);
+                }
+                // Also pass monitors array if present
+                if (message.monitors && this.onMonitorsUpdate) {
+                    this.onMonitorsUpdate(message.monitors);
                 }
                 break;
 
@@ -349,6 +361,42 @@ export class Network {
                     this.onCameraAdjustStopped(message.cameraId);
                 }
                 break;
+
+            // Monitor messages
+            case 'MONITOR_VIEW_STARTED':
+                console.log('Monitor view started:', message.monitorId, 'camera:', message.cameraId);
+                if (this.onMonitorViewStarted) {
+                    this.onMonitorViewStarted(message.monitorId, message.cameraId, message.cameraIds, message.currentIndex);
+                }
+                break;
+
+            case 'MONITOR_VIEW_DENIED':
+                console.log('Monitor view denied:', message.monitorId, message.reason);
+                if (this.onMonitorViewDenied) {
+                    this.onMonitorViewDenied(message.monitorId, message.reason);
+                }
+                break;
+
+            case 'MONITOR_VIEWER_LOCKED':
+                console.log('Monitor viewer locked:', message.monitorId, 'by', message.viewerId);
+                if (this.onMonitorViewerLocked) {
+                    this.onMonitorViewerLocked(message.monitorId, message.viewerId);
+                }
+                break;
+
+            case 'MONITOR_VIEWER_RELEASED':
+                console.log('Monitor viewer released:', message.monitorId);
+                if (this.onMonitorViewerReleased) {
+                    this.onMonitorViewerReleased(message.monitorId);
+                }
+                break;
+
+            case 'MONITOR_CAMERA_CHANGED':
+                console.log('Monitor camera changed:', message.monitorId, 'to', message.cameraId);
+                if (this.onMonitorCameraChanged) {
+                    this.onMonitorCameraChanged(message.monitorId, message.cameraId);
+                }
+                break;
         }
     }
 
@@ -428,6 +476,29 @@ export class Network {
             cameraId,
             position,
             rotation
+        });
+    }
+
+    // Monitor messages
+    sendStartMonitorView(monitorId) {
+        this.send({
+            type: 'START_MONITOR_VIEW',
+            monitorId
+        });
+    }
+
+    sendStopMonitorView(monitorId) {
+        this.send({
+            type: 'STOP_MONITOR_VIEW',
+            monitorId
+        });
+    }
+
+    sendChangeMonitorCamera(monitorId, cameraId) {
+        this.send({
+            type: 'CHANGE_MONITOR_CAMERA',
+            monitorId,
+            cameraId
         });
     }
 

@@ -10,6 +10,7 @@ const NeedsSystem = require('./systems/needs-system');
 const ChatSystem = require('./systems/chat-system');
 const ModerationSystem = require('./systems/moderation-system');
 const { CameraSystem, CAMERA_TYPES } = require('./systems/camera-system');
+const { MonitorSystem } = require('./systems/monitor-system');
 
 class MessageHandler {
     constructor(gameState, playerManager, interactionSystem = null, playerQueue = null) {
@@ -24,6 +25,9 @@ class MessageHandler {
 
         // Initialize camera system
         this.cameraSystem = new CameraSystem();
+
+        // Initialize monitor system
+        this.monitorSystem = new MonitorSystem();
 
         // Store names received before JOIN (socketId -> name)
         this.pendingNames = new Map();
@@ -113,6 +117,16 @@ class MessageHandler {
                 break;
             case 'SET_CAMERA_LIMITS':
                 this.handleSetCameraLimits(peerId, message);
+                break;
+            // Monitor messages
+            case 'START_MONITOR_VIEW':
+                this.handleStartMonitorView(peerId, message);
+                break;
+            case 'STOP_MONITOR_VIEW':
+                this.handleStopMonitorView(peerId, message);
+                break;
+            case 'CHANGE_MONITOR_CAMERA':
+                this.handleChangeMonitorCamera(peerId, message);
                 break;
             case 'DEBUG_LOG':
                 console.log(`[DEBUG ${message.source}] ${peerId}: ${message.message}`);
@@ -289,7 +303,7 @@ class MessageHandler {
         }
 
         // Validate room type
-        const validRoomTypes = ['generic', 'farming', 'processing', 'cafeteria', 'dorm', 'waiting'];
+        const validRoomTypes = ['generic', 'farming', 'processing', 'cafeteria', 'dorm', 'waiting', 'security'];
         if (!validRoomTypes.includes(roomType)) {
             console.warn(`[MessageHandler] PLACE_BLOCK rejected: invalid roomType (${roomType})`);
             return;
@@ -316,6 +330,8 @@ class MessageHandler {
                     applianceSystem.createAppliancesForCell(this.gameState.worldObjects, cellX, cellZ);
                 } else if (roomType === 'dorm') {
                     bedSystem.createBedsForCell(this.gameState.worldObjects, cellX, cellZ);
+                } else if (roomType === 'security') {
+                    this.monitorSystem.initializeRoomMonitors({ x: cellX, z: cellZ }, 4);
                 }
             }
 
@@ -357,7 +373,7 @@ class MessageHandler {
         const roomType = message.roomType;
 
         // Validate room type
-        const validRoomTypes = ['generic', 'farming', 'processing', 'cafeteria', 'dorm', 'waiting'];
+        const validRoomTypes = ['generic', 'farming', 'processing', 'cafeteria', 'dorm', 'waiting', 'security'];
         if (!validRoomTypes.includes(roomType)) {
             console.warn(`[MessageHandler] CONVERT_ROOM rejected: invalid roomType (${roomType})`);
             return;
@@ -372,6 +388,7 @@ class MessageHandler {
         const wasFromProcessing = currentCell && currentCell.roomType === 'processing';
         const wasFromCafeteria = currentCell && currentCell.roomType === 'cafeteria';
         const wasFromDorm = currentCell && currentCell.roomType === 'dorm';
+        const wasFromSecurity = currentCell && currentCell.roomType === 'security';
 
         const result = this.gameState.worldState.setRoomType(gridX, gridZ, roomType);
 
@@ -412,6 +429,14 @@ class MessageHandler {
                 }
             }
 
+            // If we converted away from security, destroy monitors in this cell
+            if (wasFromSecurity && roomType !== 'security') {
+                const removedMonitors = this.monitorSystem.cleanupRoomMonitors({ x: gridX, z: gridZ });
+                if (removedMonitors.length > 0) {
+                    console.log(`[MessageHandler] Removed ${removedMonitors.length} monitors from converted security room`);
+                }
+            }
+
             // If we converted TO farming, create soil plots
             if (roomType === 'farming' && !wasFromFarming) {
                 const createdPlots = plantSystem.createSoilPlotsForCell(gridX, gridZ, this.gameState.worldObjects);
@@ -434,6 +459,12 @@ class MessageHandler {
             if (roomType === 'dorm' && !wasFromDorm) {
                 const createdBeds = bedSystem.createBedsForCell(this.gameState.worldObjects, gridX, gridZ);
                 console.log(`[MessageHandler] Created ${createdBeds.length} beds for new dorm room`);
+            }
+
+            // If we converted TO security, create monitors
+            if (roomType === 'security' && !wasFromSecurity) {
+                this.monitorSystem.initializeRoomMonitors({ x: gridX, z: gridZ }, 4);
+                console.log(`[MessageHandler] Created 4 monitors for new security room`);
             }
 
             console.log(`[MessageHandler] Room converted successfully, version=${result.version}`);
@@ -1337,11 +1368,141 @@ class MessageHandler {
         });
     }
 
+    // ==================== Monitor Message Handlers ====================
+
+    /**
+     * Handle PC player requesting to view a monitor
+     */
+    handleStartMonitorView(peerId, message) {
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'pc') {
+            console.warn(`[MessageHandler] START_MONITOR_VIEW rejected: not a PC player (${peerId})`);
+            return;
+        }
+
+        const { monitorId } = message;
+
+        // Get monitor config
+        const config = this.monitorSystem.getConfig(monitorId);
+        if (!config) {
+            console.warn(`[MessageHandler] START_MONITOR_VIEW rejected: monitor not found (${monitorId})`);
+            this.playerManager.sendTo(peerId, {
+                type: 'MONITOR_VIEW_DENIED',
+                monitorId,
+                reason: 'Monitor not found'
+            });
+            return;
+        }
+
+        // Try to lock the monitor
+        if (this.monitorSystem.lockViewer(monitorId, peerId)) {
+            // Get all available cameras for navigation
+            const cameras = this.cameraSystem.getCamerasByType(CAMERA_TYPES.SECURITY);
+            const cameraIds = cameras.map(c => c.id);
+
+            console.log(`[MessageHandler] Player ${peerId} started viewing monitor ${monitorId}`);
+
+            // Send success to the requesting player
+            this.playerManager.sendTo(peerId, {
+                type: 'MONITOR_VIEW_STARTED',
+                monitorId,
+                cameraId: config.cameraId,
+                cameraIds,  // All available camera IDs for navigation
+                currentIndex: config.cameraId ? cameraIds.indexOf(config.cameraId) : -1
+            });
+
+            // Broadcast to all players that this monitor is locked
+            this.playerManager.broadcast({
+                type: 'MONITOR_VIEWER_LOCKED',
+                monitorId,
+                viewerId: peerId
+            }, peerId);
+        } else {
+            const currentViewer = this.monitorSystem.getViewer(monitorId);
+            console.log(`[MessageHandler] START_MONITOR_VIEW rejected: monitor ${monitorId} in use by ${currentViewer}`);
+            this.playerManager.sendTo(peerId, {
+                type: 'MONITOR_VIEW_DENIED',
+                monitorId,
+                reason: 'Monitor is in use by another player'
+            });
+        }
+    }
+
+    /**
+     * Handle PC player stopping monitor view
+     */
+    handleStopMonitorView(peerId, message) {
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'pc') {
+            return;
+        }
+
+        const { monitorId } = message;
+
+        if (this.monitorSystem.releaseViewer(monitorId, peerId)) {
+            console.log(`[MessageHandler] Player ${peerId} stopped viewing monitor ${monitorId}`);
+
+            // Broadcast to all players that this monitor is released
+            this.playerManager.broadcast({
+                type: 'MONITOR_VIEWER_RELEASED',
+                monitorId
+            });
+        }
+    }
+
+    /**
+     * Handle PC player changing monitor camera assignment
+     */
+    handleChangeMonitorCamera(peerId, message) {
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'pc') {
+            console.warn(`[MessageHandler] CHANGE_MONITOR_CAMERA rejected: not a PC player (${peerId})`);
+            return;
+        }
+
+        const { monitorId, cameraId } = message;
+
+        // Verify the player has the monitor lock
+        const currentViewer = this.monitorSystem.getViewer(monitorId);
+        if (currentViewer !== peerId) {
+            console.warn(`[MessageHandler] CHANGE_MONITOR_CAMERA rejected: player ${peerId} doesn't have lock on ${monitorId}`);
+            return;
+        }
+
+        // Validate camera exists (if not null)
+        if (cameraId) {
+            const camera = this.cameraSystem.getCamera(cameraId);
+            if (!camera || camera.type !== CAMERA_TYPES.SECURITY) {
+                console.warn(`[MessageHandler] CHANGE_MONITOR_CAMERA rejected: camera not found or not security (${cameraId})`);
+                return;
+            }
+        }
+
+        // Update the assignment
+        if (this.monitorSystem.assignCamera(monitorId, cameraId)) {
+            console.log(`[MessageHandler] Monitor ${monitorId} camera changed to ${cameraId} by ${peerId}`);
+
+            // Broadcast to all players
+            this.playerManager.broadcast({
+                type: 'MONITOR_CAMERA_CHANGED',
+                monitorId,
+                cameraId
+            });
+        }
+    }
+
     /**
      * Get camera system (for external access, e.g., state updates)
      */
     getCameraSystem() {
         return this.cameraSystem;
+    }
+
+    /**
+     * Get monitor system (for external access, e.g., state updates)
+     */
+    getMonitorSystem() {
+        return this.monitorSystem;
     }
 
     /**
@@ -1370,6 +1531,15 @@ class MessageHandler {
 
         // Also unregister as web viewer
         this.cameraSystem.unregisterWebViewer(peerId);
+
+        // Clean up monitor viewer locks
+        const releasedMonitors = this.monitorSystem.cleanupPlayerViewers(peerId);
+        for (const monitorId of releasedMonitors) {
+            this.playerManager.broadcast({
+                type: 'MONITOR_VIEWER_RELEASED',
+                monitorId
+            });
+        }
     }
 }
 

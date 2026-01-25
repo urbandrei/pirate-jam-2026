@@ -458,8 +458,9 @@ export class Scene {
         // Monitors face south (toward room center), rotation = 0
         const rotation = 0;
 
-        // Create 2x2 grid of monitors
-        this.securityRoomRenderer.createMonitors(position, rotation, 4, 'grid');
+        // Create 2x2 grid of monitors with room cell for generating monitor IDs
+        const roomCell = { x: cell.x, z: cell.z };
+        this.securityRoomRenderer.createMonitors(position, rotation, 4, 'grid', roomCell);
 
         console.log(`[Scene] Created 4 monitors for security room at cell (${cell.x}, ${cell.z})`);
     }
