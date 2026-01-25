@@ -4,6 +4,7 @@
 
 import { Scene } from './scene.js';
 import { Controls } from './controls.js';
+import { MobileControls } from './mobile-controls.js';
 import { Network } from './network.js';
 import { Player } from './player.js';
 import { RemotePlayers } from './remote-players.js';
@@ -33,6 +34,7 @@ class Game {
         this.chatUI = null;
         this.settingsManager = null;
         this.settingsUI = null;
+        this.mobileControls = null;
 
         // Camera systems
         this.cameraFeedSystem = null;
@@ -92,6 +94,9 @@ class Game {
 
         // Setup controls (pass settings manager for dynamic keybindings)
         this.controls = new Controls(this.scene.camera, this.scene.renderer.domElement, this.settingsManager);
+
+        // Setup mobile controls (touch joysticks for mobile/tablet)
+        this.mobileControls = new MobileControls(this.controls);
 
         // Setup player (pass camera for held item display)
         this.player = new Player(this.scene, this.scene.camera);
@@ -273,6 +278,9 @@ class Game {
             }
             // If neither, do nothing
         };
+
+        // Wire up mobile controls to use the same click handler
+        this.mobileControls.onLeftClick = this.controls.onLeftClick;
 
         // Wire up F key (camera placement OR adjust wall camera)
         this.controls.onPickupCamera = () => {
@@ -1199,6 +1207,9 @@ class Game {
         if (this.isInWaitingRoom) {
             this.updateLocalWaitingRoomMovement(deltaTime);
         }
+
+        // Update mobile controls (touch input)
+        this.mobileControls.update();
 
         // Update camera based on player position
         this.controls.update(this.player.getPosition());
