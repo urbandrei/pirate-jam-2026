@@ -84,6 +84,7 @@
             pointer-events: auto;
             min-width: 320px;
             border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 60; /* Above mobile controls overlay */
         }
         #home-page h1 {
             margin-bottom: 8px;
@@ -181,12 +182,76 @@
             pointer-events: auto;
             opacity: 0.9;
             transition: opacity 0.2s;
+            z-index: 55; /* Above mobile controls overlay */
         }
         #chat-container:hover {
             opacity: 1;
         }
         #chat-container.hidden {
             display: none;
+        }
+        #chat-container.minimized {
+            height: auto;
+        }
+        #chat-container.minimized #chat-messages {
+            display: none;
+        }
+        #chat-container.minimized #chat-header {
+            display: none;
+        }
+        #chat-container.minimized #chat-input-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-top: none;
+        }
+        #chat-container.minimized #chat-input {
+            flex: 1;
+        }
+        #chat-container.minimized #chat-minimize-btn-inline {
+            display: flex;
+        }
+        #chat-header {
+            display: flex;
+            align-items: center;
+            padding: 6px 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            gap: 8px;
+        }
+        #chat-title {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 12px;
+            flex: 1;
+        }
+        #chat-unread {
+            background: #ff4444;
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 10px;
+            min-width: 18px;
+            text-align: center;
+        }
+        #chat-unread.hidden {
+            display: none;
+        }
+        #chat-minimize-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #chat-minimize-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
         }
         #chat-messages {
             flex: 1;
@@ -246,6 +311,33 @@
             padding: 8px;
             border-top: 1px solid rgba(255, 255, 255, 0.1);
         }
+        #chat-minimize-btn-inline {
+            display: none;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            position: relative;
+        }
+        #chat-minimize-btn-inline:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        /* Move unread badge to inline button when minimized */
+        #chat-container.minimized #chat-input-container {
+            position: relative;
+        }
+        #chat-container.minimized #chat-input-container #chat-unread {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+        }
         #chat-input {
             width: 100%;
             padding: 8px 10px;
@@ -255,6 +347,9 @@
             border-radius: 4px;
             color: white;
             outline: none;
+            touch-action: auto; /* Allow text input on mobile */
+            -webkit-user-select: text;
+            user-select: text;
         }
         #chat-input:focus {
             border-color: rgba(100, 200, 255, 0.5);
@@ -332,7 +427,7 @@
         /* Held Item Display */
         #held-item-hud {
             position: absolute;
-            bottom: 40px;
+            top: 10px;
             right: 10px;
             background: rgba(0, 0, 0, 0.5);
             border: 2px solid rgba(255, 255, 255, 0.3);
@@ -532,47 +627,39 @@
             left: 0;
             width: 100%;
             height: 100%;
-            pointer-events: none;
+            pointer-events: auto; /* Receive touch events for zone detection */
             z-index: 50;
         }
         #mobile-controls.hidden {
             display: none;
         }
-        .mobile-joystick {
+        /* Dynamic joystick - positioned by JS at touch location */
+        #dynamic-joystick {
             position: absolute;
-            bottom: 20px;
-            width: 140px;
-            height: 140px;
-            pointer-events: auto;
+            width: 120px;
+            height: 120px;
+            pointer-events: none; /* Don't interfere with touch events */
         }
-        #mobile-joystick-left {
-            left: 20px;
-            bottom: 230px; /* Above the chat box (chat is 200px tall + 10px margin + 20px gap) */
-        }
-        #mobile-joystick-right {
-            right: 20px;
+        #dynamic-joystick.hidden {
+            display: none;
         }
         .joystick-base {
             width: 120px;
             height: 120px;
             border-radius: 50%;
-            background: rgba(255, 255, 255, 0.1);
-            border: 3px solid rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.15);
+            border: 3px solid rgba(255, 255, 255, 0.4);
             position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
         }
-        .joystick-base.active {
-            background: rgba(255, 255, 255, 0.2);
-            border-color: rgba(255, 255, 255, 0.6);
-        }
         .joystick-knob {
             width: 50px;
             height: 50px;
             border-radius: 50%;
-            background: rgba(255, 255, 255, 0.5);
-            border: 2px solid rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.6);
+            border: 2px solid rgba(255, 255, 255, 0.9);
             position: absolute;
             top: 50%;
             left: 50%;
@@ -580,11 +667,12 @@
         }
         #mobile-buttons {
             position: absolute;
-            bottom: 160px;
-            right: 30px;
+            bottom: 20px;
+            right: 20px;
             display: flex;
             gap: 10px;
             pointer-events: auto;
+            z-index: 150; /* Above camera preview overlay (z-index: 100) */
         }
         .mobile-button {
             width: 60px;
@@ -613,8 +701,8 @@
         }
         #mobile-toggle-btn {
             position: absolute;
-            bottom: 220px;
-            left: 340px;
+            bottom: 10px;
+            left: 338px; /* Right of chat box (10px + 320px + 8px gap) */
             width: 44px;
             height: 44px;
             border-radius: 8px;
@@ -626,6 +714,7 @@
             pointer-events: auto;
             touch-action: manipulation;
             cursor: pointer;
+            z-index: 150; /* Above camera preview overlay */
         }
         #mobile-toggle-btn.hidden {
             display: none;
@@ -657,9 +746,15 @@
                 <p class="controls-hint">WASD to move, Mouse to look, Space to jump</p>
             </div>
             <div id="chat-container" class="hidden">
+                <div id="chat-header">
+                    <span id="chat-title">Chat</span>
+                    <span id="chat-unread" class="hidden">0</span>
+                    <button id="chat-minimize-btn">_</button>
+                </div>
                 <div id="chat-messages"></div>
                 <div id="chat-input-container">
                     <input type="text" id="chat-input" maxlength="200" placeholder="Press Enter to chat...">
+                    <button id="chat-minimize-btn-inline">+</button>
                 </div>
             </div>
             <div id="grabbed-overlay">
@@ -695,16 +790,13 @@
             </div>
             <!-- Mobile Controls -->
             <div id="mobile-controls" class="hidden">
-                <div id="mobile-joystick-left" class="mobile-joystick">
+                <!-- Dynamic joystick spawns at touch location on left half -->
+                <div id="dynamic-joystick" class="hidden">
                     <div class="joystick-base">
                         <div class="joystick-knob"></div>
                     </div>
                 </div>
-                <div id="mobile-joystick-right" class="mobile-joystick">
-                    <div class="joystick-base">
-                        <div class="joystick-knob"></div>
-                    </div>
-                </div>
+                <!-- Buttons stay visible at bottom-right -->
                 <div id="mobile-buttons">
                     <button id="mobile-interact-btn" class="mobile-button">E</button>
                     <button id="mobile-jump-btn" class="mobile-button">^</button>

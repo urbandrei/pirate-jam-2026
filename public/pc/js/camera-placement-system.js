@@ -260,8 +260,8 @@ export class CameraPlacementSystem {
         this.previewOverlay.id = 'camera-preview-overlay';
         this.previewOverlay.style.cssText = `
             position: fixed;
-            bottom: 20px;
-            right: 20px;
+            top: 10px;
+            right: 10px;
             width: 320px;
             height: 180px;
             border: 3px solid #00ff00;
@@ -270,6 +270,7 @@ export class CameraPlacementSystem {
             z-index: 100;
             display: none;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+            pointer-events: none;
         `;
 
         // Create canvas for displaying the preview
@@ -279,12 +280,12 @@ export class CameraPlacementSystem {
         this.previewCanvas.style.cssText = 'width: 100%; height: 100%;';
         this.previewOverlay.appendChild(this.previewCanvas);
 
-        // Add label
+        // Add label below preview, right justified
         const label = document.createElement('div');
         label.style.cssText = `
             position: absolute;
-            top: -24px;
-            left: 0;
+            bottom: -24px;
+            right: 0;
             background: rgba(0, 0, 0, 0.8);
             color: #00ff00;
             padding: 2px 8px;

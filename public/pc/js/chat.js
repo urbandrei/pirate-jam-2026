@@ -15,8 +15,13 @@ export class ChatUI {
         this.container = document.getElementById('chat-container');
         this.messagesEl = document.getElementById('chat-messages');
         this.inputEl = document.getElementById('chat-input');
+        this.minimizeBtn = document.getElementById('chat-minimize-btn');
+        this.minimizeBtnInline = document.getElementById('chat-minimize-btn-inline');
+        this.unreadBadge = document.getElementById('chat-unread');
 
         this.messageCount = 0;
+        this.unreadCount = 0;
+        this.isMinimized = false;
 
         // Callback for when user finishes with chat (send message or click outside)
         this.onReturnToGame = null;
@@ -50,6 +55,91 @@ export class ChatUI {
         this.container.addEventListener('click', (e) => {
             e.stopPropagation();
         });
+
+        // Minimize button (in header)
+        if (this.minimizeBtn) {
+            this.minimizeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleMinimize();
+            });
+            this.minimizeBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.toggleMinimize();
+            }, { passive: false });
+        }
+
+        // Minimize button (inline, shown when minimized)
+        if (this.minimizeBtnInline) {
+            this.minimizeBtnInline.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleMinimize();
+            });
+            this.minimizeBtnInline.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.toggleMinimize();
+            }, { passive: false });
+        }
+    }
+
+    /**
+     * Toggle minimized state
+     */
+    toggleMinimize() {
+        this.isMinimized = !this.isMinimized;
+        this.container.classList.toggle('minimized', this.isMinimized);
+        this.minimizeBtn.textContent = this.isMinimized ? '+' : '_';
+
+        // Move unread badge to inline button area when minimized
+        if (this.unreadBadge && this.minimizeBtnInline) {
+            const inputContainer = document.getElementById('chat-input-container');
+            const header = document.getElementById('chat-header');
+            if (this.isMinimized) {
+                // Move badge to input container (will be positioned on inline button)
+                inputContainer.appendChild(this.unreadBadge);
+            } else {
+                // Move badge back to header
+                header.insertBefore(this.unreadBadge, this.minimizeBtn);
+            }
+        }
+
+        // Clear unread count when expanding
+        if (!this.isMinimized) {
+            this.clearUnread();
+        }
+    }
+
+    /**
+     * Increment unread count when minimized
+     */
+    incrementUnread() {
+        if (this.isMinimized) {
+            this.unreadCount++;
+            this.updateUnreadBadge();
+        }
+    }
+
+    /**
+     * Clear unread count
+     */
+    clearUnread() {
+        this.unreadCount = 0;
+        this.updateUnreadBadge();
+    }
+
+    /**
+     * Update the unread badge display
+     */
+    updateUnreadBadge() {
+        if (this.unreadBadge) {
+            if (this.unreadCount > 0) {
+                this.unreadBadge.textContent = this.unreadCount > 99 ? '99+' : this.unreadCount;
+                this.unreadBadge.classList.remove('hidden');
+            } else {
+                this.unreadBadge.classList.add('hidden');
+            }
+        }
     }
 
     /**
@@ -107,6 +197,9 @@ export class ChatUI {
 
         // Auto-scroll to bottom
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+
+        // Track unread if minimized
+        this.incrementUnread();
     }
 
     /**
@@ -141,6 +234,9 @@ export class ChatUI {
 
         // Auto-scroll to bottom
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+
+        // Track unread if minimized
+        this.incrementUnread();
     }
 
     /**
@@ -186,6 +282,9 @@ export class ChatUI {
 
         // Auto-scroll to bottom
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+
+        // Track unread if minimized
+        this.incrementUnread();
     }
 
     /**

@@ -1,8 +1,8 @@
 /**
  * Mobile touch controls for PC client
- * Left joystick: WASD movement
- * Right joystick: Camera look
- * Buttons: Jump, Interact
+ * Left half: Dynamic joystick spawns at touch location for movement
+ * Right half: Direct swipe for camera look
+ * Buttons: Jump, Interact (always visible at bottom-right)
  */
 
 export class MobileControls {
@@ -10,22 +10,33 @@ export class MobileControls {
         this.controls = controls;
         this.enabled = false;
 
-        // Joystick state
-        this.leftJoystick = { active: false, x: 0, y: 0, touchId: null, startX: 0, startY: 0 };
-        this.rightJoystick = { active: false, x: 0, y: 0, touchId: null, startX: 0, startY: 0 };
+        // Touch tracking for movement (left half)
+        this.movementTouch = {
+            active: false,
+            id: null,
+            startX: 0,
+            startY: 0
+        };
+
+        // Touch tracking for camera look (right half)
+        this.lookTouch = {
+            active: false,
+            id: null,
+            lastX: 0,
+            lastY: 0
+        };
 
         // Configuration
         this.deadZone = 10;
         this.maxRadius = 35;
         this.movementThreshold = 0.3;
-        this.lookSensitivity = 0.03;
+        this.lookSensitivity = 0.005;
 
         // DOM elements
         this.container = null;
-        this.leftBase = null;
-        this.leftKnob = null;
-        this.rightBase = null;
-        this.rightKnob = null;
+        this.dynamicJoystick = null;
+        this.joystickBase = null;
+        this.joystickKnob = null;
         this.jumpButton = null;
         this.interactButton = null;
         this.toggleButton = null;
@@ -53,49 +64,39 @@ export class MobileControls {
 
         // Always show toggle button (allows desktop testing too)
         this.toggleButton.classList.remove('hidden');
-        console.log('[MobileControls] Initialized, toggle button visible');
+        console.log('[MobileControls] Initialized with touch zones');
     }
 
     cacheElements() {
         this.container = document.getElementById('mobile-controls');
-        this.leftBase = document.querySelector('#mobile-joystick-left .joystick-base');
-        this.leftKnob = document.querySelector('#mobile-joystick-left .joystick-knob');
-        this.rightBase = document.querySelector('#mobile-joystick-right .joystick-base');
-        this.rightKnob = document.querySelector('#mobile-joystick-right .joystick-knob');
-
+        this.dynamicJoystick = document.getElementById('dynamic-joystick');
+        this.joystickBase = this.dynamicJoystick?.querySelector('.joystick-base');
+        this.joystickKnob = this.dynamicJoystick?.querySelector('.joystick-knob');
         this.jumpButton = document.getElementById('mobile-jump-btn');
         this.interactButton = document.getElementById('mobile-interact-btn');
         this.toggleButton = document.getElementById('mobile-toggle-btn');
 
         console.log('[MobileControls] Elements found:', {
             container: !!this.container,
-            leftBase: !!this.leftBase,
-            rightBase: !!this.rightBase,
+            dynamicJoystick: !!this.dynamicJoystick,
             toggleButton: !!this.toggleButton
         });
     }
 
     setupEventListeners() {
-        // Left joystick touch events
-        if (this.leftBase) {
-            this.leftBase.addEventListener('touchstart', (e) => this.handleJoystickStart(e, 'left'), { passive: false });
-            this.leftBase.addEventListener('touchmove', (e) => this.handleJoystickMove(e, 'left'), { passive: false });
-            this.leftBase.addEventListener('touchend', (e) => this.handleJoystickEnd(e, 'left'), { passive: false });
-            this.leftBase.addEventListener('touchcancel', (e) => this.handleJoystickEnd(e, 'left'), { passive: false });
-        }
-
-        // Right joystick touch events
-        if (this.rightBase) {
-            this.rightBase.addEventListener('touchstart', (e) => this.handleJoystickStart(e, 'right'), { passive: false });
-            this.rightBase.addEventListener('touchmove', (e) => this.handleJoystickMove(e, 'right'), { passive: false });
-            this.rightBase.addEventListener('touchend', (e) => this.handleJoystickEnd(e, 'right'), { passive: false });
-            this.rightBase.addEventListener('touchcancel', (e) => this.handleJoystickEnd(e, 'right'), { passive: false });
+        // Touch events on the full container for zone-based input
+        if (this.container) {
+            this.container.addEventListener('touchstart', (e) => this.handleTouchStart(e), { passive: false });
+            this.container.addEventListener('touchmove', (e) => this.handleTouchMove(e), { passive: false });
+            this.container.addEventListener('touchend', (e) => this.handleTouchEnd(e), { passive: false });
+            this.container.addEventListener('touchcancel', (e) => this.handleTouchEnd(e), { passive: false });
         }
 
         // Button events
         if (this.jumpButton) {
             this.jumpButton.addEventListener('touchstart', (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 this.handleJumpPress();
             }, { passive: false });
         }
@@ -103,6 +104,7 @@ export class MobileControls {
         if (this.interactButton) {
             this.interactButton.addEventListener('touchstart', (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 this.handleInteractPress();
             }, { passive: false });
         }
@@ -117,100 +119,156 @@ export class MobileControls {
         }
     }
 
-    handleJoystickStart(e, side) {
+    handleTouchStart(e) {
+        if (!this.enabled) return;
         e.preventDefault();
-        const touch = e.changedTouches[0];
-        const joystick = side === 'left' ? this.leftJoystick : this.rightJoystick;
-        const base = side === 'left' ? this.leftBase : this.rightBase;
 
-        if (joystick.active) return;
+        // Check if on home screen
+        const homePage = document.getElementById('home-page');
+        if (homePage && homePage.style.display !== 'none') {
+            return;
+        }
 
-        const rect = base.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
-
-        joystick.active = true;
-        joystick.touchId = touch.identifier;
-        joystick.startX = centerX;
-        joystick.startY = centerY;
-
-        this.updateJoystickPosition(touch.clientX, touch.clientY, side);
-        base.classList.add('active');
-    }
-
-    handleJoystickMove(e, side) {
-        e.preventDefault();
-        const joystick = side === 'left' ? this.leftJoystick : this.rightJoystick;
-
-        if (!joystick.active) return;
+        // Check if chat input is focused
+        const activeElement = document.activeElement;
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+            return;
+        }
 
         for (const touch of e.changedTouches) {
-            if (touch.identifier === joystick.touchId) {
-                this.updateJoystickPosition(touch.clientX, touch.clientY, side);
-                break;
+            const isLeftHalf = touch.clientX < window.innerWidth / 2;
+
+            if (isLeftHalf && !this.movementTouch.active) {
+                // Start movement touch - spawn joystick at touch location
+                this.movementTouch = {
+                    active: true,
+                    id: touch.identifier,
+                    startX: touch.clientX,
+                    startY: touch.clientY
+                };
+                this.showDynamicJoystick(touch.clientX, touch.clientY);
+            } else if (!isLeftHalf && !this.lookTouch.active) {
+                // Start look touch
+                this.lookTouch = {
+                    active: true,
+                    id: touch.identifier,
+                    lastX: touch.clientX,
+                    lastY: touch.clientY
+                };
             }
         }
     }
 
-    handleJoystickEnd(e, side) {
+    handleTouchMove(e) {
+        if (!this.enabled) return;
         e.preventDefault();
-        const joystick = side === 'left' ? this.leftJoystick : this.rightJoystick;
-        const base = side === 'left' ? this.leftBase : this.rightBase;
-        const knob = side === 'left' ? this.leftKnob : this.rightKnob;
 
         for (const touch of e.changedTouches) {
-            if (touch.identifier === joystick.touchId) {
-                joystick.active = false;
-                joystick.touchId = null;
-                joystick.x = 0;
-                joystick.y = 0;
+            // Handle movement touch
+            if (this.movementTouch.active && touch.identifier === this.movementTouch.id) {
+                this.updateMovement(touch.clientX, touch.clientY);
+            }
 
-                // Reset knob to center
-                if (knob) {
-                    knob.style.transform = 'translate(-50%, -50%)';
-                }
-                base.classList.remove('active');
-
-                // Clear movement inputs for left joystick
-                if (side === 'left') {
-                    this.controls.input.forward = false;
-                    this.controls.input.backward = false;
-                    this.controls.input.left = false;
-                    this.controls.input.right = false;
-                }
-                break;
+            // Handle look touch
+            if (this.lookTouch.active && touch.identifier === this.lookTouch.id) {
+                this.updateLook(touch);
             }
         }
     }
 
-    updateJoystickPosition(clientX, clientY, side) {
-        const joystick = side === 'left' ? this.leftJoystick : this.rightJoystick;
-        const knob = side === 'left' ? this.leftKnob : this.rightKnob;
+    handleTouchEnd(e) {
+        if (!this.enabled) return;
+        e.preventDefault();
 
-        let dx = clientX - joystick.startX;
-        let dy = clientY - joystick.startY;
+        for (const touch of e.changedTouches) {
+            // End movement touch
+            if (this.movementTouch.active && touch.identifier === this.movementTouch.id) {
+                this.movementTouch.active = false;
+                this.movementTouch.id = null;
+                this.hideDynamicJoystick();
+                this.clearMovementInput();
+            }
 
+            // End look touch
+            if (this.lookTouch.active && touch.identifier === this.lookTouch.id) {
+                this.lookTouch.active = false;
+                this.lookTouch.id = null;
+            }
+        }
+    }
+
+    showDynamicJoystick(x, y) {
+        if (!this.dynamicJoystick) return;
+
+        // Position joystick centered on touch point
+        this.dynamicJoystick.style.left = `${x - 60}px`;
+        this.dynamicJoystick.style.top = `${y - 60}px`;
+        this.dynamicJoystick.classList.remove('hidden');
+
+        // Reset knob to center
+        if (this.joystickKnob) {
+            this.joystickKnob.style.transform = 'translate(-50%, -50%)';
+        }
+    }
+
+    hideDynamicJoystick() {
+        if (!this.dynamicJoystick) return;
+        this.dynamicJoystick.classList.add('hidden');
+    }
+
+    updateMovement(clientX, clientY) {
+        const dx = clientX - this.movementTouch.startX;
+        const dy = clientY - this.movementTouch.startY;
         const magnitude = Math.sqrt(dx * dx + dy * dy);
 
-        // Clamp to max radius for visual
+        // Clamp visual position to max radius
+        let clampedDx = dx;
+        let clampedDy = dy;
         if (magnitude > this.maxRadius) {
-            dx = (dx / magnitude) * this.maxRadius;
-            dy = (dy / magnitude) * this.maxRadius;
+            clampedDx = (dx / magnitude) * this.maxRadius;
+            clampedDy = (dy / magnitude) * this.maxRadius;
         }
 
         // Update knob visual position
-        if (knob) {
-            knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+        if (this.joystickKnob) {
+            this.joystickKnob.style.transform = `translate(calc(-50% + ${clampedDx}px), calc(-50% + ${clampedDy}px))`;
         }
 
-        // Calculate normalized values (-1 to 1)
+        // Calculate normalized values (-1 to 1) for input
         if (magnitude > this.deadZone) {
-            joystick.x = Math.max(-1, Math.min(1, (clientX - joystick.startX) / this.maxRadius));
-            joystick.y = Math.max(-1, Math.min(1, (clientY - joystick.startY) / this.maxRadius));
+            const normalizedX = Math.max(-1, Math.min(1, dx / this.maxRadius));
+            const normalizedY = Math.max(-1, Math.min(1, dy / this.maxRadius));
+
+            this.controls.input.forward = normalizedY < -this.movementThreshold;
+            this.controls.input.backward = normalizedY > this.movementThreshold;
+            this.controls.input.left = normalizedX < -this.movementThreshold;
+            this.controls.input.right = normalizedX > this.movementThreshold;
         } else {
-            joystick.x = 0;
-            joystick.y = 0;
+            this.clearMovementInput();
         }
+    }
+
+    updateLook(touch) {
+        const deltaX = touch.clientX - this.lookTouch.lastX;
+        const deltaY = touch.clientY - this.lookTouch.lastY;
+
+        // Apply camera rotation (like mouse movement)
+        this.controls.yaw -= deltaX * this.lookSensitivity;
+        this.controls.pitch -= deltaY * this.lookSensitivity;
+
+        // Clamp pitch (same as Controls.js)
+        this.controls.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, this.controls.pitch));
+
+        // Update last position for next delta
+        this.lookTouch.lastX = touch.clientX;
+        this.lookTouch.lastY = touch.clientY;
+    }
+
+    clearMovementInput() {
+        this.controls.input.forward = false;
+        this.controls.input.backward = false;
+        this.controls.input.left = false;
+        this.controls.input.right = false;
     }
 
     handleJumpPress() {
@@ -226,36 +284,8 @@ export class MobileControls {
     }
 
     update() {
-        if (!this.enabled) return;
-
-        // Check if chat input is focused - disable movement
-        const activeElement = document.activeElement;
-        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
-            return;
-        }
-
-        // Left joystick -> WASD movement
-        if (this.leftJoystick.active) {
-            const lx = this.leftJoystick.x;
-            const ly = this.leftJoystick.y;
-
-            this.controls.input.forward = ly < -this.movementThreshold;
-            this.controls.input.backward = ly > this.movementThreshold;
-            this.controls.input.left = lx < -this.movementThreshold;
-            this.controls.input.right = lx > this.movementThreshold;
-        }
-
-        // Right joystick -> Camera look
-        if (this.rightJoystick.active) {
-            const rx = this.rightJoystick.x;
-            const ry = this.rightJoystick.y;
-
-            this.controls.yaw -= rx * this.lookSensitivity;
-            this.controls.pitch -= ry * this.lookSensitivity;
-
-            // Clamp pitch (same as Controls.js)
-            this.controls.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, this.controls.pitch));
-        }
+        // Movement and look are now handled directly in touch events
+        // This method kept for compatibility with game loop
     }
 
     isTouchDevice() {
@@ -293,18 +323,11 @@ export class MobileControls {
             this.toggleButton.classList.remove('active');
         }
 
-        // Clear any active inputs
-        this.leftJoystick.active = false;
-        this.leftJoystick.x = 0;
-        this.leftJoystick.y = 0;
-        this.rightJoystick.active = false;
-        this.rightJoystick.x = 0;
-        this.rightJoystick.y = 0;
-
-        this.controls.input.forward = false;
-        this.controls.input.backward = false;
-        this.controls.input.left = false;
-        this.controls.input.right = false;
+        // Clear any active touches
+        this.movementTouch.active = false;
+        this.lookTouch.active = false;
+        this.hideDynamicJoystick();
+        this.clearMovementInput();
     }
 
     toggle() {

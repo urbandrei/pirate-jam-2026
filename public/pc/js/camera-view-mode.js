@@ -74,11 +74,26 @@ export class CameraViewMode {
         this.cameraCounter = null;
         this.createMonitorOverlay();
 
+        // Touch state for mobile
+        this._touchState = {
+            active: false,
+            startX: 0,
+            startY: 0,
+            lastX: 0,
+            lastY: 0,
+            startTime: 0,
+            moved: false
+        };
+        this._touchSensitivity = 0.005;  // Similar to mobile-controls.js
+
         // Bind event handlers
         this._onMouseMove = this._handleMouseMove.bind(this);
         this._onMouseDown = this._handleMouseDown.bind(this);
         this._onKeyDown = this._handleKeyDown.bind(this);
         this._onMonitorClick = this._handleMonitorClick.bind(this);
+        this._onTouchStart = this._handleTouchStart.bind(this);
+        this._onTouchMove = this._handleTouchMove.bind(this);
+        this._onTouchEnd = this._handleTouchEnd.bind(this);
     }
 
     /**
@@ -141,7 +156,7 @@ export class CameraViewMode {
             font-size: 12px;
             border-radius: 4px;
         `;
-        hint.textContent = 'Mouse: Aim | Left-Click: Confirm | Escape: Cancel';
+        hint.textContent = 'Drag: Aim | Click/Tap: Confirm | Escape: Cancel';
         this.hintText = hint;  // Store reference for updating
         this.overlay.appendChild(hint);
 
@@ -588,6 +603,13 @@ export class CameraViewMode {
     _updateViewCamera() {
         this.viewCamera.position.copy(this.position);
 
+        // Update aspect ratio in case of resize/rotation
+        const newAspect = window.innerWidth / window.innerHeight;
+        if (this.viewCamera.aspect !== newAspect) {
+            this.viewCamera.aspect = newAspect;
+            this.viewCamera.updateProjectionMatrix();
+        }
+
         // Apply rotation (YXZ order: yaw first, then pitch)
         this.viewCamera.rotation.order = 'YXZ';
         this.viewCamera.rotation.y = this.rotation.yaw;
@@ -741,7 +763,7 @@ export class CameraViewMode {
             if (this.mode === 'viewing') {
                 this.hintText.textContent = 'Escape: Exit';
             } else {
-                this.hintText.textContent = 'Mouse: Aim | Left-Click: Confirm | Escape: Cancel';
+                this.hintText.textContent = 'Drag: Aim | Click/Tap: Confirm | Escape: Cancel';
             }
         }
 
@@ -809,12 +831,20 @@ export class CameraViewMode {
         document.addEventListener('mousemove', this._onMouseMove);
         document.addEventListener('mousedown', this._onMouseDown);
         document.addEventListener('keydown', this._onKeyDown);
+        // Touch events for mobile support
+        document.addEventListener('touchstart', this._onTouchStart, { passive: false });
+        document.addEventListener('touchmove', this._onTouchMove, { passive: false });
+        document.addEventListener('touchend', this._onTouchEnd, { passive: false });
     }
 
     _disableInputCapture() {
         document.removeEventListener('mousemove', this._onMouseMove);
         document.removeEventListener('mousedown', this._onMouseDown);
         document.removeEventListener('keydown', this._onKeyDown);
+        // Remove touch events
+        document.removeEventListener('touchstart', this._onTouchStart);
+        document.removeEventListener('touchmove', this._onTouchMove);
+        document.removeEventListener('touchend', this._onTouchEnd);
     }
 
     _handleMouseMove(event) {
@@ -864,6 +894,91 @@ export class CameraViewMode {
             event.preventDefault();
             this.exit(false);
         }
+    }
+
+    /**
+     * Handle touch start for mobile camera rotation/confirmation
+     */
+    _handleTouchStart(event) {
+        if (!this.isActive) return;
+        if (this.mode === 'viewing' || this.mode === 'monitor') return;
+
+        // Don't handle if touch is on a button
+        if (event.target.tagName === 'BUTTON') return;
+
+        event.preventDefault();
+
+        const touch = event.touches[0];
+        this._touchState = {
+            active: true,
+            startX: touch.clientX,
+            startY: touch.clientY,
+            lastX: touch.clientX,
+            lastY: touch.clientY,
+            startTime: performance.now(),
+            moved: false
+        };
+    }
+
+    /**
+     * Handle touch move for mobile camera rotation
+     */
+    _handleTouchMove(event) {
+        if (!this.isActive || !this._touchState.active) return;
+        if (this.mode === 'viewing' || this.mode === 'monitor') return;
+
+        event.preventDefault();
+
+        const touch = event.touches[0];
+        const deltaX = touch.clientX - this._touchState.lastX;
+        const deltaY = touch.clientY - this._touchState.lastY;
+
+        // Check if the user has moved enough to count as a drag
+        const totalMoveX = touch.clientX - this._touchState.startX;
+        const totalMoveY = touch.clientY - this._touchState.startY;
+        if (Math.abs(totalMoveX) > 10 || Math.abs(totalMoveY) > 10) {
+            this._touchState.moved = true;
+        }
+
+        // Update rotation (similar to mouse move)
+        this.rotation.yaw -= deltaX * this._touchSensitivity;
+        this.rotation.pitch -= deltaY * this._touchSensitivity;
+        this.rotation.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, this.rotation.pitch));
+
+        this._updateViewCamera();
+
+        // Send real-time rotation updates (throttled)
+        if (this.mode === 'adjusting' && this.onRotationUpdate) {
+            const now = performance.now();
+            if (now - this._lastUpdateTime >= this._updateInterval) {
+                this._lastUpdateTime = now;
+                this.onRotationUpdate(this.cameraId, { ...this.rotation });
+            }
+        }
+
+        // Update last position for next delta
+        this._touchState.lastX = touch.clientX;
+        this._touchState.lastY = touch.clientY;
+    }
+
+    /**
+     * Handle touch end for mobile confirmation (tap to confirm)
+     */
+    _handleTouchEnd(event) {
+        if (!this.isActive || !this._touchState.active) return;
+        if (this.mode === 'viewing' || this.mode === 'monitor') return;
+
+        event.preventDefault();
+
+        const touchDuration = performance.now() - this._touchState.startTime;
+
+        // If it was a quick tap without much movement, treat as confirmation
+        if (!this._touchState.moved && touchDuration < 300) {
+            this.exit(true);
+        }
+
+        // Reset touch state
+        this._touchState.active = false;
     }
 
     /**
