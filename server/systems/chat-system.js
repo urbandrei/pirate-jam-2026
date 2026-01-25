@@ -16,6 +16,10 @@ class ChatSystem {
 
         // Rate limiting: Map<playerId, lastMessageTime>
         this.lastMessageTime = new Map();
+
+        // External listeners for message relay (e.g., Discord)
+        this.onMessageSent = null;
+        this.onStreamMessageReceived = null;
     }
 
     /**
@@ -104,6 +108,16 @@ class ChatSystem {
 
         console.log(`[Chat] ${chatMessage.senderName}: ${chatMessage.text}`);
 
+        // Notify external listeners (e.g., Discord relay)
+        if (this.onMessageSent) {
+            this.onMessageSent({
+                senderName: chatMessage.senderName,
+                senderType: chatMessage.senderType,
+                text: chatMessage.text,
+                platform: 'game'
+            });
+        }
+
         return { success: true, messageId: chatMessage.id };
     }
 
@@ -149,6 +163,15 @@ class ChatSystem {
         });
 
         console.log(`[StreamChat] [${platform}] ${username}: ${text}`);
+
+        // Notify external listeners (e.g., Discord relay for Twitch messages)
+        if (this.onStreamMessageReceived) {
+            this.onStreamMessageReceived({
+                senderName: username,
+                text: text,
+                platform: platform
+            });
+        }
 
         return { success: true, messageId: chatMessage.id };
     }

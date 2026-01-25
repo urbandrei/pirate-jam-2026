@@ -16,6 +16,7 @@ jobs:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
+          envs: TWITCH_CHANNEL,DISCORD_BOT_TOKEN,DISCORD_CHAT_CHANNEL_ID,DISCORD_COMMANDS_CHANNEL_ID
           script: |
             cd /opt/pirate-jam
 
@@ -29,9 +30,22 @@ jobs:
             # Install dependencies
             npm ci --production
 
-            # Restart server with PM2
-            pm2 restart pirate-jam || pm2 start server/index.js --name pirate-jam
+            # Create/update environment file with stream integration credentials
+            cat > .env << EOF
+            TWITCH_CHANNEL=${TWITCH_CHANNEL}
+            DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+            DISCORD_CHAT_CHANNEL_ID=${DISCORD_CHAT_CHANNEL_ID}
+            DISCORD_COMMANDS_CHANNEL_ID=${DISCORD_COMMANDS_CHANNEL_ID}
+            EOF
+
+            # Restart server with PM2 (loads .env automatically via dotenv or ecosystem)
+            pm2 restart pirate-jam --update-env || pm2 start server/index.js --name pirate-jam
             pm2 save
+        env:
+          TWITCH_CHANNEL: ${{ secrets.TWITCH_CHANNEL }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_CHAT_CHANNEL_ID: ${{ secrets.DISCORD_CHAT_CHANNEL_ID }}
+          DISCORD_COMMANDS_CHANNEL_ID: ${{ secrets.DISCORD_COMMANDS_CHANNEL_ID }}
 
   deploy-clients:
     runs-on: ubuntu-latest

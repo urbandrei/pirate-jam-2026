@@ -3,6 +3,9 @@
  * Express + Socket.IO for game networking
  */
 
+// Load environment variables from .env file (for local dev and deployment)
+require('dotenv').config();
+
 const express = require('express');
 const http = require('http');
 const https = require('https');
@@ -23,6 +26,7 @@ const plantSystem = require('./systems/plant-system');
 const stationSystem = require('./systems/station-system');
 const { PlayerQueue, JOIN_TIMEOUT } = require('./systems/player-queue');
 const TwitchChat = require('./integrations/twitch-chat');
+const DiscordBot = require('./integrations/discord-bot');
 
 // Waiting room constants (must match shared/constants.js)
 const WAITING_ROOM = {
@@ -42,6 +46,12 @@ const NETWORK_RATE = 20; // State updates per second
 // Dev server configuration (in-memory, resets on restart)
 let devServerUrl = null;
 const DEV_SERVER_PASSWORD = process.env.DEV_SERVER_PASSWORD || 'dev123';
+
+// Stream integration credentials (from environment/GitHub secrets)
+const TWITCH_CHANNEL = process.env.TWITCH_CHANNEL;
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const DISCORD_CHAT_CHANNEL_ID = process.env.DISCORD_CHAT_CHANNEL_ID;
+const DISCORD_COMMANDS_CHANNEL_ID = process.env.DISCORD_COMMANDS_CHANNEL_ID;
 
 // SSL Configuration (for production with Let's Encrypt)
 const SSL_CERT_PATH = process.env.SSL_CERT_PATH || '/etc/letsencrypt/live/urbandrei.com/fullchain.pem';
@@ -299,6 +309,90 @@ const twitchChat = new TwitchChat((streamMessage) => {
     messageHandler.chatSystem.handleStreamMessage(streamMessage);
 });
 
+// Initialize Discord bot integration
+const discordBot = new DiscordBot((discordMessage) => {
+    messageHandler.chatSystem.handleStreamMessage(discordMessage);
+});
+
+// Server base URL for camera links
+const serverBaseUrl = USE_HTTPS ?
+    'https://www.urbandrei.com' :
+    `http://localhost:${PORT}`;
+
+// Set up Discord command handlers
+discordBot.onCamerasCommand = async () => {
+    const cameraSystem = messageHandler.getCameraSystem();
+    const cameras = cameraSystem.getAllCameras();
+    const securityCams = cameras.filter(c => c.type === 'security');
+
+    if (securityCams.length === 0) {
+        return 'No security cameras are currently active.';
+    }
+
+    const list = securityCams.map(c => {
+        const numId = c.id.replace('cam_', '');
+        return `- Camera #${numId}: ${serverBaseUrl}/sec-cam/${numId}`;
+    }).join('\n');
+
+    return `**Active Security Cameras:**\n${list}`;
+};
+
+discordBot.onCameraCommand = async (cameraNumber) => {
+    const cameraId = `cam_${cameraNumber}`;
+    const cameraSystem = messageHandler.getCameraSystem();
+    const camera = cameraSystem.getCamera(cameraId);
+
+    if (!camera) {
+        return { error: `Camera #${cameraNumber} not found.` };
+    }
+
+    if (camera.type !== 'security') {
+        return { error: `Camera #${cameraNumber} is not a security camera.` };
+    }
+
+    return { link: `${serverBaseUrl}/sec-cam/${cameraNumber}` };
+};
+
+// Set up chat relay to Discord
+messageHandler.chatSystem.onMessageSent = (message) => {
+    if (discordBot.connected) {
+        discordBot.sendToChat(`**${message.senderName}:** ${message.text}`);
+    }
+};
+
+// Relay Twitch messages to Discord
+messageHandler.chatSystem.onStreamMessageReceived = (message) => {
+    // Only relay Twitch to Discord (not Discord to itself)
+    if (discordBot.connected && message.platform === 'twitch') {
+        discordBot.sendToChat(`[Twitch] **${message.senderName}:** ${message.text}`);
+    }
+};
+
+// Auto-connect integrations if credentials are configured via environment
+if (TWITCH_CHANNEL) {
+    twitchChat.connect(TWITCH_CHANNEL).then(result => {
+        if (result.success) {
+            console.log(`[Twitch] Auto-connected to #${TWITCH_CHANNEL}`);
+        } else {
+            console.error(`[Twitch] Auto-connect failed: ${result.error}`);
+        }
+    });
+}
+
+if (DISCORD_BOT_TOKEN && DISCORD_CHAT_CHANNEL_ID) {
+    discordBot.connect(
+        DISCORD_BOT_TOKEN,
+        DISCORD_CHAT_CHANNEL_ID,
+        DISCORD_COMMANDS_CHANNEL_ID || null
+    ).then(result => {
+        if (result.success) {
+            console.log('[Discord] Auto-connected');
+        } else {
+            console.error(`[Discord] Auto-connect failed: ${result.error}`);
+        }
+    });
+}
+
 // Stream integration API endpoints (must be after twitchChat initialization)
 
 // Get stream integration status (password protected)
@@ -310,7 +404,8 @@ app.get('/api/stream/status', (req, res) => {
     }
 
     res.json({
-        twitch: twitchChat.getStatus()
+        twitch: twitchChat.getStatus(),
+        discord: discordBot.getStatus()
     });
 });
 
@@ -340,6 +435,52 @@ app.post('/api/stream/twitch/disconnect', async (req, res) => {
     }
 
     await twitchChat.disconnect();
+    res.json({ success: true });
+});
+
+// Discord API endpoints
+
+// Get Discord status (password protected)
+app.get('/api/stream/discord/status', (req, res) => {
+    const password = req.query.password || req.headers['x-dev-password'];
+
+    if (password !== DEV_SERVER_PASSWORD) {
+        return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    res.json(discordBot.getStatus());
+});
+
+// Connect Discord bot (password protected)
+app.post('/api/stream/discord/connect', express.json(), async (req, res) => {
+    const password = req.query.password || req.headers['x-dev-password'];
+
+    if (password !== DEV_SERVER_PASSWORD) {
+        return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    const { token, chatChannelId, commandsChannelId } = req.body;
+
+    if (!token || typeof token !== 'string') {
+        return res.status(400).json({ error: 'Invalid bot token' });
+    }
+    if (!chatChannelId || typeof chatChannelId !== 'string') {
+        return res.status(400).json({ error: 'Invalid chat channel ID' });
+    }
+
+    const result = await discordBot.connect(token, chatChannelId, commandsChannelId || null);
+    res.json(result);
+});
+
+// Disconnect Discord bot (password protected)
+app.post('/api/stream/discord/disconnect', async (req, res) => {
+    const password = req.query.password || req.headers['x-dev-password'];
+
+    if (password !== DEV_SERVER_PASSWORD) {
+        return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    await discordBot.disconnect();
     res.json({ success: true });
 });
 
