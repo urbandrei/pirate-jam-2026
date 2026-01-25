@@ -1,6 +1,6 @@
 /**
  * DiscordBot - Manages Discord bot connection via discord.js
- * Provides bidirectional chat bridge and bot commands
+ * Provides bidirectional chat bridge between game and Discord
  */
 
 const { Client, GatewayIntentBits, Events } = require('discord.js');
@@ -29,10 +29,6 @@ class DiscordBot {
         // Connection state for admin UI
         this.status = 'disconnected'; // 'disconnected', 'connecting', 'connected', 'error'
         this.lastError = null;
-
-        // Command handlers (set by server)
-        this.onCamerasCommand = null;
-        this.onCameraCommand = null;
     }
 
     /**
@@ -127,12 +123,6 @@ class DiscordBot {
         if (channelId === this.chatChannelId) {
             this._handleChatMessage(message);
         }
-
-        // Handle command channel messages
-        if (channelId === this.commandsChannelId ||
-            (this.commandsChannelId === null && channelId === this.chatChannelId)) {
-            this._handleCommandMessage(message);
-        }
     }
 
     /**
@@ -141,11 +131,6 @@ class DiscordBot {
     _handleChatMessage(message) {
         const userId = message.author.id;
         const username = message.author.displayName || message.author.username;
-
-        // Skip if message starts with command prefix
-        if (message.content.trim().startsWith('!')) {
-            return;
-        }
 
         // Rate limit per user
         const lastTime = this.lastMessageTime.get(userId) || 0;
@@ -175,47 +160,6 @@ class DiscordBot {
                 color: null,
                 badges: {}
             });
-        }
-    }
-
-    /**
-     * Handle command message
-     */
-    async _handleCommandMessage(message) {
-        const content = message.content.trim();
-
-        // Check for !cameras command
-        if (content.toLowerCase() === '!cameras') {
-            if (this.onCamerasCommand) {
-                try {
-                    const response = await this.onCamerasCommand();
-                    await message.reply(response);
-                } catch (err) {
-                    console.error('[DiscordBot] Error handling !cameras:', err);
-                    await message.reply('An error occurred while fetching cameras.');
-                }
-            }
-            return;
-        }
-
-        // Check for !camera <number> command
-        const cameraMatch = content.match(/^!camera\s+(\d+)$/i);
-        if (cameraMatch) {
-            const camNumber = parseInt(cameraMatch[1], 10);
-            if (this.onCameraCommand) {
-                try {
-                    const result = await this.onCameraCommand(camNumber);
-                    if (result.error) {
-                        await message.reply(result.error);
-                    } else if (result.link) {
-                        await message.reply(`**Camera #${camNumber}:** ${result.link}`);
-                    }
-                } catch (err) {
-                    console.error('[DiscordBot] Error handling !camera:', err);
-                    await message.reply('An error occurred while fetching camera info.');
-                }
-            }
-            return;
         }
     }
 

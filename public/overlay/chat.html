@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Overlay</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: transparent;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 16px;
+            overflow: hidden;
+        }
+
+        #chat-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            max-height: 100vh;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+        }
+
+        .message {
+            padding: 4px 8px;
+            margin: 3px 0;
+            color: white;
+            text-shadow:
+                -1px -1px 0 #000,
+                1px -1px 0 #000,
+                -1px 1px 0 #000,
+                1px 1px 0 #000,
+                0 0 4px rgba(0, 0, 0, 0.8);
+            animation: fadeIn 0.3s ease-out;
+            word-wrap: break-word;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .platform-badge {
+            display: inline-block;
+            font-size: 0.75em;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-right: 6px;
+            text-transform: uppercase;
+            text-shadow: none;
+        }
+
+        .badge-twitch {
+            background: #9146ff;
+            color: white;
+        }
+
+        .badge-discord {
+            background: #5865F2;
+            color: white;
+        }
+
+        .badge-game {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .sender-name {
+            font-weight: bold;
+            margin-right: 4px;
+        }
+
+        .message-text {
+            color: #fff;
+        }
+
+        /* Connection status indicator */
+        #status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            opacity: 0.7;
+            transition: opacity 0.3s;
+        }
+
+        #status.connected {
+            background: #4CAF50;
+            color: white;
+        }
+
+        #status.disconnected {
+            background: #f44336;
+            color: white;
+        }
+
+        #status.hidden {
+            opacity: 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="status" class="disconnected">Connecting...</div>
+    <div id="chat-container"></div>
+
+    <script src="/shared/socket.io.min.js"></script>
+    <script>
+        const MAX_MESSAGES = 20;
+        const STATUS_HIDE_DELAY = 3000;
+
+        const chatContainer = document.getElementById('chat-container');
+        const statusIndicator = document.getElementById('status');
+        let statusHideTimeout = null;
+
+        // Connect to server
+        const serverUrl = window.location.origin;
+        const socket = io(serverUrl);
+
+        // Show/hide status indicator
+        function showStatus(text, connected) {
+            statusIndicator.textContent = text;
+            statusIndicator.className = connected ? 'connected' : 'disconnected';
+            statusIndicator.classList.remove('hidden');
+
+            if (statusHideTimeout) {
+                clearTimeout(statusHideTimeout);
+            }
+
+            if (connected) {
+                statusHideTimeout = setTimeout(() => {
+                    statusIndicator.classList.add('hidden');
+                }, STATUS_HIDE_DELAY);
+            }
+        }
+
+        // Socket connection events
+        socket.on('connect', () => {
+            console.log('[ChatOverlay] Connected to server');
+            showStatus('Connected', true);
+
+            // Join as viewer (no player creation)
+            socket.emit('message', {
+                type: 'JOIN',
+                playerType: 'viewer',
+                cameraId: null
+            });
+        });
+
+        socket.on('disconnect', () => {
+            console.log('[ChatOverlay] Disconnected from server');
+            showStatus('Disconnected', false);
+        });
+
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Add message to chat
+        function addMessage(platform, senderName, text, color = null) {
+            const messageEl = document.createElement('div');
+            messageEl.className = 'message';
+
+            // Platform badge
+            let badgeClass = 'badge-game';
+            let badgeText = 'GAME';
+            if (platform === 'twitch') {
+                badgeClass = 'badge-twitch';
+                badgeText = 'TWITCH';
+            } else if (platform === 'discord') {
+                badgeClass = 'badge-discord';
+                badgeText = 'DISCORD';
+            }
+
+            // Build message HTML
+            const nameStyle = color ? `style="color: ${escapeHtml(color)}"` : '';
+            messageEl.innerHTML = `
+                <span class="platform-badge ${badgeClass}">${badgeText}</span>
+                <span class="sender-name" ${nameStyle}>${escapeHtml(senderName)}:</span>
+                <span class="message-text">${escapeHtml(text)}</span>
+            `;
+
+            chatContainer.appendChild(messageEl);
+
+            // Limit messages
+            while (chatContainer.children.length > MAX_MESSAGES) {
+                chatContainer.removeChild(chatContainer.firstChild);
+            }
+        }
+
+        // Handle incoming messages
+        socket.on('message', (msg) => {
+            switch (msg.type) {
+                case 'CHAT_RECEIVED':
+                    // Game chat message
+                    addMessage('game', msg.senderName, msg.text);
+                    break;
+
+                case 'STREAM_CHAT_RECEIVED':
+                    // Twitch/Discord message
+                    addMessage(msg.platform, msg.senderName, msg.text, msg.color);
+                    break;
+
+                // Ignore all other message types (PLAYER_JOINED, PLAYER_LEFT, STATE_UPDATE, etc.)
+            }
+        });
+    </script>
+</body>
+</html>

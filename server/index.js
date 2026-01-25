@@ -117,7 +117,7 @@ app.get('/vr/config.js', (req, res) => {
 app.use('/pc', express.static(path.join(__dirname, '../public/pc')));
 app.use('/vr', express.static(path.join(__dirname, '../public/vr')));
 app.use('/shared', express.static(path.join(__dirname, '../public/shared')));
-app.use('/admin', express.static(path.join(__dirname, '../public/admin')));
+app.use('/overlay', express.static(path.join(__dirname, '../public/overlay')));
 app.use('/camera-viewer', express.static(path.join(__dirname, '../public/camera-viewer')));
 
 // Root redirect
@@ -141,9 +141,9 @@ app.get('/', (req, res) => {
             </ul>
 
             <hr style="margin: 20px 0; border-color: #444;">
-            <h3>Admin</h3>
+            <h3>Stream Overlays</h3>
             <ul>
-                <li><a href="/admin/stream-config.html" style="color: #9146ff;">Stream Config</a> - Twitch chat integration</li>
+                <li><a href="/overlay/chat.html" style="color: #4fc3f7;">Chat Overlay</a> - For OBS browser source</li>
             </ul>
 
             <hr style="margin: 20px 0; border-color: #444;">
@@ -314,45 +314,6 @@ const discordBot = new DiscordBot((discordMessage) => {
     messageHandler.chatSystem.handleStreamMessage(discordMessage);
 });
 
-// Server base URL for camera links
-const serverBaseUrl = USE_HTTPS ?
-    'https://www.urbandrei.com' :
-    `http://localhost:${PORT}`;
-
-// Set up Discord command handlers
-discordBot.onCamerasCommand = async () => {
-    const cameraSystem = messageHandler.getCameraSystem();
-    const cameras = cameraSystem.getAllCameras();
-    const securityCams = cameras.filter(c => c.type === 'security');
-
-    if (securityCams.length === 0) {
-        return 'No security cameras are currently active.';
-    }
-
-    const list = securityCams.map(c => {
-        const numId = c.id.replace('cam_', '');
-        return `- Camera #${numId}: ${serverBaseUrl}/sec-cam/${numId}`;
-    }).join('\n');
-
-    return `**Active Security Cameras:**\n${list}`;
-};
-
-discordBot.onCameraCommand = async (cameraNumber) => {
-    const cameraId = `cam_${cameraNumber}`;
-    const cameraSystem = messageHandler.getCameraSystem();
-    const camera = cameraSystem.getCamera(cameraId);
-
-    if (!camera) {
-        return { error: `Camera #${cameraNumber} not found.` };
-    }
-
-    if (camera.type !== 'security') {
-        return { error: `Camera #${cameraNumber} is not a security camera.` };
-    }
-
-    return { link: `${serverBaseUrl}/sec-cam/${cameraNumber}` };
-};
-
 // Set up chat relay to Discord
 messageHandler.chatSystem.onMessageSent = (message) => {
     if (discordBot.connected) {
@@ -365,6 +326,13 @@ messageHandler.chatSystem.onStreamMessageReceived = (message) => {
     // Only relay Twitch to Discord (not Discord to itself)
     if (discordBot.connected && message.platform === 'twitch') {
         discordBot.sendToChat(`[Twitch] **${message.senderName}:** ${message.text}`);
+    }
+};
+
+// Send player join events to Discord
+messageHandler.onPlayerJoined = (player) => {
+    if (discordBot.connected) {
+        discordBot.sendToChat(`\u{1F7E2} **${player.displayName}** joined the game`);
     }
 };
 
@@ -669,6 +637,7 @@ io.on('connection', (socket) => {
         // Check if this was an active player (opens a slot)
         const player = gameState.getPlayer(socket.id);
         const wasActivePlayer = player && player.alive;
+        const playerDisplayName = player ? player.displayName : null;
 
         // Clean up cameras owned by this player
         messageHandler.handlePlayerDisconnect(socket.id);
@@ -680,6 +649,11 @@ io.on('connection', (socket) => {
             type: 'PLAYER_LEFT',
             playerId: socket.id
         });
+
+        // Send player leave event to Discord
+        if (discordBot.connected && playerDisplayName) {
+            discordBot.sendToChat(`\u{1F534} **${playerDisplayName}** left the game`);
+        }
 
         // If an active player left, notify next queued player
         if (wasActivePlayer && playerQueue.getQueueLength() > 0) {

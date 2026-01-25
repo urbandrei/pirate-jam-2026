@@ -31,6 +31,10 @@ class MessageHandler {
 
         // Store names received before JOIN (socketId -> name)
         this.pendingNames = new Map();
+
+        // Callbacks for external listeners
+        this.onPlayerJoined = null;  // Called with (player) when player joins
+        this.onPlayerLeft = null;    // Called with (playerId, displayName) when player leaves
     }
 
     /**
@@ -229,6 +233,11 @@ class MessageHandler {
                     displayName: player.displayName
                 }
             }, peerId);
+
+            // Call external listener if set
+            if (this.onPlayerJoined) {
+                this.onPlayerJoined(player);
+            }
         }
     }
 
@@ -865,6 +874,11 @@ class MessageHandler {
                     displayName: player.displayName
                 }
             }, peerId);
+
+            // Call external listener if set
+            if (this.onPlayerJoined) {
+                this.onPlayerJoined(player);
+            }
         }
     }
 
