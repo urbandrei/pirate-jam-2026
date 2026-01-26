@@ -54,6 +54,7 @@ class GameState {
         // Seed spawn system
         this.seedSpawnInterval = 60000; // 1 minute in ms
         this.lastSeedSpawn = Date.now();
+        this.maxSeeds = 10; // Maximum seeds allowed in world
 
         // In dev mode, create room-specific objects for the perimeter rooms
         if (isDevMode) {
@@ -485,6 +486,21 @@ class GameState {
      */
     updateSeedSpawn(currentTime) {
         if (currentTime - this.lastSeedSpawn >= this.seedSpawnInterval) {
+            this.lastSeedSpawn = currentTime;
+
+            // Count existing seeds in world
+            let seedCount = 0;
+            for (const obj of this.worldObjects.values()) {
+                if (obj.type === 'seed') {
+                    seedCount++;
+                }
+            }
+
+            // Don't spawn if at max capacity
+            if (seedCount >= this.maxSeeds) {
+                return;
+            }
+
             // Random position in spawn room (3x3 grid = 30m x 30m, centered at 0,0)
             const x = (Math.random() - 0.5) * 20; // -10 to +10
             const z = (Math.random() - 0.5) * 20; // -10 to +10
@@ -492,9 +508,8 @@ class GameState {
 
             const seed = itemSystem.createItem('seed', position);
             this.worldObjects.set(seed.id, seed);
-            this.lastSeedSpawn = currentTime;
 
-            console.log(`[GameState] Spawned seed at (${x.toFixed(1)}, 0.25, ${z.toFixed(1)})`);
+            console.log(`[GameState] Spawned seed at (${x.toFixed(1)}, 0.25, ${z.toFixed(1)}) [${seedCount + 1}/${this.maxSeeds}]`);
         }
     }
 }
