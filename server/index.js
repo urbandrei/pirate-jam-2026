@@ -47,6 +47,9 @@ const NETWORK_RATE = 20; // State updates per second
 let devServerUrl = null;
 const DEV_SERVER_PASSWORD = process.env.DEV_SERVER_PASSWORD || 'dev123';
 
+// VR password protection (optional - only VR players need password when set)
+const VR_PASSWORD = process.env.VR_PASSWORD || null;
+
 // Stream integration credentials (from environment/GitHub secrets)
 const TWITCH_CHANNEL = process.env.TWITCH_CHANNEL;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -246,6 +249,11 @@ app.get('/health', (req, res) => {
     });
 });
 
+// Check if VR password is required
+app.get('/vr-auth-required', (req, res) => {
+    res.json({ required: !!VR_PASSWORD });
+});
+
 // Get dev server URL
 app.get('/api/dev-server', (req, res) => {
     res.json({
@@ -284,7 +292,7 @@ const physicsValidator = new PhysicsValidator(gameState);
 const roomManager = new RoomManager(gameState.worldState, gameState);
 const playerQueue = new PlayerQueue();
 const interactionSystem = new InteractionSystem(gameState, roomManager, isDevMode, playerQueue);
-const messageHandler = new MessageHandler(gameState, playerManager, interactionSystem, playerQueue);
+const messageHandler = new MessageHandler(gameState, playerManager, interactionSystem, playerQueue, VR_PASSWORD);
 
 // Link camera system to game state so camera items can create linked camera entities
 gameState.setCameraSystem(messageHandler.getCameraSystem());

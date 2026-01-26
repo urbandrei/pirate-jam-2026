@@ -80,11 +80,15 @@ export const MSG = {
 
 // Message creators for type safety
 
-export function createJoinMessage(playerType) {
-    return {
+export function createJoinMessage(playerType, password = null) {
+    const msg = {
         type: MSG.JOIN,
         playerType: playerType // 'pc' or 'vr'
     };
+    if (password) {
+        msg.password = password;
+    }
+    return msg;
 }
 
 export function createInputMessage(input, lookRotation) {

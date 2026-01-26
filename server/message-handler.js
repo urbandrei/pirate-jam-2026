@@ -13,11 +13,12 @@ const { CameraSystem, CAMERA_TYPES } = require('./systems/camera-system');
 const { MonitorSystem } = require('./systems/monitor-system');
 
 class MessageHandler {
-    constructor(gameState, playerManager, interactionSystem = null, playerQueue = null) {
+    constructor(gameState, playerManager, interactionSystem = null, playerQueue = null, vrPassword = null) {
         this.gameState = gameState;
         this.playerManager = playerManager;
         this.interactionSystem = interactionSystem;
         this.playerQueue = playerQueue;
+        this.vrPassword = vrPassword;
 
         // Initialize chat systems
         this.chatSystem = new ChatSystem(playerManager, gameState);
@@ -158,6 +159,22 @@ class MessageHandler {
                     type: 'BANNED',
                     expiresAt: banInfo.expiresAt,
                     reason: banInfo.reason
+                });
+                const socket = this.playerManager.getConnection(peerId);
+                if (socket) {
+                    socket.disconnect(true);
+                }
+                return;
+            }
+        }
+
+        // VR password protection
+        if (playerType === 'vr' && this.vrPassword) {
+            if (message.password !== this.vrPassword) {
+                console.log(`[MessageHandler] Invalid VR password from ${peerId}`);
+                this.playerManager.sendTo(peerId, {
+                    type: 'REJECTED',
+                    reason: 'Invalid password'
                 });
                 const socket = this.playerManager.getConnection(peerId);
                 if (socket) {

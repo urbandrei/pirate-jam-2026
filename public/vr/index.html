@@ -89,6 +89,16 @@
     <div id="game-container">
         <div id="ui-overlay">
             <div id="status">Initializing...</div>
+            <div id="password-container" style="display: none; margin-bottom: 20px;">
+                <input type="password" id="password-input" placeholder="Enter VR password"
+                    style="padding: 15px 20px; font-size: 18px; border: none; border-radius: 8px; margin-bottom: 10px; width: 250px;">
+                <br>
+                <button id="password-submit"
+                    style="padding: 15px 30px; font-size: 18px; background: #4488ff; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    Submit
+                </button>
+                <div id="password-error" style="color: #ff6666; margin-top: 10px;"></div>
+            </div>
             <button id="vr-button" disabled>Checking VR...</button>
             <div id="grab-status"></div>
             <div id="instructions">

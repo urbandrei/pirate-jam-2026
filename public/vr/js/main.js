@@ -33,6 +33,10 @@ class VRGame {
         this.voiceCapture = null;
         this.disposed = false;
 
+        // Password protection
+        this.vrPassword = null;
+        this.passwordRequired = false;
+
         // Player count HUD
         this.playerCountSprite = null;
         this.playerCountCanvas = null;
@@ -65,6 +69,75 @@ class VRGame {
     async init() {
         console.log('Initializing VR client...');
 
+        // Check if VR password is required
+        await this.checkPasswordRequired();
+
+        if (this.passwordRequired) {
+            // Show password UI and wait for submission
+            this.showPasswordUI();
+            return; // Will continue initialization after password is submitted
+        }
+
+        // Continue with normal initialization
+        await this.initializeGame();
+    }
+
+    async checkPasswordRequired() {
+        try {
+            // Determine game server URL
+            let serverUrl = window.GAME_SERVER_URL || '';
+            const port = parseInt(window.location.port) || 80;
+            if (!serverUrl && port !== 3000 && port !== 80 && port !== 443) {
+                serverUrl = `${window.location.protocol}//${window.location.hostname}:3000`;
+            }
+
+            const response = await fetch(`${serverUrl}/vr-auth-required`);
+            const data = await response.json();
+            this.passwordRequired = data.required;
+            console.log('VR password required:', this.passwordRequired);
+        } catch (err) {
+            console.warn('Could not check VR auth requirement:', err);
+            this.passwordRequired = false;
+        }
+    }
+
+    showPasswordUI() {
+        const container = document.getElementById('password-container');
+        const input = document.getElementById('password-input');
+        const submitBtn = document.getElementById('password-submit');
+        const errorEl = document.getElementById('password-error');
+        const statusEl = document.getElementById('status');
+
+        container.style.display = 'block';
+        statusEl.textContent = 'Enter VR password to continue';
+
+        const handleSubmit = async () => {
+            const password = input.value.trim();
+            if (!password) {
+                errorEl.textContent = 'Please enter a password';
+                return;
+            }
+
+            errorEl.textContent = '';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Connecting...';
+
+            this.vrPassword = password;
+            container.style.display = 'none';
+
+            // Continue with game initialization
+            await this.initializeGame();
+        };
+
+        submitBtn.addEventListener('click', handleSubmit);
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleSubmit();
+        });
+
+        input.focus();
+    }
+
+    async initializeGame() {
         // Setup Three.js + WebXR scene
         const container = document.getElementById('game-container');
         this.scene = new VRScene(container);
@@ -96,6 +169,20 @@ class VRGame {
         this.network = new Network();
         this.setupNetworkCallbacks();
 
+        // Handle rejection (wrong password)
+        this.network.onRejected = (reason) => {
+            console.log('Connection rejected:', reason);
+            // Show password UI again with error
+            const container = document.getElementById('password-container');
+            const errorEl = document.getElementById('password-error');
+            const submitBtn = document.getElementById('password-submit');
+
+            container.style.display = 'block';
+            errorEl.textContent = reason;
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit';
+        };
+
         // Setup building system (after network is ready)
         this.buildingSystem = new BuildingSystem(this.scene.scene, this.hands, this.network);
         this.setupBuildingCallbacks();
@@ -110,9 +197,9 @@ class VRGame {
             this.dispose();
         };
 
-        // Connect to server
+        // Connect to server (with password if required)
         try {
-            await this.network.connect();
+            await this.network.connect(this.vrPassword);
             console.log('Connected to game server');
         } catch (err) {
             console.error('Failed to connect:', err);

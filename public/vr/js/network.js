@@ -10,6 +10,7 @@ export class Network {
         this.playerId = null;
         this.isConnected = false;
         this.socketScript = null; // Track Socket.IO script for cleanup
+        this.password = null; // VR password for authentication
 
         // Callbacks
         this.onConnected = null;
@@ -19,6 +20,7 @@ export class Network {
         this.onPlayerLeft = null;
         this.onChatReceived = null;
         this.onStreamChatReceived = null;
+        this.onRejected = null; // Called when password is wrong
 
         // Camera callbacks
         this.onCameraPlaced = null;
@@ -30,7 +32,8 @@ export class Network {
         this.statusEl = document.getElementById('status');
     }
 
-    connect() {
+    connect(password = null) {
+        this.password = password;
         return new Promise((resolve, reject) => {
             this.updateStatus('Connecting to server...');
 
@@ -77,8 +80,8 @@ export class Network {
                 console.log('Connected with ID:', this.playerId);
                 this.updateStatus('Connected! Enter VR to play');
 
-                // Send join request as VR player
-                this.send(createJoinMessage('vr'));
+                // Send join request as VR player (with password if set)
+                this.send(createJoinMessage('vr', this.password));
 
                 if (this.onConnected) this.onConnected();
                 resolve();
@@ -159,6 +162,14 @@ export class Network {
             case MSG.CAMERA_LIMITS_UPDATED:
                 if (this.onCameraLimitsUpdated) {
                     this.onCameraLimitsUpdated(message.limits);
+                }
+                break;
+
+            case 'REJECTED':
+                console.log('Connection rejected:', message.reason);
+                this.updateStatus('Rejected: ' + message.reason);
+                if (this.onRejected) {
+                    this.onRejected(message.reason);
                 }
                 break;
         }
