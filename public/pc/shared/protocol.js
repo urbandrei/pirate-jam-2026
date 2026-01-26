@@ -69,7 +69,13 @@ export const MSG = {
 
     // Stream Chat (Server -> Client)
     STREAM_CHAT_RECEIVED: 'STREAM_CHAT_RECEIVED',
-    STREAM_STATUS: 'STREAM_STATUS'
+    STREAM_STATUS: 'STREAM_STATUS',
+
+    // Voice (uses separate socket events, not message type routing)
+    // VR -> Server: 'voice' event with binary audio data
+    // Server -> PC: 'voice' event with { senderId, data }
+    VOICE_DATA: 'VOICE_DATA',
+    VOICE_BROADCAST: 'VOICE_BROADCAST'
 };
 
 // Message creators for type safety

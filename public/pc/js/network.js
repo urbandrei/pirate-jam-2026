@@ -50,6 +50,9 @@ export class Network {
         // Stream chat callbacks
         this.onStreamChatReceived = null;
 
+        // Voice callbacks
+        this.onVoiceReceived = null;
+
         // Camera callbacks
         this.onCameraPlaced = null;
         this.onCameraPickedUp = null;
@@ -107,6 +110,18 @@ export class Network {
 
             this.socket.on('message', (message) => {
                 this.handleMessage(message);
+            });
+
+            // Handle voice audio from VR players (separate binary event)
+            this.socket.on('voice', (payload) => {
+                // Debug log (throttled)
+                if (!this._lastVoiceLog || Date.now() - this._lastVoiceLog > 1000) {
+                    console.log('[Network] Received voice event:', payload ? `senderId=${payload.senderId}, hasData=${!!payload.data}` : 'null payload');
+                    this._lastVoiceLog = Date.now();
+                }
+                if (this.onVoiceReceived && payload && payload.senderId && payload.data) {
+                    this.onVoiceReceived(payload.senderId, payload.data);
+                }
             });
 
             this.socket.on('disconnect', () => {

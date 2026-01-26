@@ -17,6 +17,7 @@ import { BuildingSystem } from './building-system.js';
 import { StatsPanel } from './stats-panel.js';
 import { ChatPanel } from './chat-panel.js';
 import { StreamCameraSystem } from './stream-camera-system.js';
+import { VoiceCapture } from './voice-capture.js';
 import { NETWORK_RATE, GIANT_SCALE } from '../../pc/shared/constants.js';
 
 class VRGame {
@@ -29,6 +30,7 @@ class VRGame {
         this.streamCameraSystem = null;
         this.statsPanel = null;
         this.chatPanel = null;
+        this.voiceCapture = null;
         this.disposed = false;
 
         // Player count HUD
@@ -114,6 +116,20 @@ class VRGame {
             console.log('Connected to game server');
         } catch (err) {
             console.error('Failed to connect:', err);
+        }
+
+        // Setup voice capture (always-on mic for VR player)
+        this.voiceCapture = new VoiceCapture();
+        const voiceInitialized = await this.voiceCapture.init();
+        if (voiceInitialized) {
+            // Wire up audio chunks to network
+            this.voiceCapture.onChunk = (audioData) => {
+                if (this.network && this.network.isConnected) {
+                    this.network.sendVoice(audioData);
+                }
+            };
+            // Start capturing immediately (always-on)
+            this.voiceCapture.start();
         }
 
         // Start render loop
@@ -515,6 +531,15 @@ class VRGame {
                 this.chatPanel = null;
             } catch (err) {
                 console.warn('[VRGame] Error disposing chat panel:', err);
+            }
+        }
+
+        if (this.voiceCapture) {
+            try {
+                this.voiceCapture.dispose();
+                this.voiceCapture = null;
+            } catch (err) {
+                console.warn('[VRGame] Error disposing voice capture:', err);
             }
         }
 

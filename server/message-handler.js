@@ -1555,6 +1555,43 @@ class MessageHandler {
             });
         }
     }
+
+    /**
+     * Handle voice audio data from VR players
+     * Broadcasts to all PC players for playback
+     * @param {string} peerId - The sender's peer ID
+     * @param {Buffer} audioData - Binary audio data (webm/opus)
+     */
+    handleVoice(peerId, audioData) {
+        // Validate sender is a VR player
+        const player = this.gameState.getPlayer(peerId);
+        if (!player || player.type !== 'vr') {
+            console.debug(`[Voice] Rejected voice from non-VR player: ${peerId}`);
+            return; // Only VR players can send voice
+        }
+
+        // Log voice data receipt (throttled to avoid spam)
+        if (!this._lastVoiceLog || Date.now() - this._lastVoiceLog > 1000) {
+            const size = audioData ? (audioData.length || audioData.byteLength || 'unknown') : 0;
+            console.log(`[Voice] Received ${size} bytes from VR player ${peerId}`);
+            this._lastVoiceLog = Date.now();
+        }
+
+        // Broadcast to all PC players
+        let sentCount = 0;
+        for (const [otherPeerId, otherPlayer] of this.gameState.players) {
+            if (otherPlayer.type === 'pc') {
+                if (this.playerManager.sendVoiceTo(otherPeerId, peerId, audioData)) {
+                    sentCount++;
+                }
+            }
+        }
+
+        if (!this._lastBroadcastLog || Date.now() - this._lastBroadcastLog > 1000) {
+            console.log(`[Voice] Broadcast to ${sentCount} PC players`);
+            this._lastBroadcastLog = Date.now();
+        }
+    }
 }
 
 module.exports = MessageHandler;

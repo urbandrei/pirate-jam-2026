@@ -18,6 +18,7 @@ import { CameraFeedSystem } from './camera-feed-system.js';
 import { SecurityRoomRenderer } from './security-room-renderer.js';
 import { CameraPlacementSystem } from './camera-placement-system.js';
 import { CameraViewMode } from './camera-view-mode.js';
+import { VoicePlayback } from './voice-playback.js';
 import { INPUT_RATE, ITEMS } from '../shared/constants.js';
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 
@@ -35,6 +36,7 @@ class Game {
         this.settingsManager = null;
         this.settingsUI = null;
         this.mobileControls = null;
+        this.voicePlayback = null;
 
         // Camera systems
         this.cameraFeedSystem = null;
@@ -392,6 +394,10 @@ class Game {
 
         // Setup ChatUI (needs network reference)
         this.chatUI = new ChatUI(this.network);
+
+        // Setup VoicePlayback (receives audio from VR players)
+        this.voicePlayback = new VoicePlayback();
+        this.voicePlayback.init();
 
         // Setup SettingsUI
         this.settingsUI = new SettingsUI(this.settingsManager);
@@ -899,6 +905,13 @@ class Game {
         // Stream chat callback (Twitch, etc.) - no speech bubbles for stream messages
         this.network.onStreamChatReceived = (message) => {
             this.chatUI.addStreamMessage(message.platform, message.senderName, message.text, message.color);
+        };
+
+        // Voice chat from VR players
+        this.network.onVoiceReceived = (senderId, audioData) => {
+            if (this.voicePlayback) {
+                this.voicePlayback.receiveChunk(senderId, audioData);
+            }
         };
 
         this.network.onStateUpdate = (state) => {

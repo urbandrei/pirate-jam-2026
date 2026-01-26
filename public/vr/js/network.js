@@ -174,6 +174,16 @@ export class Network {
         this.send(createVRPoseMessage(head, leftHand, rightHand));
     }
 
+    /**
+     * Send voice audio data to server (binary transmission)
+     * @param {Blob} audioData - Audio chunk from MediaRecorder
+     */
+    sendVoice(audioData) {
+        if (this.socket && this.isConnected) {
+            this.socket.emit('voice', audioData);
+        }
+    }
+
     updateStatus(text) {
         if (this.statusEl) {
             this.statusEl.textContent = text;

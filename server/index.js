@@ -627,6 +627,12 @@ io.on('connection', (socket) => {
         messageHandler.handleMessage(socket.id, message);
     });
 
+    // Handle voice audio data from VR players (binary transmission)
+    socket.on('voice', (audioData) => {
+        console.log(`[Voice] Received voice event from ${socket.id}, data size: ${audioData ? (audioData.length || audioData.byteLength || 'blob') : 'null'}`);
+        messageHandler.handleVoice(socket.id, audioData);
+    });
+
     // Handle disconnect
     socket.on('disconnect', () => {
         console.log(`Client disconnected: ${socket.id}`);

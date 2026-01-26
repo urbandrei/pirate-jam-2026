@@ -66,6 +66,28 @@ class PlayerManager {
         }
         return false;
     }
+
+    /**
+     * Send voice audio data to a specific peer
+     * Uses separate 'voice' socket event for binary transmission
+     * @param {string} peerId - Target peer ID
+     * @param {string} senderId - Original sender's peer ID
+     * @param {Buffer} audioData - Binary audio data
+     */
+    sendVoiceTo(peerId, senderId, audioData) {
+        const connection = this.connections.get(peerId);
+        // Use same check as sendTo - connection.open for consistency
+        if (connection && (connection.open || connection.connected)) {
+            try {
+                connection.emit('voice', { senderId, data: audioData });
+                return true;
+            } catch (err) {
+                console.error(`Failed to send voice to ${peerId}:`, err.message);
+                return false;
+            }
+        }
+        return false;
+    }
 }
 
 module.exports = PlayerManager;
