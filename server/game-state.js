@@ -45,8 +45,15 @@ class GameState {
         // Store spawn positions for later initialization
         this._pendingCameraSpawns = [
             { x: 3, y: 0.25, z: 3 },
-            { x: -3, y: 0.25, z: 3 }
+            { x: -3, y: 0.25, z: 3 },
+            { x: 0, y: 0.25, z: -3 },
+            { x: 5, y: 0.25, z: -5 },
+            { x: -5, y: 0.25, z: -5 }
         ];
+
+        // Seed spawn system
+        this.seedSpawnInterval = 60000; // 1 minute in ms
+        this.lastSeedSpawn = Date.now();
 
         // In dev mode, create room-specific objects for the perimeter rooms
         if (isDevMode) {
@@ -470,6 +477,25 @@ class GameState {
         const item = itemSystem.createItem(type, position);
         this.worldObjects.set(item.id, item);
         return item;
+    }
+
+    /**
+     * Update seed spawning - spawns a seed every minute in the main room
+     * @param {number} currentTime - Current time in ms
+     */
+    updateSeedSpawn(currentTime) {
+        if (currentTime - this.lastSeedSpawn >= this.seedSpawnInterval) {
+            // Random position in spawn room (3x3 grid = 30m x 30m, centered at 0,0)
+            const x = (Math.random() - 0.5) * 20; // -10 to +10
+            const z = (Math.random() - 0.5) * 20; // -10 to +10
+            const position = { x, y: 0.25, z };
+
+            const seed = itemSystem.createItem('seed', position);
+            this.worldObjects.set(seed.id, seed);
+            this.lastSeedSpawn = currentTime;
+
+            console.log(`[GameState] Spawned seed at (${x.toFixed(1)}, 0.25, ${z.toFixed(1)})`);
+        }
     }
 }
 

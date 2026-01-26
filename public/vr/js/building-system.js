@@ -194,7 +194,7 @@ export class BuildingSystem {
         this.roomTypePaletteGroup.add(backing);
 
         // Create swatches for each room type
-        const roomTypes = ['generic', 'farming', 'processing', 'cafeteria', 'dorm', 'waiting'];
+        const roomTypes = ['generic', 'farming', 'processing', 'cafeteria', 'dorm', 'security'];
         const swatchSize = 0.025;
         const padding = 0.005;
         const startY = (roomTypes.length - 1) * (swatchSize + padding) / 2;

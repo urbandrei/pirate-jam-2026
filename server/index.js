@@ -802,6 +802,9 @@ function gameLoop() {
         // Update plant growth (runs at 1Hz internally)
         plantSystem.updatePlants(gameState.worldObjects, now);
 
+        // Update seed spawning (spawns a seed every minute in main room)
+        gameState.updateSeedSpawn(now);
+
         // Update timed interactions (wash/cut stations)
         const completedTimedInteractions = interactionSystem.updateTimedInteractions(now);
         for (const completed of completedTimedInteractions) {
