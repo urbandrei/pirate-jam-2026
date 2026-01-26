@@ -9,7 +9,6 @@ class PlayerManager {
     }
 
     handleConnection(peerId, connection) {
-        console.log(`Player connecting: ${peerId}`);
         this.connections.set(peerId, connection);
     }
 
@@ -20,17 +19,13 @@ class PlayerManager {
         }
 
         const player = this.gameState.addPlayer(peerId, playerType);
-        console.log(`Player joined: ${peerId} as ${playerType}`);
-        console.log(`Total players: ${this.gameState.getPlayerCount()}`);
 
         return player;
     }
 
     handleDisconnection(peerId) {
-        console.log(`Player disconnected: ${peerId}`);
         this.gameState.removePlayer(peerId);
         this.connections.delete(peerId);
-        console.log(`Total players: ${this.gameState.getPlayerCount()}`);
     }
 
     getConnection(peerId) {

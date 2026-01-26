@@ -206,8 +206,6 @@ function startSleep(bed, player) {
     player.position.z = bed.position.z;
     player.position.y = BED_SIZE.height;  // On top of bed
 
-    console.log(`[BedSystem] Player ${player.id} started sleeping in bed ${bed.id}`);
-
     return { success: true };
 }
 
@@ -226,7 +224,6 @@ function stopSleep(player, worldObjects) {
     const bed = getBedByOccupant(player.id, worldObjects);
     if (bed) {
         bed.occupant = null;
-        console.log(`[BedSystem] Released bed ${bed.id}`);
     }
 
     // Update player state
@@ -241,8 +238,6 @@ function stopSleep(player, worldObjects) {
         player.position.z = bed.position.z;
     }
     player.position.y = 0.9;  // Ground level
-
-    console.log(`[BedSystem] Player ${player.id} stopped sleeping`);
 
     return { success: true };
 }
@@ -262,8 +257,6 @@ function updateSleepMultiplier(player, score) {
     const normalizedScore = Math.max(0, Math.min(100, score)) / 100;
     player.sleepMultiplier = SLEEP_BASE_MULTIPLIER +
         (SLEEP_MAX_MULTIPLIER - SLEEP_BASE_MULTIPLIER) * normalizedScore;
-
-    console.log(`[BedSystem] Updated sleep multiplier to ${player.sleepMultiplier.toFixed(1)} (score: ${score}%)`);
 }
 
 /**
@@ -287,7 +280,6 @@ function cleanupBedsInCell(worldObjects, gridX, gridZ, gameState = null) {
                 const player = gameState.pcPlayers.get(obj.occupant);
                 if (player && player.playerState === 'sleeping') {
                     stopSleep(player, worldObjects);
-                    console.log(`[BedSystem] Force-woke player ${obj.occupant} (bed removed)`);
                 }
             }
 
@@ -297,7 +289,6 @@ function cleanupBedsInCell(worldObjects, gridX, gridZ, gameState = null) {
 
     for (const id of toRemove) {
         worldObjects.delete(id);
-        console.log(`[BedSystem] Removed bed ${id}`);
     }
 
     return toRemove.length;
@@ -324,7 +315,6 @@ function createBedsForCell(worldObjects, gridX, gridZ) {
         );
         worldObjects.set(bed.id, bed);
         created.push(bed);
-        console.log(`[BedSystem] Created bed at (${pos.position.x.toFixed(1)}, ${pos.position.z.toFixed(1)})`);
     }
 
     return created;

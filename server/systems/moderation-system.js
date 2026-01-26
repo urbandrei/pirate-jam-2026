@@ -90,7 +90,6 @@ class ModerationSystem {
             playerName: player.displayName || playerId.slice(0, 8)
         });
 
-        console.log(`[Moderation] Player ${playerId} (${player.displayName}) muted for ${duration || 'permanently'}s by ${moderatorId}`);
         return { success: true, action: 'mute', targetId: playerId };
     }
 
@@ -111,7 +110,6 @@ class ModerationSystem {
             type: 'PLAYER_UNMUTED'
         });
 
-        console.log(`[Moderation] Player ${playerId} unmuted`);
         return { success: true, action: 'unmute', targetId: playerId };
     }
 
@@ -168,7 +166,6 @@ class ModerationSystem {
             socket.disconnect(true);
         }
 
-        console.log(`[Moderation] Player ${playerId} (${playerName}) kicked by ${moderatorId}`);
         return { success: true, action: 'kick', targetId: playerId };
     }
 
@@ -215,7 +212,6 @@ class ModerationSystem {
             socket.disconnect(true);
         }
 
-        console.log(`[Moderation] Player ${playerId} (${playerName}) temp banned for ${duration}s by ${moderatorId}`);
         return { success: true, action: 'tempban', targetId: playerId, expiresAt };
     }
 
@@ -261,7 +257,6 @@ class ModerationSystem {
             messageId: messageId
         });
 
-        console.log(`[Moderation] Message ${messageId} deleted`);
         return { success: true, action: 'delete_msg', messageId };
     }
 
@@ -277,7 +272,6 @@ class ModerationSystem {
             if (muteInfo.expiresAt !== null && now > muteInfo.expiresAt) {
                 this.mutedPlayers.delete(playerId);
                 this.playerManager.sendTo(playerId, { type: 'PLAYER_UNMUTED' });
-                console.log(`[Moderation] Mute expired for player ${playerId}`);
             }
         }
 
@@ -285,7 +279,6 @@ class ModerationSystem {
         for (const [token, banInfo] of this.bannedTokens) {
             if (now > banInfo.expiresAt) {
                 this.bannedTokens.delete(token);
-                console.log(`[Moderation] Ban expired for token ${token.slice(0, 8)}...`);
             }
         }
     }

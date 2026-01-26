@@ -79,8 +79,6 @@ export class CameraFeedSystem {
 
         this.renderTargets.set(cameraId, renderTarget);
         this.feedCameras.set(cameraId, camera);
-
-        console.log(`[CameraFeedSystem] Created feed for camera: ${cameraId}`);
     }
 
     /**
@@ -276,8 +274,6 @@ export class CameraFeedSystem {
         }
 
         this.feedCameras.delete(cameraId);
-
-        console.log(`[CameraFeedSystem] Disposed feed for camera: ${cameraId}`);
     }
 
     /**
@@ -318,8 +314,6 @@ export class CameraFeedSystem {
             oldTarget.dispose();
             this.renderTargets.set(cameraId, newTarget);
         }
-
-        console.log(`[CameraFeedSystem] Resolution changed to ${width}x${height}`);
     }
 
     /**
@@ -338,8 +332,6 @@ export class CameraFeedSystem {
 
         // Update frame rate
         this.minRenderInterval = 1000 / config.fps;
-
-        console.log(`[CameraFeedSystem] Quality set to ${preset}: ${config.width}x${config.height} @ ${config.fps}fps`);
     }
 
     /**
@@ -364,7 +356,5 @@ export class CameraFeedSystem {
 
         this.renderTargets.clear();
         this.feedCameras.clear();
-
-        console.log('[CameraFeedSystem] Disposed all feeds');
     }
 }

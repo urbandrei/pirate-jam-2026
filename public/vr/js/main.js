@@ -67,8 +67,6 @@ class VRGame {
     }
 
     async init() {
-        console.log('Initializing VR client...');
-
         // Check if VR password is required
         await this.checkPasswordRequired();
 
@@ -94,7 +92,6 @@ class VRGame {
             const response = await fetch(`${serverUrl}/vr-auth-required`);
             const data = await response.json();
             this.passwordRequired = data.required;
-            console.log('VR password required:', this.passwordRequired);
         } catch (err) {
             console.warn('Could not check VR auth requirement:', err);
             this.passwordRequired = false;
@@ -171,7 +168,6 @@ class VRGame {
 
         // Handle rejection (wrong password)
         this.network.onRejected = (reason) => {
-            console.log('Connection rejected:', reason);
             // Show password UI again with error
             const container = document.getElementById('password-container');
             const errorEl = document.getElementById('password-error');
@@ -193,14 +189,12 @@ class VRGame {
 
         // Hook cleanup to VR session end
         this.scene.onSessionEnd = () => {
-            console.log('[VRGame] VR session ended, cleaning up...');
             this.dispose();
         };
 
         // Connect to server (with password if required)
         try {
             await this.network.connect(this.vrPassword);
-            console.log('Connected to game server');
         } catch (err) {
             console.error('Failed to connect:', err);
         }
@@ -401,7 +395,6 @@ class VRGame {
     gameLoop(time, frame) {
         // Guard: Stop if XR session ended
         if (!this.scene.renderer.xr.isPresenting) {
-            console.debug('XR session not active, skipping frame');
             return;
         }
 
@@ -417,8 +410,7 @@ class VRGame {
                         this.hands.update(frame, referenceSpace);
                     }
                 } catch (handError) {
-                    // Log but don't crash - hands may not be ready yet
-                    console.debug('Hand update skipped:', handError.message);
+                    // Don't crash - hands may not be ready yet
                 }
             }
 
@@ -510,7 +502,7 @@ class VRGame {
                     hasHead = true;
                 }
             } catch (e) {
-                console.debug('Could not get viewer pose:', e.message);
+                // Could not get viewer pose
             }
         }
 
@@ -549,8 +541,6 @@ class VRGame {
             return;
         }
         this.disposed = true;
-
-        console.log('[VRGame] Disposing all resources...');
 
         // Stop animation loop FIRST to prevent further updates
         if (this.scene && this.scene.renderer) {
@@ -673,8 +663,6 @@ class VRGame {
 
         // Clear frame reference
         this.currentFrame = null;
-
-        console.log('[VRGame] All resources disposed');
     }
 }
 

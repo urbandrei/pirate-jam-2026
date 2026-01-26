@@ -208,8 +208,6 @@ function addIngredient(station, item) {
         const resultItem = itemSystem.createItem(recipeOutput, station.position);
         station.ingredients = [];
 
-        console.log(`[StationSystem] Assembly complete: ${ingredientCount} ingredients -> ${recipeOutput}`);
-
         return {
             success: true,
             recipeComplete: true,
@@ -219,7 +217,6 @@ function addIngredient(station, item) {
     }
 
     // Ingredient added but recipe not complete yet
-    console.log(`[StationSystem] Ingredient added to assembly. Count: ${ingredientCount}`);
 
     return {
         success: true,
@@ -258,7 +255,6 @@ function cleanupStationsInCell(worldObjects, gridX, gridZ) {
 
     for (const id of toRemove) {
         worldObjects.delete(id);
-        console.log(`[StationSystem] Removed station ${id}`);
     }
 
     return toRemove.length;
@@ -286,7 +282,6 @@ function createStationsForCell(worldObjects, gridX, gridZ) {
         );
         worldObjects.set(station.id, station);
         created.push(station);
-        console.log(`[StationSystem] Created ${pos.stationType} at (${pos.position.x.toFixed(1)}, ${pos.position.z.toFixed(1)})`);
     }
 
     return created;

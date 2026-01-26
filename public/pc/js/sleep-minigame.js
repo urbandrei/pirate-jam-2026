@@ -70,8 +70,6 @@ export class SleepMinigame {
 
         this._createOverlay();
         this._startAnimation();
-
-        console.log('[SleepMinigame] Started');
     }
 
     /**
@@ -83,8 +81,6 @@ export class SleepMinigame {
         this.isActive = false;
         this._stopAnimation();
         this._removeOverlay();
-
-        console.log('[SleepMinigame] Stopped');
     }
 
     /**
@@ -390,8 +386,6 @@ export class SleepMinigame {
         // Calculate multiplier (linear interpolation between base and max)
         const multiplier = SLEEP_BASE_MULTIPLIER +
             (SLEEP_MAX_MULTIPLIER - SLEEP_BASE_MULTIPLIER) * (scorePercent / 100);
-
-        console.log(`[SleepMinigame] Ended: hits=${this.hits}, misses=${this.misses}, score=${scorePercent}%, multiplier=${multiplier.toFixed(1)}`);
 
         // Remove overlay immediately - no stats screen
         this._removeOverlay();

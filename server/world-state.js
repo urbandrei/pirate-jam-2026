@@ -40,8 +40,6 @@ class WorldState {
      *          (-1,2) Dorm
      */
     initializeDevRooms() {
-        console.log('[WorldState] Dev mode: Creating perimeter rooms');
-
         const devRooms = [
             { x: -1, z: -2, type: 'farming' },
             { x: 2, z: -1, type: 'cafeteria' },
@@ -52,9 +50,7 @@ class WorldState {
 
         for (const room of devRooms) {
             const result = this.placeBlock(room.x, room.z, '1x1', 'system', 0, room.type);
-            if (result.success) {
-                console.log(`[WorldState] Dev mode: Placed ${room.type} room at (${room.x}, ${room.z})`);
-            } else {
+            if (!result.success) {
                 console.warn(`[WorldState] Dev mode: Failed to place ${room.type} room: ${result.reason}`);
             }
         }

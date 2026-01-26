@@ -225,10 +225,6 @@ function updatePlants(worldObjects, now) {
         }
     }
 
-    if (updatedCount > 0) {
-        console.log(`[PlantSystem] Updated ${updatedCount} plants`);
-    }
-
     return updatedCount;
 }
 
@@ -260,7 +256,6 @@ function cleanupPlantsInCell(worldObjects, gridX, gridZ) {
 
     for (const id of toRemove) {
         worldObjects.delete(id);
-        console.log(`[PlantSystem] Removed plant ${id} - farming room converted`);
     }
 
     return toRemove.length;
@@ -308,7 +303,6 @@ function createSoilPlotsForCell(gridX, gridZ, worldObjects) {
         created.push(soilPlot);
     }
 
-    console.log(`[PlantSystem] Created ${created.length} soil plots for cell (${gridX}, ${gridZ})`);
     return created;
 }
 
@@ -331,10 +325,6 @@ function cleanupSoilPlotsInCell(gridX, gridZ, worldObjects) {
 
     for (const id of toRemove) {
         worldObjects.delete(id);
-    }
-
-    if (toRemove.length > 0) {
-        console.log(`[PlantSystem] Removed ${toRemove.length} soil plots from cell (${gridX}, ${gridZ})`);
     }
 
     return toRemove.length;

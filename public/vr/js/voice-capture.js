@@ -70,18 +70,12 @@ export class VoiceCapture {
                 }
 
                 this._chunkCount++;
-                const now = Date.now();
-                if (now - this._lastLogTime > 1000) {
-                    console.log(`[VoiceCapture] Sending chunk #${this._chunkCount}, samples: ${int16Data.length}`);
-                    this._lastLogTime = now;
-                }
 
                 // Send the Int16Array buffer
                 this.onChunk(int16Data.buffer);
             };
 
             this.isInitialized = true;
-            console.log(`[VoiceCapture] Initialized (sample rate: ${this.audioContext.sampleRate}Hz)`);
             return true;
 
         } catch (err) {
@@ -111,7 +105,6 @@ export class VoiceCapture {
         this.processorNode.connect(this.audioContext.destination);
 
         this.isRecording = true;
-        console.log('[VoiceCapture] Recording started');
         return true;
     }
 
@@ -127,12 +120,9 @@ export class VoiceCapture {
         }
 
         this.isRecording = false;
-        console.log('[VoiceCapture] Recording stopped');
     }
 
     dispose() {
-        console.log('[VoiceCapture] Disposing...');
-
         this.stop();
 
         // Release media stream
@@ -151,7 +141,5 @@ export class VoiceCapture {
         this.processorNode = null;
         this.isInitialized = false;
         this.onChunk = null;
-
-        console.log('[VoiceCapture] Disposed');
     }
 }

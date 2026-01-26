@@ -320,8 +320,6 @@ export class CameraViewMode {
         if (this.controls.setCameraViewMode) {
             this.controls.setCameraViewMode(true);
         }
-
-        console.log('[CameraViewMode] Entered placement mode');
     }
 
     /**
@@ -349,8 +347,6 @@ export class CameraViewMode {
         if (this.controls.setCameraViewMode) {
             this.controls.setCameraViewMode(true);
         }
-
-        console.log(`[CameraViewMode] Entered adjustment mode for camera: ${cameraId}`);
     }
 
     /**
@@ -381,8 +377,6 @@ export class CameraViewMode {
         if (this.controls.setCameraViewMode) {
             this.controls.setCameraViewMode(true);
         }
-
-        console.log(`[CameraViewMode] Entered view-only mode for camera: ${cameraId}`);
     }
 
     /**
@@ -442,8 +436,6 @@ export class CameraViewMode {
         if (this.controls.setMonitorViewMode) {
             this.controls.setMonitorViewMode(true);
         }
-
-        console.log(`[CameraViewMode] Entered monitor view mode for: ${monitorId}, camera: ${cameraId}`);
     }
 
     /**
@@ -593,8 +585,6 @@ export class CameraViewMode {
         this.monitorId = null;
         this.cameraIds = [];
         this.currentCameraIndex = -1;
-
-        console.log(`[CameraViewMode] Exited (confirmed: ${confirmed})`);
     }
 
     /**

@@ -134,7 +134,7 @@ class MessageHandler {
                 this.handleChangeMonitorCamera(peerId, message);
                 break;
             case 'DEBUG_LOG':
-                console.log(`[DEBUG ${message.source}] ${peerId}: ${message.message}`);
+                // Debug logging disabled
                 break;
             default:
                 console.warn(`Unknown message type from ${peerId}:`, message.type);
@@ -154,7 +154,6 @@ class MessageHandler {
         if (message.sessionToken) {
             const banInfo = this.moderationSystem.checkBan(message.sessionToken);
             if (banInfo) {
-                console.log(`[MessageHandler] Banned player attempted to join: ${peerId}`);
                 this.playerManager.sendTo(peerId, {
                     type: 'BANNED',
                     expiresAt: banInfo.expiresAt,
@@ -171,7 +170,6 @@ class MessageHandler {
         // VR password protection
         if (playerType === 'vr' && this.vrPassword) {
             if (message.password !== this.vrPassword) {
-                console.log(`[MessageHandler] Invalid VR password from ${peerId}`);
                 this.playerManager.sendTo(peerId, {
                     type: 'REJECTED',
                     reason: 'Invalid password'
@@ -201,7 +199,6 @@ class MessageHandler {
 
                 // Add to queue
                 const position = this.playerQueue.addToQueue(peerId, playerType);
-                console.log(`[MessageHandler] Game full, player ${peerId} placed in waiting room at queue position ${position}`);
 
                 this.playerManager.sendTo(peerId, {
                     type: 'JOIN_QUEUED',
@@ -221,7 +218,6 @@ class MessageHandler {
             if (pendingName) {
                 this.gameState.setPlayerName(peerId, pendingName);
                 this.pendingNames.delete(peerId);
-                console.log(`[MessageHandler] Applied pending name for ${peerId}: ${pendingName}`);
             }
 
             // Send confirmation with initial state and session token
@@ -278,20 +274,6 @@ class MessageHandler {
         const player = this.gameState.getPlayer(peerId);
         if (!player || player.type !== 'vr') return;
 
-        // Log occasionally to confirm VR is connected (every 100th message)
-        if (!this._vrPoseCount) this._vrPoseCount = {};
-        if (!this._vrPoseCount[peerId]) this._vrPoseCount[peerId] = 0;
-        this._vrPoseCount[peerId]++;
-        if (this._vrPoseCount[peerId] % 100 === 1) {
-            const lh = message.leftHand;
-            const rh = message.rightHand;
-            if (lh || rh) {
-                console.log(`[VR_POSE] ${peerId} - LH: ${lh ? `(${lh.position?.x?.toFixed(2)}, ${lh.position?.y?.toFixed(2)}, ${lh.position?.z?.toFixed(2)}) pinch=${lh.pinching}` : 'null'}, RH: ${rh ? `(${rh.position?.x?.toFixed(2)}, ${rh.position?.y?.toFixed(2)}, ${rh.position?.z?.toFixed(2)}) pinch=${rh.pinching}` : 'null'}`);
-            } else {
-                console.log(`[VR_POSE] ${peerId} - Both hands null (hand tracking not active?)`);
-            }
-        }
-
         this.gameState.updateVRPose(peerId, {
             head: message.head,
             leftHand: message.leftHand,
@@ -335,12 +317,9 @@ class MessageHandler {
             return;
         }
 
-        console.log(`[MessageHandler] PLACE_BLOCK from ${peerId}: grid(${gridX}, ${gridZ}), size=${blockSize}, rotation=${rotation}, roomType=${roomType}`);
-
         const result = this.gameState.placeBlock(gridX, gridZ, blockSize, peerId, rotation, roomType);
 
         if (result.success) {
-            console.log(`[MessageHandler] Block placed successfully, version=${result.version}`);
 
             // Create room-type-specific entities for the placed cell(s)
             const cells = blockSize === '1x2'
@@ -371,7 +350,6 @@ class MessageHandler {
                 world: this.gameState.getWorldState()
             });
         } else {
-            console.log(`[MessageHandler] Block placement failed: ${result.reason}`);
 
             // Send failure notification to requesting player only
             this.playerManager.sendTo(peerId, {
@@ -405,7 +383,6 @@ class MessageHandler {
             return;
         }
 
-        console.log(`[MessageHandler] CONVERT_ROOM from ${peerId}: grid(${gridX}, ${gridZ}), roomType=${roomType}`);
 
         // Check if converting FROM any room type - need to cleanup entities
         const cellKey = `${gridX},${gridZ}`;
@@ -421,79 +398,54 @@ class MessageHandler {
         if (result.success) {
             // If we converted away from farming, destroy any plants and soil plots in this cell
             if (wasFromFarming && roomType !== 'farming') {
-                const removedPlants = plantSystem.cleanupPlantsInCell(this.gameState.worldObjects, gridX, gridZ);
-                if (removedPlants > 0) {
-                    console.log(`[MessageHandler] Removed ${removedPlants} plants from converted farming room`);
-                }
-                const removedPlots = plantSystem.cleanupSoilPlotsInCell(gridX, gridZ, this.gameState.worldObjects);
-                if (removedPlots > 0) {
-                    console.log(`[MessageHandler] Removed ${removedPlots} soil plots from converted farming room`);
-                }
+                plantSystem.cleanupPlantsInCell(this.gameState.worldObjects, gridX, gridZ);
+                plantSystem.cleanupSoilPlotsInCell(gridX, gridZ, this.gameState.worldObjects);
             }
 
             // If we converted away from processing, destroy any stations in this cell
             if (wasFromProcessing && roomType !== 'processing') {
-                const removedCount = stationSystem.cleanupStationsInCell(this.gameState.worldObjects, gridX, gridZ);
-                if (removedCount > 0) {
-                    console.log(`[MessageHandler] Removed ${removedCount} stations from converted processing room`);
-                }
+                stationSystem.cleanupStationsInCell(this.gameState.worldObjects, gridX, gridZ);
             }
 
             // If we converted away from cafeteria, destroy any appliances/tables in this cell
             if (wasFromCafeteria && roomType !== 'cafeteria') {
-                const removedCount = applianceSystem.cleanupAppliancesInCell(this.gameState.worldObjects, gridX, gridZ);
-                if (removedCount > 0) {
-                    console.log(`[MessageHandler] Removed ${removedCount} appliances/tables from converted cafeteria room`);
-                }
+                applianceSystem.cleanupAppliancesInCell(this.gameState.worldObjects, gridX, gridZ);
             }
 
             // If we converted away from dorm, destroy any beds in this cell (and wake sleeping players)
             if (wasFromDorm && roomType !== 'dorm') {
-                const removedCount = bedSystem.cleanupBedsInCell(this.gameState.worldObjects, gridX, gridZ, this.gameState);
-                if (removedCount > 0) {
-                    console.log(`[MessageHandler] Removed ${removedCount} beds from converted dorm room`);
-                }
+                bedSystem.cleanupBedsInCell(this.gameState.worldObjects, gridX, gridZ, this.gameState);
             }
 
             // If we converted away from security, destroy monitors in this cell
             if (wasFromSecurity && roomType !== 'security') {
-                const removedMonitors = this.monitorSystem.cleanupRoomMonitors({ x: gridX, z: gridZ });
-                if (removedMonitors.length > 0) {
-                    console.log(`[MessageHandler] Removed ${removedMonitors.length} monitors from converted security room`);
-                }
+                this.monitorSystem.cleanupRoomMonitors({ x: gridX, z: gridZ });
             }
 
             // If we converted TO farming, create soil plots
             if (roomType === 'farming' && !wasFromFarming) {
-                const createdPlots = plantSystem.createSoilPlotsForCell(gridX, gridZ, this.gameState.worldObjects);
-                console.log(`[MessageHandler] Created ${createdPlots.length} soil plots for new farming room`);
+                plantSystem.createSoilPlotsForCell(gridX, gridZ, this.gameState.worldObjects);
             }
 
             // If we converted TO processing, create stations
             if (roomType === 'processing' && !wasFromProcessing) {
-                const createdStations = stationSystem.createStationsForCell(this.gameState.worldObjects, gridX, gridZ);
-                console.log(`[MessageHandler] Created ${createdStations.length} stations for new processing room`);
+                stationSystem.createStationsForCell(this.gameState.worldObjects, gridX, gridZ);
             }
 
             // If we converted TO cafeteria, create appliances and tables
             if (roomType === 'cafeteria' && !wasFromCafeteria) {
-                const createdObjects = applianceSystem.createAppliancesForCell(this.gameState.worldObjects, gridX, gridZ);
-                console.log(`[MessageHandler] Created ${createdObjects.length} appliances/tables for new cafeteria room`);
+                applianceSystem.createAppliancesForCell(this.gameState.worldObjects, gridX, gridZ);
             }
 
             // If we converted TO dorm, create beds
             if (roomType === 'dorm' && !wasFromDorm) {
-                const createdBeds = bedSystem.createBedsForCell(this.gameState.worldObjects, gridX, gridZ);
-                console.log(`[MessageHandler] Created ${createdBeds.length} beds for new dorm room`);
+                bedSystem.createBedsForCell(this.gameState.worldObjects, gridX, gridZ);
             }
 
             // If we converted TO security, create monitors
             if (roomType === 'security' && !wasFromSecurity) {
                 this.monitorSystem.initializeRoomMonitors({ x: gridX, z: gridZ }, 4);
-                console.log(`[MessageHandler] Created 4 monitors for new security room`);
             }
-
-            console.log(`[MessageHandler] Room converted successfully, version=${result.version}`);
 
             // Broadcast to all clients
             this.playerManager.broadcast({
@@ -505,7 +457,6 @@ class MessageHandler {
                 world: this.gameState.getWorldState()
             });
         } else {
-            console.log(`[MessageHandler] Room conversion failed: ${result.reason}`);
 
             // Send failure notification to requesting player only
             this.playerManager.sendTo(peerId, {
@@ -551,7 +502,6 @@ class MessageHandler {
         );
 
         if (!canResult.valid) {
-            console.log(`[MessageHandler] INTERACT validation failed: ${canResult.reason}`);
             this.playerManager.sendTo(peerId, {
                 type: 'INTERACT_FAIL',
                 interactionType,
@@ -570,7 +520,6 @@ class MessageHandler {
         );
 
         if (execResult.success) {
-            console.log(`[MessageHandler] INTERACT success: ${interactionType} on ${targetId}`);
 
             // Special handling for join_game - send PLAYER_REVIVED
             if (interactionType === 'join_game') {
@@ -599,7 +548,6 @@ class MessageHandler {
             }
             // Note: State changes propagate via regular STATE_UPDATE
         } else {
-            console.log(`[MessageHandler] INTERACT execution failed: ${execResult.error}`);
             this.playerManager.sendTo(peerId, {
                 type: 'INTERACT_FAIL',
                 interactionType,
@@ -651,7 +599,6 @@ class MessageHandler {
         );
 
         if (!canResult.valid) {
-            console.log(`[MessageHandler] TIMED_INTERACT_START validation failed: ${canResult.reason}`);
             this.playerManager.sendTo(peerId, {
                 type: 'TIMED_INTERACT_CANCELLED',
                 reason: canResult.reason
@@ -668,7 +615,6 @@ class MessageHandler {
         );
 
         if (startResult.success) {
-            console.log(`[MessageHandler] TIMED_INTERACT_START success: ${interactionType} on ${targetId}, duration=${startResult.duration}ms`);
             this.playerManager.sendTo(peerId, {
                 type: 'TIMED_INTERACT_PROGRESS',
                 interactionType,
@@ -676,7 +622,6 @@ class MessageHandler {
                 duration: startResult.duration
             });
         } else {
-            console.log(`[MessageHandler] TIMED_INTERACT_START failed: ${startResult.error}`);
             this.playerManager.sendTo(peerId, {
                 type: 'TIMED_INTERACT_CANCELLED',
                 reason: startResult.error
@@ -703,7 +648,6 @@ class MessageHandler {
         const cancelResult = this.interactionSystem.cancelTimedInteraction(peerId);
 
         if (cancelResult.cancelled) {
-            console.log(`[MessageHandler] TIMED_INTERACT_CANCEL: cancelled for player ${peerId}`);
             this.playerManager.sendTo(peerId, {
                 type: 'TIMED_INTERACT_CANCELLED',
                 reason: 'Player cancelled'
@@ -735,8 +679,6 @@ class MessageHandler {
 
         // Update sleep multiplier based on minigame performance
         bedSystem.updateSleepMultiplier(player, validScore);
-
-        console.log(`[MessageHandler] SLEEP_MINIGAME_COMPLETE: player ${peerId}, score=${validScore}%, multiplier=${player.sleepMultiplier.toFixed(1)}`);
 
         // Send confirmation
         this.playerManager.sendTo(peerId, {
@@ -777,8 +719,6 @@ class MessageHandler {
         // Clear any held items
         player.heldItem = null;
 
-        console.log(`[MessageHandler] Player ${peerId} revived at spawn`);
-
         // Send confirmation
         this.playerManager.sendTo(peerId, {
             type: 'PLAYER_REVIVED',
@@ -815,7 +755,6 @@ class MessageHandler {
 
         // Add to queue
         const position = this.playerQueue.addToQueue(peerId, 'pc');
-        console.log(`[MessageHandler] Player ${peerId} joined queue at position ${position}`);
 
         this.playerManager.sendTo(peerId, {
             type: 'QUEUE_JOINED',
@@ -864,11 +803,9 @@ class MessageHandler {
             // Reactivate existing player
             this.gameState.reactivatePlayer(peerId);
             player = this.gameState.getPlayer(peerId);
-            console.log(`[MessageHandler] Player ${peerId} reactivated from queue`);
         } else {
             // New player from queue
             player = this.playerManager.handleJoin(peerId, 'pc');
-            console.log(`[MessageHandler] New player ${peerId} joined from queue`);
         }
 
         if (player) {
@@ -913,7 +850,6 @@ class MessageHandler {
                 name = name.trim();
                 if (name.length >= 1 && name.length <= 20 && /^[a-zA-Z0-9 ]+$/.test(name)) {
                     this.pendingNames.set(peerId, name);
-                    console.log(`[MessageHandler] Stored pending name for ${peerId}: ${name}`);
                 }
             }
             return;
@@ -979,8 +915,6 @@ class MessageHandler {
      * Handle camera placement from PC (security) or VR (stream) player
      */
     handlePlaceCamera(peerId, message) {
-        console.log(`[MessageHandler] PLACE_CAMERA received from ${peerId}:`, JSON.stringify(message));
-
         const player = this.gameState.getPlayer(peerId);
         if (!player) {
             console.warn(`[MessageHandler] PLACE_CAMERA rejected: player not found (${peerId})`);
@@ -1033,7 +967,6 @@ class MessageHandler {
                 this.cameraSystem.updateRotation(linkedCameraId, rotation);
                 existingCamera.ownerId = peerId;  // Mark as placed by this player
                 camera = existingCamera;
-                console.log(`[MessageHandler] Camera updated (linked): ${camera.id} by ${peerId}`);
             }
         }
 
@@ -1043,7 +976,6 @@ class MessageHandler {
         }
 
         if (camera) {
-            console.log(`[MessageHandler] Camera placed: ${camera.id} by ${peerId}`);
 
             // For PC players, consume the held camera item
             if (player.type === 'pc' && player.heldItem?.type === 'security_camera') {
@@ -1119,7 +1051,6 @@ class MessageHandler {
 
         // DON'T remove the camera entity - keep it for always-on feed
         // Just transfer ownership to the held item
-        console.log(`[MessageHandler] Camera picked up: ${cameraId} by ${peerId}`);
 
         // Check if this is a floor camera (has an existing floor item)
         if (camera.ownerId === 'floor_item') {
@@ -1136,10 +1067,8 @@ class MessageHandler {
                 // Remove from world and give to player
                 this.gameState.worldObjects.delete(floorItem.id);
                 player.heldItem = floorItem;
-                console.log(`[MessageHandler] Floor camera item picked up: ${floorItem.id} (linked to ${cameraId})`);
             } else {
                 // Fallback: create new item (shouldn't happen normally)
-                console.warn(`[MessageHandler] Floor camera item not found for camera ${cameraId}, creating new item`);
                 const itemSystem = require('./systems/item-system');
                 player.heldItem = itemSystem.createItem('security_camera', player.position);
                 player.heldItem.linkedCameraId = cameraId;
@@ -1270,7 +1199,6 @@ class MessageHandler {
         }
 
         this.cameraSystem.setViewer(peerId, cameraId);
-        console.log(`[MessageHandler] Player ${peerId} entered camera view: ${cameraId || 'placement mode'}`);
     }
 
     /**
@@ -1283,7 +1211,6 @@ class MessageHandler {
         }
 
         this.cameraSystem.setViewer(peerId, null);
-        console.log(`[MessageHandler] Player ${peerId} exited camera view`);
     }
 
     /**
@@ -1305,7 +1232,6 @@ class MessageHandler {
 
         // Try to lock the camera
         if (this.cameraSystem.startAdjusting(cameraId, peerId)) {
-            console.log(`[MessageHandler] Player ${peerId} started adjusting camera ${cameraId}`);
             // Broadcast that this camera is now being adjusted
             this.playerManager.broadcast({
                 type: 'CAMERA_ADJUST_STARTED',
@@ -1334,7 +1260,6 @@ class MessageHandler {
 
         const { cameraId } = message;
         this.cameraSystem.stopAdjusting(cameraId, peerId);
-        console.log(`[MessageHandler] Player ${peerId} stopped adjusting camera ${cameraId}`);
 
         // Broadcast that this camera is no longer being adjusted
         this.playerManager.broadcast({
@@ -1386,8 +1311,6 @@ class MessageHandler {
         // Register as web viewer
         this.cameraSystem.registerWebViewer(peerId, cameraId);
 
-        console.log(`[MessageHandler] Viewer ${peerId} joined for camera: ${cameraId || 'none'}`);
-
         // Send initial state (viewers get the same state as players)
         this.playerManager.sendTo(peerId, {
             type: 'JOINED',
@@ -1431,8 +1354,6 @@ class MessageHandler {
             const cameras = this.cameraSystem.getCamerasByType(CAMERA_TYPES.SECURITY);
             const cameraIds = cameras.map(c => c.id);
 
-            console.log(`[MessageHandler] Player ${peerId} started viewing monitor ${monitorId}`);
-
             // Send success to the requesting player
             this.playerManager.sendTo(peerId, {
                 type: 'MONITOR_VIEW_STARTED',
@@ -1449,8 +1370,6 @@ class MessageHandler {
                 viewerId: peerId
             }, peerId);
         } else {
-            const currentViewer = this.monitorSystem.getViewer(monitorId);
-            console.log(`[MessageHandler] START_MONITOR_VIEW rejected: monitor ${monitorId} in use by ${currentViewer}`);
             this.playerManager.sendTo(peerId, {
                 type: 'MONITOR_VIEW_DENIED',
                 monitorId,
@@ -1471,7 +1390,6 @@ class MessageHandler {
         const { monitorId } = message;
 
         if (this.monitorSystem.releaseViewer(monitorId, peerId)) {
-            console.log(`[MessageHandler] Player ${peerId} stopped viewing monitor ${monitorId}`);
 
             // Broadcast to all players that this monitor is released
             this.playerManager.broadcast({
@@ -1511,7 +1429,6 @@ class MessageHandler {
 
         // Update the assignment
         if (this.monitorSystem.assignCamera(monitorId, cameraId)) {
-            console.log(`[MessageHandler] Monitor ${monitorId} camera changed to ${cameraId} by ${peerId}`);
 
             // Broadcast to all players
             this.playerManager.broadcast({
@@ -1583,30 +1500,14 @@ class MessageHandler {
         // Validate sender is a VR player
         const player = this.gameState.getPlayer(peerId);
         if (!player || player.type !== 'vr') {
-            console.debug(`[Voice] Rejected voice from non-VR player: ${peerId}`);
             return; // Only VR players can send voice
         }
 
-        // Log voice data receipt (throttled to avoid spam)
-        if (!this._lastVoiceLog || Date.now() - this._lastVoiceLog > 1000) {
-            const size = audioData ? (audioData.length || audioData.byteLength || 'unknown') : 0;
-            console.log(`[Voice] Received ${size} bytes from VR player ${peerId}`);
-            this._lastVoiceLog = Date.now();
-        }
-
         // Broadcast to all PC players
-        let sentCount = 0;
         for (const [otherPeerId, otherPlayer] of this.gameState.players) {
             if (otherPlayer.type === 'pc') {
-                if (this.playerManager.sendVoiceTo(otherPeerId, peerId, audioData)) {
-                    sentCount++;
-                }
+                this.playerManager.sendVoiceTo(otherPeerId, peerId, audioData);
             }
-        }
-
-        if (!this._lastBroadcastLog || Date.now() - this._lastBroadcastLog > 1000) {
-            console.log(`[Voice] Broadcast to ${sentCount} PC players`);
-            this._lastBroadcastLog = Date.now();
         }
     }
 }

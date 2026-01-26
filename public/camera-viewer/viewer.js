@@ -7,6 +7,7 @@
 
 import { Scene } from '/pc/js/scene.js';
 import { RemotePlayers } from '/pc/js/remote-players.js';
+import { SecurityRoomRenderer } from '/pc/js/security-room-renderer.js';
 
 // Parse camera info from URL
 const pathParts = window.location.pathname.split('/');
@@ -58,6 +59,10 @@ class CameraViewer {
 
         // Use the PC client's Scene class
         this.scene = new Scene(gameContainer);
+
+        // Create security room renderer so monitors are visible in camera view
+        this.securityRoomRenderer = new SecurityRoomRenderer(this.scene.scene);
+        this.scene.setSecurityRoomRenderer(this.securityRoomRenderer);
 
         // Create remote players renderer
         this.remotePlayers = new RemotePlayers(this.scene);

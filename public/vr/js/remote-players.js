@@ -211,12 +211,10 @@ export class RemotePlayers {
      * Called when VR session ends
      */
     dispose() {
-        console.log('[RemotePlayers] Disposing all player meshes...');
         for (const [playerId, playerObj] of this.players) {
             this.disposePlayerMesh(playerObj);
             this.scene.remove(playerObj.mesh);
         }
         this.players.clear();
-        console.log('[RemotePlayers] All player meshes disposed');
     }
 }

@@ -177,7 +177,6 @@ export class VRScene {
         // Skip if version hasn't changed
         if (worldState.version === this.lastWorldVersion) return;
 
-        console.log(`[VRScene] Rebuilding walls from world state, version=${worldState.version}`);
         this.lastWorldVersion = worldState.version;
 
         // Clear existing dynamic elements
@@ -699,7 +698,6 @@ export class VRScene {
             return;
         }
 
-        console.log('[VRScene] VR is supported, ready to start');
         button.textContent = 'Enter VR';
         button.disabled = false;
         status.textContent = 'Ready - Click to enter VR';
@@ -707,24 +705,19 @@ export class VRScene {
         button.addEventListener('click', async () => {
             try {
                 if (this.xrSession) {
-                    console.log('[VRScene] Ending existing XR session');
                     await this.xrSession.end();
                     return;
                 }
 
-                console.log('[VRScene] Requesting immersive-vr session...');
                 status.textContent = 'Starting VR session...';
 
                 this.xrSession = await navigator.xr.requestSession('immersive-vr', {
                     optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
                 });
 
-                console.log('[VRScene] XR session created, setting up renderer...');
-
                 // Set up the session with the renderer
                 try {
                     await this.renderer.xr.setSession(this.xrSession);
-                    console.log('[VRScene] Renderer XR session set successfully');
                 } catch (sessionErr) {
                     console.error('[VRScene] Failed to set XR session on renderer:', sessionErr);
                     status.textContent = 'Failed to initialize VR renderer: ' + sessionErr.message;
@@ -736,7 +729,6 @@ export class VRScene {
                 status.textContent = 'In VR - Pinch to grab tiny players';
 
                 // Notify listeners that session started
-                console.log('[VRScene] XR session started successfully');
                 if (this.onSessionStart) {
                     try {
                         this.onSessionStart(this.xrSession);
@@ -747,7 +739,6 @@ export class VRScene {
 
                 // Use { once: true } to prevent listener accumulation across sessions
                 this.xrSession.addEventListener('end', () => {
-                    console.log('[VRScene] XR session ended');
                     this.xrSession = null;
                     button.textContent = 'Enter VR';
                     status.textContent = 'VR session ended';
@@ -807,8 +798,6 @@ export class VRScene {
      * Must be called when VR session ends or scene is no longer needed
      */
     dispose() {
-        console.log('[VRScene] Disposing all resources...');
-
         // Remove event listeners
         if (this.onResizeHandler) {
             window.removeEventListener('resize', this.onResizeHandler);
@@ -878,7 +867,5 @@ export class VRScene {
         while (this.scene.children.length > 0) {
             this.scene.remove(this.scene.children[0]);
         }
-
-        console.log('[VRScene] All resources disposed');
     }
 }

@@ -262,8 +262,6 @@ function loadVendingMachine(appliance, item, slotIndex = null) {
         loadedAt: Date.now()
     };
 
-    console.log(`[ApplianceSystem] Loaded ${item.type} into vending machine slot ${slotIndex}`);
-
     return {
         success: true,
         slotIndex: slotIndex
@@ -294,8 +292,6 @@ function takeFromVendingMachine(appliance, slotIndex) {
     const item = itemSystem.createItem(slotData.itemType, appliance.position);
     appliance.slots[slotIndex] = null;
 
-    console.log(`[ApplianceSystem] Took ${slotData.itemType} from vending machine slot ${slotIndex}`);
-
     return {
         success: true,
         item: item
@@ -325,7 +321,6 @@ function dispenseCoffee(appliance) {
     }
 
     const item = itemSystem.createItem('coffee', appliance.position);
-    console.log(`[ApplianceSystem] Dispensed coffee from machine`);
 
     return {
         success: true,
@@ -362,7 +357,6 @@ function cleanupAppliancesInCell(worldObjects, gridX, gridZ) {
 
     for (const id of toRemove) {
         worldObjects.delete(id);
-        console.log(`[ApplianceSystem] Removed ${id}`);
     }
 
     return toRemove.length;
@@ -389,7 +383,6 @@ function createAppliancesForCell(worldObjects, gridX, gridZ) {
         );
         worldObjects.set(appliance.id, appliance);
         created.push(appliance);
-        console.log(`[ApplianceSystem] Created ${pos.applianceType} at (${pos.position.x.toFixed(1)}, ${pos.position.z.toFixed(1)})`);
     }
 
     // Create tables
@@ -399,7 +392,6 @@ function createAppliancesForCell(worldObjects, gridX, gridZ) {
         const table = createTable(pos.position, pos.gridX, pos.gridZ, i);
         worldObjects.set(table.id, table);
         created.push(table);
-        console.log(`[ApplianceSystem] Created table at (${pos.position.x.toFixed(1)}, ${pos.position.z.toFixed(1)})`);
     }
 
     return created;

@@ -155,8 +155,6 @@ export class StreamCameraSystem {
 
         // Add to scene (will be positioned by building system's pedestal)
         this.scene.add(this.palette);
-
-        console.log(`[StreamCameraSystem] Palette created at (${PALETTE_OFFSET.x}, ${PALETTE_OFFSET.y}, ${PALETTE_OFFSET.z})`);
     }
 
     /**
@@ -247,17 +245,6 @@ export class StreamCameraSystem {
             pinchPoint.z / GIANT_SCALE
         );
 
-        // Debug logging - send to server so we can see it in server console
-        const paletteWorldPos = new THREE.Vector3();
-        if (this.paletteCamera) {
-            this.paletteCamera.getWorldPosition(paletteWorldPos);
-            const dist = pinchVR.distanceTo(paletteWorldPos);
-            const debugMsg = `Pinch VR(${pinchVR.x.toFixed(2)}, ${pinchVR.y.toFixed(2)}, ${pinchVR.z.toFixed(2)}), palette(${paletteWorldPos.x.toFixed(2)}, ${paletteWorldPos.y.toFixed(2)}, ${paletteWorldPos.z.toFixed(2)}), dist=${dist.toFixed(2)}, grab=${GRAB_RADIUS}`;
-            console.log(`[StreamCameraSystem] ${debugMsg}`);
-            // Send debug to server
-            this.network.send({ type: 'DEBUG_LOG', source: 'StreamCamera', message: debugMsg });
-        }
-
         // Priority 1: Check rotation handle (most precise grab target)
         const handleHit = this.checkRotationHandleHit(pinchVR);
         if (handleHit) {
@@ -328,7 +315,6 @@ export class StreamCameraSystem {
      */
     checkPaletteHit(pinchVR) {
         if (!this.paletteCamera) {
-            console.log('[StreamCameraSystem] checkPaletteHit: paletteCamera is null!');
             return false;
         }
 
@@ -406,7 +392,6 @@ export class StreamCameraSystem {
         this.scene.add(this.grabbedCamera);
 
         this.network.send({ type: 'DEBUG_LOG', source: 'StreamCamera', message: `grabCameraFromPalette COMPLETE, grabbedCamera=${!!this.grabbedCamera}, grabbedHand=${this.grabbedHand}` });
-        console.log(`[StreamCameraSystem] Grabbed camera from palette with ${hand} hand`);
     }
 
     /**
@@ -435,8 +420,6 @@ export class StreamCameraSystem {
 
         // Dispose old mesh
         this.disposeCameraMesh(cameraData.mesh);
-
-        console.log(`[StreamCameraSystem] Grabbed placed camera ${cameraData.id} with ${hand} hand`);
     }
 
     /**
@@ -457,7 +440,6 @@ export class StreamCameraSystem {
         }
 
         this.network.send({ type: 'DEBUG_LOG', source: 'StreamCamera', message: `Started rotating camera ${cameraId}` });
-        console.log(`[StreamCameraSystem] Started rotating camera ${cameraId}`);
     }
 
     /**
@@ -491,7 +473,6 @@ export class StreamCameraSystem {
         }
 
         this.network.send({ type: 'DEBUG_LOG', source: 'StreamCamera', message: `Stopped rotating camera ${this.rotatingCameraId}` });
-        console.log(`[StreamCameraSystem] Stopped rotating camera ${this.rotatingCameraId}`);
 
         this.isRotating = false;
         this.rotatingCameraId = null;
@@ -761,8 +742,6 @@ export class StreamCameraSystem {
         this.placedCameras.set(camera.id, mesh);
         this.scene.add(mesh);
         this.currentCount++;
-
-        console.log(`[StreamCameraSystem] Camera placed: ${camera.id} at VR pos (${mesh.position.x.toFixed(2)}, ${mesh.position.y.toFixed(2)}, ${mesh.position.z.toFixed(2)})`);
     }
 
     /**
@@ -776,8 +755,6 @@ export class StreamCameraSystem {
             this.disposeCameraMesh(mesh);
             this.placedCameras.delete(cameraId);
             this.currentCount--;
-
-            console.log(`[StreamCameraSystem] Camera removed: ${cameraId}`);
         }
     }
 
@@ -905,7 +882,5 @@ export class StreamCameraSystem {
                 material.dispose();
             }
         });
-
-        console.log('[StreamCameraSystem] Disposed');
     }
 }

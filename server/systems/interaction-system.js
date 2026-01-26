@@ -91,8 +91,6 @@ class InteractionSystem {
             inputItem: inputItem
         });
 
-        console.log(`[InteractionSystem] Player ${player.id} started ${interactionType} at ${stationId} (${stationConfig.interactionTime}ms)`);
-
         return {
             success: true,
             duration: stationConfig.interactionTime
@@ -152,8 +150,6 @@ class InteractionSystem {
         // Remove from active timed interactions
         this.timedInteractions.delete(playerId);
 
-        console.log(`[InteractionSystem] Player ${playerId} completed ${timedData.interactionType}: ${timedData.inputItem.type} -> ${stationConfig.outputItem}`);
-
         return {
             success: true,
             item: outputItem
@@ -178,8 +174,6 @@ class InteractionSystem {
         }
 
         this.timedInteractions.delete(playerId);
-
-        console.log(`[InteractionSystem] Cancelled timed interaction for player ${playerId}`);
 
         return { cancelled: true };
     }
@@ -546,7 +540,6 @@ class InteractionSystem {
         const result = bedSystem.startSleep(bed, player);
 
         if (result.success) {
-            console.log(`[InteractionSystem] Player ${player.id} started sleeping in bed ${bedId}`);
             return {
                 success: true,
                 bedId: bedId,
@@ -566,7 +559,6 @@ class InteractionSystem {
         const result = bedSystem.stopSleep(player, this.gameState.worldObjects);
 
         if (result.success) {
-            console.log(`[InteractionSystem] Player ${player.id} woke up`);
             return { success: true };
         }
 
@@ -595,7 +587,6 @@ class InteractionSystem {
             player.heldItem = null;
         }
 
-        console.log(`[InteractionSystem] Player ${player.id} ate ${itemConfig.name}, restored ${hungerRestored} hunger (now ${player.needs.hunger.toFixed(1)})`);
         return {
             success: true,
             hungerRestored: hungerRestored,
@@ -622,7 +613,6 @@ class InteractionSystem {
             player.heldItem = null;
         }
 
-        console.log(`[InteractionSystem] Player ${player.id} drank coffee, restored ${restRestored} rest (now ${player.needs.rest.toFixed(1)})`);
         return {
             success: true,
             restRestored: restRestored,
@@ -652,7 +642,6 @@ class InteractionSystem {
             player.heldItem.charges--;
         }
 
-        console.log(`[InteractionSystem] Player ${player.id} drank from water container, restored ${thirstRestored} thirst (now ${player.needs.thirst.toFixed(1)}, charges: ${player.heldItem.charges})`);
         return {
             success: true,
             thirstRestored: thirstRestored,
@@ -693,7 +682,6 @@ class InteractionSystem {
                 player.heldItem = null;
             }
 
-            console.log(`[InteractionSystem] Player ${player.id} loaded food into vending machine slot ${result.slotIndex}`);
             return {
                 success: true,
                 slotIndex: result.slotIndex
@@ -728,7 +716,6 @@ class InteractionSystem {
             // Give item to player
             player.heldItem = result.item;
 
-            console.log(`[InteractionSystem] Player ${player.id} took ${result.item.type} from vending machine`);
             return {
                 success: true,
                 item: result.item
@@ -757,7 +744,6 @@ class InteractionSystem {
             // Give coffee to player
             player.heldItem = result.item;
 
-            console.log(`[InteractionSystem] Player ${player.id} got coffee from machine`);
             return {
                 success: true,
                 item: result.item
@@ -780,7 +766,6 @@ class InteractionSystem {
         // Restore thirst
         player.needs.thirst = Math.min(100, player.needs.thirst + thirstRestored);
 
-        console.log(`[InteractionSystem] Player ${player.id} drank from water station, restored ${thirstRestored} thirst (now ${player.needs.thirst.toFixed(1)})`);
         return {
             success: true,
             thirstRestored: thirstRestored,
@@ -806,7 +791,6 @@ class InteractionSystem {
         // Refill to max charges
         player.heldItem.charges = maxCharges;
 
-        console.log(`[InteractionSystem] Player ${player.id} refilled water container to ${maxCharges} charges`);
         return {
             success: true,
             charges: maxCharges
@@ -864,7 +848,6 @@ class InteractionSystem {
         player.position = { x: 0, y: 0.9, z: 0 };
         player.velocity = { x: 0, y: 0, z: 0 };
 
-        console.log(`[InteractionSystem] Player ${player.id} rejoined game through door`);
         return { success: true };
     }
 
@@ -914,7 +897,6 @@ class InteractionSystem {
             player.heldItem = null;
         }
 
-        console.log(`[InteractionSystem] Player ${player.id} planted seed at ${plotId}`);
         return { success: true, plant };
     }
 
@@ -941,13 +923,8 @@ class InteractionSystem {
         // Consume water charge
         if (player.heldItem.charges !== undefined) {
             player.heldItem.charges--;
-            if (player.heldItem.charges <= 0) {
-                // Container is now empty, could remove or keep as empty container
-                console.log(`[InteractionSystem] Water container empty`);
-            }
         }
 
-        console.log(`[InteractionSystem] Player ${player.id} watered plant ${plantId}`);
         return { success: true };
     }
 
@@ -975,7 +952,6 @@ class InteractionSystem {
         const vegetable = itemSystem.createItem('raw_vegetable', plant.position);
         player.heldItem = vegetable;
 
-        console.log(`[InteractionSystem] Player ${player.id} harvested plant ${plantId}`);
         return { success: true, item: vegetable };
     }
 
@@ -994,7 +970,6 @@ class InteractionSystem {
         // Remove weeds
         plant.hasWeeds = false;
 
-        console.log(`[InteractionSystem] Player ${player.id} removed weeds from plant ${plantId}`);
         return { success: true };
     }
 
@@ -1064,7 +1039,6 @@ class InteractionSystem {
         if (result.success && result.recipeComplete) {
             // Give the result item to player
             player.heldItem = result.resultItem;
-            console.log(`[InteractionSystem] Player ${player.id} assembled ${result.resultItem.type} from ${result.ingredientCount} ingredients`);
             return {
                 success: true,
                 recipeComplete: true,
@@ -1073,7 +1047,6 @@ class InteractionSystem {
             };
         } else if (result.success) {
             // Ingredient added but recipe not complete
-            console.log(`[InteractionSystem] Player ${player.id} added ingredient to assembly (${result.ingredientCount}/3)`);
             return {
                 success: true,
                 recipeComplete: false,
@@ -1103,7 +1076,6 @@ class InteractionSystem {
                     this.gameState.removeWorldObject(itemId);
                     // Update held item to stacked version
                     player.heldItem = stackedItem;
-                    console.log(`[InteractionSystem] Player ${player.id} stacked ${obj.type}, now holding ${stackedItem.stackCount}`);
                     return { success: true, item: stackedItem, stacked: true };
                 }
             }
@@ -1125,7 +1097,6 @@ class InteractionSystem {
             }
         }
 
-        console.log(`[InteractionSystem] Player ${player.id} picked up ${obj.type} (${itemId})`);
         return { success: true, item: obj };
     }
 
@@ -1169,7 +1140,6 @@ class InteractionSystem {
                         pitch: 0,  // Keep level on floor
                         roll: 0
                     };
-                    console.log(`[InteractionSystem] Updated linked camera ${item.linkedCameraId} to floor_item facing yaw=${camera.rotation.yaw.toFixed(2)}`);
                 }
             }
         }
@@ -1178,7 +1148,6 @@ class InteractionSystem {
         this.gameState.addWorldObject(item);
         player.heldItem = null;
 
-        console.log(`[InteractionSystem] Player ${player.id} dropped ${item.type} (${item.id}) at (${item.position.x.toFixed(2)}, ${item.position.y.toFixed(2)}, ${item.position.z.toFixed(2)})`);
         return { success: true, item };
     }
 

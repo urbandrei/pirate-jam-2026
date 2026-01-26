@@ -211,7 +211,6 @@ export class Scene {
         // Skip if version hasn't changed
         if (worldState.version === this.lastWorldVersion) return;
 
-        console.log(`[Scene] Rebuilding walls from world state, version=${worldState.version}`);
         this.lastWorldVersion = worldState.version;
 
         // Clear existing dynamic elements
@@ -379,8 +378,6 @@ export class Scene {
             this.stationMeshes.set(stationData.id, group);
             this.scene.add(group);
         }
-
-        console.log(`[Scene] Created ${stations.length} stations for cell (${cell.x}, ${cell.z})`);
     }
 
     /**
@@ -409,8 +406,6 @@ export class Scene {
             this.tableMeshes.set(tableData.id, group);
             this.scene.add(group);
         }
-
-        console.log(`[Scene] Created ${appliances.length} appliances and ${tables.length} tables for cell (${cell.x}, ${cell.z})`);
     }
 
     /**
@@ -428,8 +423,6 @@ export class Scene {
             this.bedMeshes.set(bedData.id, group);
             this.scene.add(group);
         }
-
-        console.log(`[Scene] Created ${beds.length} beds for cell (${cell.x}, ${cell.z})`);
     }
 
     /**
@@ -461,8 +454,6 @@ export class Scene {
         // Create 2x2 grid of monitors with room cell for generating monitor IDs
         const roomCell = { x: cell.x, z: cell.z };
         this.securityRoomRenderer.createMonitors(position, rotation, 4, 'grid', roomCell);
-
-        console.log(`[Scene] Created 4 monitors for security room at cell (${cell.x}, ${cell.z})`);
     }
 
     /**
@@ -1388,7 +1379,6 @@ export class Scene {
     showWaitingRoom() {
         if (!this.waitingRoomRenderer) {
             this.waitingRoomRenderer = new WaitingRoomRenderer(this.scene);
-            console.log('[Scene] Waiting room created');
         }
     }
 
@@ -1399,7 +1389,6 @@ export class Scene {
         if (this.waitingRoomRenderer) {
             this.waitingRoomRenderer.dispose();
             this.waitingRoomRenderer = null;
-            console.log('[Scene] Waiting room disposed');
         }
     }
 

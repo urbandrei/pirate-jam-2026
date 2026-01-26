@@ -85,7 +85,6 @@ class Game {
     }
 
     async init() {
-        console.log('Initializing PC client...');
 
         // Setup Three.js scene
         const container = document.getElementById('game-container');
@@ -189,13 +188,11 @@ class Game {
 
         // Wire monitor navigation callback
         this.cameraViewMode.onMonitorCameraChange = (monitorId, cameraId) => {
-            console.log(`[Game] Changing monitor ${monitorId} to camera ${cameraId}`);
             this.network.sendChangeMonitorCamera(monitorId, cameraId);
         };
 
         // Wire monitor exit callback
         this.cameraViewMode.onMonitorExit = (monitorId) => {
-            console.log(`[Game] Exiting monitor view: ${monitorId}`);
             this.network.sendStopMonitorView(monitorId);
             this.viewingMonitorId = null;
 
@@ -249,7 +246,6 @@ class Game {
                 // Request to view this monitor (server will lock it for us)
                 const monitorId = this._targetedMonitor.monitor.monitorId;
                 if (monitorId) {
-                    console.log('[Game] Requesting to view monitor:', monitorId);
                     this.network.sendStartMonitorView(monitorId);
                     return;
                 }
@@ -287,7 +283,6 @@ class Game {
         // Wire up F key (camera placement OR adjust wall camera)
         this.controls.onPickupCamera = () => {
             const heldItem = this.player.getHeldItem();
-            console.log('[Game] F key pressed, held item:', heldItem?.type);
 
             if (heldItem?.type === 'security_camera') {
                 // Holding camera - try to place
@@ -305,7 +300,6 @@ class Game {
                     const isWallCamera = camera.ownerId && !camera.ownerId.startsWith('held_') && camera.ownerId !== 'floor_item';
                     // Skip if camera is being adjusted by someone else
                     if (isWallCamera && !this.camerasBeingAdjusted.has(camera.id)) {
-                        console.log('[Game] Adjusting wall camera:', camera.id);
                         // Lock the camera for adjustment
                         this.adjustingCameraId = camera.id;
                         this.network.sendStartAdjustCamera(camera.id);
@@ -526,12 +520,10 @@ class Game {
         // Connect to server
         try {
             await this.network.connect();
-            console.log('Connected to game server');
             // Enable join button once connected
             this.joinButton.disabled = false;
             this.joinButton.textContent = 'Join Game';
         } catch (err) {
-            console.error('Failed to connect:', err);
             this.joinButton.textContent = 'Connection Failed';
         }
 
@@ -940,7 +932,6 @@ class Game {
                 const newItemType = myState.heldItem?.type || null;
                 if (newItemType === 'security_camera' && this._lastHeldItemType !== 'security_camera') {
                     // Just picked up a camera - auto-enter placement mode
-                    console.log('[Game] Security camera picked up - auto-entering placement mode');
                     this.cameraPlacementSystem.activate();
                 }
                 this._lastHeldItemType = newItemType;
@@ -993,8 +984,6 @@ class Game {
 
         // Interaction response callbacks
         this.network.onInteractSuccess = (interactionType, targetId, result) => {
-            console.log(`Interaction ${interactionType} on ${targetId} succeeded`, result);
-
             // Handle sleep interaction success - start minigame
             if (interactionType === 'sleep') {
                 this.startSleepMinigame();
@@ -1004,13 +993,11 @@ class Game {
         };
 
         this.network.onInteractFail = (interactionType, targetId, reason) => {
-            console.log(`Interaction ${interactionType} on ${targetId} failed: ${reason}`);
             // Future: could show error message briefly on HUD
         };
 
         // Sleep minigame result callback
         this.network.onSleepMinigameResult = (score, multiplier) => {
-            console.log(`Sleep minigame result received: score=${score}%, multiplier=${multiplier}`);
         };
 
         // Death and revive callbacks
@@ -1029,14 +1016,12 @@ class Game {
 
         // Door timeout callback
         this.network.onDoorTimeout = () => {
-            console.log('[Game] Took too long - moved to back of queue');
             // Could show a brief message to the player
         };
 
         // Queue callbacks (for new players joining full game)
         this.network.onJoinQueued = (position, total, playerLimit, waitingRoomPosition) => {
             // Game was full when we tried to join - teleport to waiting room
-            console.log(`[Game] Game full (${playerLimit} players). Queued at position ${position}/${total}`);
             this.isInQueue = true;
             this.isInWaitingRoom = true;
 
@@ -1068,24 +1053,20 @@ class Game {
 
         this.network.onQueueJoined = (position, total) => {
             // Dead player successfully joined queue after cooldown
-            console.log(`[Game] Joined queue at position ${position}/${total}`);
             this.isInQueue = true;
         };
 
         this.network.onQueueUpdate = (position, total) => {
             // Queue position updated - handled by WAITING_ROOM_STATE
-            console.log(`[Game] Queue position: ${position}/${total}`);
         };
 
         this.network.onQueueReady = () => {
             // Slot available - door should now be open (green)
             // Player needs to walk through door to join
-            console.log('[Game] Slot available! Walk through the door to join.');
         };
 
         this.network.onJoinFromQueueFailed = (reason) => {
             // Failed to join from queue
-            console.log('[Game] Failed to join from queue:', reason);
         };
 
         // Timed interaction callbacks
@@ -1097,13 +1078,11 @@ class Game {
         this.network.onTimedInteractComplete = (interactionType, stationId, result) => {
             // Server confirmed timed interaction completed
             this.interactionSystem.completeTimedInteraction();
-            console.log(`Timed interaction ${interactionType} completed at ${stationId}`, result);
         };
 
         this.network.onTimedInteractCancelled = (reason) => {
             // Server cancelled the timed interaction
             this.interactionSystem.completeTimedInteraction(); // Hide progress bar
-            console.log(`Timed interaction cancelled: ${reason}`);
         };
 
         // Camera callbacks
@@ -1121,12 +1100,10 @@ class Game {
 
         this.network.onCameraAdjustStarted = (cameraId, playerId) => {
             this.camerasBeingAdjusted.add(cameraId);
-            console.log(`[Game] Camera ${cameraId} is now being adjusted by ${playerId}`);
         };
 
         this.network.onCameraAdjustStopped = (cameraId) => {
             this.camerasBeingAdjusted.delete(cameraId);
-            console.log(`[Game] Camera ${cameraId} is no longer being adjusted`);
         };
 
         this.network.onCamerasUpdate = (cameras) => {
@@ -1135,7 +1112,6 @@ class Game {
 
         // Monitor callbacks
         this.network.onMonitorViewStarted = (monitorId, cameraId, cameraIds, currentIndex) => {
-            console.log(`[Game] Monitor view started: ${monitorId}, camera: ${cameraId}`);
             this.viewingMonitorId = monitorId;
 
             // Build camera data map (including ownerId for visibility check)
@@ -1156,7 +1132,6 @@ class Game {
         };
 
         this.network.onMonitorViewDenied = (monitorId, reason) => {
-            console.log(`[Game] Monitor view denied: ${monitorId}, reason: ${reason}`);
             // Could show a notification to user here
         };
 
@@ -1176,7 +1151,6 @@ class Game {
         };
 
         this.network.onMonitorCameraChanged = (monitorId, cameraId) => {
-            console.log(`[Game] Monitor camera changed: ${monitorId} -> ${cameraId}`);
 
             // Update local config
             const config = this.monitorConfigs.get(monitorId);
@@ -1307,7 +1281,6 @@ class Game {
                 this.network.sendInteract('wake', null, this.player.getPosition());
             }
 
-            console.log(`Sleep minigame completed: score=${score}%, multiplier=${multiplier.toFixed(1)}x`);
         });
 
         this.sleepMinigame.start();
@@ -1327,8 +1300,6 @@ class Game {
 
         // Re-lock pointer after minigame ends
         this.scene.renderer.domElement.requestPointerLock();
-
-        console.log('Player woke up');
     }
 
     /**
@@ -1351,8 +1322,6 @@ class Game {
                          cause === 'thirst' ? 'dehydration' :
                          cause === 'exhaustion' ? 'exhaustion' : cause;
         this.chatUI.addSystemMessage(`You died from ${causeText}. Wait to rejoin.`);
-
-        console.log('[Game] Player died at', deathPosition, 'cause:', cause, '- teleported to waiting room');
     }
 
     /**
@@ -1369,8 +1338,6 @@ class Game {
 
         // Re-lock pointer
         this.scene.renderer.domElement.requestPointerLock();
-
-        console.log('[Game] Player respawned at', position);
     }
 
     /**
@@ -1387,8 +1354,6 @@ class Game {
 
         // Re-lock pointer
         this.scene.renderer.domElement.requestPointerLock();
-
-        console.log('[Game] Joined game from queue');
     }
 
     /**
@@ -1480,8 +1445,6 @@ class Game {
         if (this.network && this.network.isConnected) {
             this.network.sendEnterCameraView(cameraId);
         }
-
-        console.log(`[Game] Entered camera view: ${cameraId}`);
     }
 
     /**
@@ -1509,8 +1472,6 @@ class Game {
         if (this.network && this.network.isConnected) {
             this.network.sendExitCameraView();
         }
-
-        console.log(`[Game] Exited camera view: ${exitedCameraId}`);
     }
 
     /**
@@ -1567,8 +1528,6 @@ class Game {
 
         // Update monitor assignments
         this.updateMonitorCameraAssignments();
-
-        console.log(`[Game] Camera placed: ${camera.id}`);
     }
 
     /**
@@ -1586,8 +1545,6 @@ class Game {
 
         // Update monitor assignments
         this.updateMonitorCameraAssignments();
-
-        console.log(`[Game] Camera picked up: ${cameraId}`);
     }
 
     /**
@@ -1607,8 +1564,6 @@ class Game {
             this.controls.pitch = rotation.pitch || 0;
             this.controls.yaw = rotation.yaw || 0;
         }
-
-        console.log(`[Game] Camera adjusted: ${cameraId}`);
     }
 
     /**

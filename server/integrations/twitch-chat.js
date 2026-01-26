@@ -58,13 +58,11 @@ class TwitchChat {
                 this.connected = true;
                 this.status = 'connected';
                 this.lastError = null;
-                console.log(`[TwitchChat] Connected to #${this.currentChannel}`);
             });
 
             this.client.on('disconnected', (reason) => {
                 this.connected = false;
                 this.status = 'disconnected';
-                console.log(`[TwitchChat] Disconnected: ${reason}`);
             });
 
             await this.client.connect();

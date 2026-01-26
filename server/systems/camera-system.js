@@ -128,7 +128,6 @@ class CameraSystem {
 
         // Check limits
         if (!this.canCreateCamera(type)) {
-            console.log(`[CameraSystem] Camera limit reached for type: ${type}`);
             return null;
         }
 
@@ -149,7 +148,6 @@ class CameraSystem {
         };
 
         this.cameras.set(camera.id, camera);
-        console.log(`[CameraSystem] Created ${type} camera: ${camera.id} at (${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)})`);
 
         return camera;
     }
@@ -175,7 +173,6 @@ class CameraSystem {
             }
         }
 
-        console.log(`[CameraSystem] Removed camera: ${cameraId}`);
         return true;
     }
 
@@ -286,8 +283,6 @@ class CameraSystem {
         // Clamp limits to reasonable values (1-20)
         this.limits.security = Math.max(1, Math.min(20, securityLimit));
         this.limits.stream = Math.max(1, Math.min(20, streamLimit));
-
-        console.log(`[CameraSystem] Limits updated - Security: ${this.limits.security}, Stream: ${this.limits.stream}`);
     }
 
     /**
@@ -387,10 +382,6 @@ class CameraSystem {
         // Also remove from active viewers
         this.activeViewers.delete(playerId);
 
-        if (removedIds.length > 0) {
-            console.log(`[CameraSystem] Cleaned up ${removedIds.length} cameras for disconnected player: ${playerId}`);
-        }
-
         return removedIds;
     }
 
@@ -399,8 +390,6 @@ class CameraSystem {
      * Called when server starts in dev mode
      */
     initializeDevCameras() {
-        console.log('[CameraSystem] Dev mode: Creating 4 starting security cameras');
-
         // Place 4 cameras in the center of the spawn room (at origin)
         // Arranged in a 2x2 grid on the floor, facing outward
         const devCameras = [
@@ -417,9 +406,6 @@ class CameraSystem {
                 { pitch: 0, yaw: cam.yaw, roll: 0 },
                 'floor_item'  // ownerId indicates it's on the floor
             );
-            if (camera) {
-                console.log(`[CameraSystem] Dev mode: Created camera ${camera.id} at (${cam.x}, ${cam.z})`);
-            }
         }
     }
 

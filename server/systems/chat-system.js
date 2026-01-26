@@ -106,8 +106,6 @@ class ChatSystem {
             timestamp: chatMessage.timestamp
         });
 
-        console.log(`[Chat] ${chatMessage.senderName}: ${chatMessage.text}`);
-
         // Notify external listeners (e.g., Discord relay)
         if (this.onMessageSent) {
             this.onMessageSent({
@@ -161,8 +159,6 @@ class ChatSystem {
             timestamp: chatMessage.timestamp,
             color: chatMessage.color
         });
-
-        console.log(`[StreamChat] [${platform}] ${username}: ${text}`);
 
         // Notify external listeners (e.g., Discord relay for Twitch messages)
         if (this.onStreamMessageReceived) {

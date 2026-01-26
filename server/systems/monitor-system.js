@@ -33,7 +33,6 @@ class MonitorSystem {
                 });
             }
         }
-        console.log(`[MonitorSystem] Initialized ${monitorCount} monitors for room at (${roomCell.x}, ${roomCell.z})`);
     }
 
     /**
@@ -74,7 +73,6 @@ class MonitorSystem {
         }
 
         config.cameraId = cameraId;
-        console.log(`[MonitorSystem] Assigned camera ${cameraId} to monitor ${monitorId}`);
         return true;
     }
 
@@ -97,12 +95,10 @@ class MonitorSystem {
     lockViewer(monitorId, playerId) {
         const existingViewer = this.activeViewers.get(monitorId);
         if (existingViewer && existingViewer !== playerId) {
-            console.log(`[MonitorSystem] Monitor ${monitorId} already locked by ${existingViewer}`);
             return false;
         }
 
         this.activeViewers.set(monitorId, playerId);
-        console.log(`[MonitorSystem] Player ${playerId} locked monitor ${monitorId}`);
         return true;
     }
 
@@ -119,7 +115,6 @@ class MonitorSystem {
         }
 
         this.activeViewers.delete(monitorId);
-        console.log(`[MonitorSystem] Player ${playerId} released monitor ${monitorId}`);
         return true;
     }
 
@@ -200,9 +195,6 @@ class MonitorSystem {
                 releasedMonitors.push(monitorId);
             }
         }
-        if (releasedMonitors.length > 0) {
-            console.log(`[MonitorSystem] Released ${releasedMonitors.length} monitors for disconnected player: ${playerId}`);
-        }
         return releasedMonitors;
     }
 
@@ -219,9 +211,6 @@ class MonitorSystem {
                 this.activeViewers.delete(monitorId);
                 removedMonitors.push(monitorId);
             }
-        }
-        if (removedMonitors.length > 0) {
-            console.log(`[MonitorSystem] Removed ${removedMonitors.length} monitors for room at (${roomCell.x}, ${roomCell.z})`);
         }
         return removedMonitors;
     }

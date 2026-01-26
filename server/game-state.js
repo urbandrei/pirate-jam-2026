@@ -97,7 +97,6 @@ class GameState {
 
             if (cameraEntity) {
                 item.linkedCameraId = cameraEntity.id;
-                console.log(`[GameState] Created security camera item with linked camera: ${item.id} -> ${cameraEntity.id}`);
             }
         }
 
@@ -110,8 +109,6 @@ class GameState {
      * Must match the room positions in WorldState.initializeDevRooms()
      */
     _createDevRoomObjects() {
-        console.log('[GameState] Dev mode: Creating room objects');
-
         const devRooms = [
             { x: -1, z: -2, type: 'farming' },
             { x: 2, z: -1, type: 'cafeteria' },
@@ -122,16 +119,12 @@ class GameState {
         for (const room of devRooms) {
             if (room.type === 'farming') {
                 plantSystem.createSoilPlotsForCell(room.x, room.z, this.worldObjects);
-                console.log(`[GameState] Dev mode: Created soil plots for farming room at (${room.x}, ${room.z})`);
             } else if (room.type === 'processing') {
                 stationSystem.createStationsForCell(this.worldObjects, room.x, room.z);
-                console.log(`[GameState] Dev mode: Created stations for processing room at (${room.x}, ${room.z})`);
             } else if (room.type === 'cafeteria') {
                 applianceSystem.createAppliancesForCell(this.worldObjects, room.x, room.z);
-                console.log(`[GameState] Dev mode: Created appliances for cafeteria room at (${room.x}, ${room.z})`);
             } else if (room.type === 'dorm') {
                 bedSystem.createBedsForCell(this.worldObjects, room.x, room.z);
-                console.log(`[GameState] Dev mode: Created beds for dorm room at (${room.x}, ${room.z})`);
             }
         }
     }
@@ -209,13 +202,11 @@ class GameState {
                         pitch: 0,
                         roll: 0
                     };
-                    console.log(`[GameState] Disconnecting player ${peerId} dropped camera ${item.linkedCameraId} to floor`);
                 }
             }
 
             // Add item back to world
             this.worldObjects.set(item.id, item);
-            console.log(`[GameState] Player ${peerId} disconnected, dropped ${item.type} at (${item.position.x.toFixed(2)}, ${item.position.y.toFixed(2)}, ${item.position.z.toFixed(2)})`);
         }
 
         this.players.delete(peerId);
@@ -265,7 +256,6 @@ class GameState {
      */
     setPlayerLimit(limit) {
         this.playerLimit = Math.max(1, Math.min(50, limit));
-        console.log(`[GameState] Player limit set to ${this.playerLimit}`);
     }
 
     /**
@@ -303,7 +293,6 @@ class GameState {
         if (player) {
             player.alive = false;
             player.playerState = 'dead';
-            console.log(`[GameState] Player ${peerId} deactivated`);
         }
     }
 
@@ -320,7 +309,6 @@ class GameState {
             // Respawn at center
             player.position = { x: 0, y: player.type === 'pc' ? 0.9 : 0, z: 0 };
             player.velocity = { x: 0, y: 0, z: 0 };
-            console.log(`[GameState] Player ${peerId} reactivated`);
         }
     }
 
@@ -362,7 +350,6 @@ class GameState {
         }
 
         player.displayName = name;
-        console.log(`[GameState] Player ${peerId} set name to: ${name}`);
 
         return { success: true, name: name };
     }
@@ -508,8 +495,6 @@ class GameState {
 
             const seed = itemSystem.createItem('seed', position);
             this.worldObjects.set(seed.id, seed);
-
-            console.log(`[GameState] Spawned seed at (${x.toFixed(1)}, 0.25, ${z.toFixed(1)}) [${seedCount + 1}/${this.maxSeeds}]`);
         }
     }
 }

@@ -72,10 +72,8 @@ if (USE_HTTPS) {
         key: fs.readFileSync(SSL_KEY_PATH)
     };
     server = https.createServer(sslOptions, app);
-    console.log('Starting with HTTPS (SSL enabled)');
 } else {
     server = http.createServer(app);
-    console.log('Starting with HTTP (no SSL certificates found)');
 }
 
 // Enable CORS for all origins (required for itch.io)
@@ -274,11 +272,9 @@ app.post('/api/dev-server', express.json(), (req, res) => {
 
     if (url && typeof url === 'string') {
         devServerUrl = url.trim() || null;
-        console.log(`[Server] Dev server URL set to: ${devServerUrl}`);
         res.json({ success: true, url: devServerUrl });
     } else if (url === null || url === '') {
         devServerUrl = null;
-        console.log('[Server] Dev server URL cleared');
         res.json({ success: true, url: null });
     } else {
         res.status(400).json({ error: 'Invalid URL format' });
@@ -347,9 +343,7 @@ messageHandler.onPlayerJoined = (player) => {
 // Auto-connect integrations if credentials are configured via environment
 if (TWITCH_CHANNEL) {
     twitchChat.connect(TWITCH_CHANNEL).then(result => {
-        if (result.success) {
-            console.log(`[Twitch] Auto-connected to #${TWITCH_CHANNEL}`);
-        } else {
+        if (!result.success) {
             console.error(`[Twitch] Auto-connect failed: ${result.error}`);
         }
     });
@@ -361,9 +355,7 @@ if (DISCORD_BOT_TOKEN && DISCORD_CHAT_CHANNEL_ID) {
         DISCORD_CHAT_CHANNEL_ID,
         DISCORD_COMMANDS_CHANNEL_ID || null
     ).then(result => {
-        if (result.success) {
-            console.log('[Discord] Auto-connected');
-        } else {
+        if (!result.success) {
             console.error(`[Discord] Auto-connect failed: ${result.error}`);
         }
     });
@@ -625,7 +617,6 @@ NeedsSystem.setDevMode(isDevMode);
 
 // Socket.IO event handling
 io.on('connection', (socket) => {
-    console.log(`Client connected: ${socket.id}`);
 
     // Store socket in player manager
     playerManager.handleConnection(socket.id, socket);
@@ -637,13 +628,11 @@ io.on('connection', (socket) => {
 
     // Handle voice audio data from VR players (binary transmission)
     socket.on('voice', (audioData) => {
-        console.log(`[Voice] Received voice event from ${socket.id}, data size: ${audioData ? (audioData.length || audioData.byteLength || 'blob') : 'null'}`);
         messageHandler.handleVoice(socket.id, audioData);
     });
 
     // Handle disconnect
     socket.on('disconnect', () => {
-        console.log(`Client disconnected: ${socket.id}`);
 
         // Remove from queue if they were waiting
         playerQueue.removeFromQueue(socket.id);
@@ -676,7 +665,6 @@ io.on('connection', (socket) => {
                 playerManager.sendTo(nextPlayer.peerId, {
                     type: 'QUEUE_READY'
                 });
-                console.log(`[PlayerQueue] Slot opened, notified player ${nextPlayer.peerId}`);
             }
         }
     });
@@ -743,7 +731,6 @@ function gameLoop() {
         for (const player of gameState.getAllPlayers()) {
             const shouldDie = NeedsSystem.updateNeeds(player, networkDeltaSeconds);
             if (shouldDie && player.alive) {
-                console.log(`[NeedsSystem] Player ${player.id} died from needs depletion`);
 
                 // Store death position for body
                 const deathPosition = {
@@ -786,7 +773,6 @@ function gameLoop() {
                     createdAt: Date.now()
                 };
                 gameState.worldObjects.set(bodyObject.id, bodyObject);
-                console.log(`[DeathSystem] Created body for player ${player.id} at (${deathPosition.x.toFixed(2)}, ${deathPosition.z.toFixed(2)})`);
 
                 // Notify the player they died and were teleported
                 playerManager.sendTo(player.id, {
@@ -887,12 +873,10 @@ function gameLoop() {
             if (canJoin) {
                 if (!playerQueue.getDoorOpenTime(player.id)) {
                     playerQueue.markDoorOpened(player.id);
-                    console.log(`[WaitingRoom] Door opened for player ${player.id}`);
                 } else if (playerQueue.hasTimedOut(player.id)) {
                     // Player took too long - move to back of queue
                     playerQueue.moveToBack(player.id);
                     playerManager.sendTo(player.id, { type: 'DOOR_TIMEOUT' });
-                    console.log(`[WaitingRoom] Player ${player.id} timed out, moved to back of queue`);
                     continue;
                 }
             } else {
@@ -929,24 +913,6 @@ function gameLoop() {
 
 // Start server
 server.listen(PORT, () => {
-    const protocol = USE_HTTPS ? 'https' : 'http';
-    const modeText = isDevMode ? 'DEV MODE (localhost)' : 'PRODUCTION';
-    console.log(`
-╔════════════════════════════════════════════╗
-║     Pirate Jam 2026 - Game Server          ║
-╠════════════════════════════════════════════╣
-║  Server running on port ${PORT}               ║
-║  Protocol: ${protocol.toUpperCase().padEnd(30)}║
-║  Mode:     ${modeText.padEnd(30)}║
-║                                            ║
-║  PC Client:  ${protocol}://localhost:${PORT}/pc/    ║
-║  VR Client:  ${protocol}://localhost:${PORT}/vr/    ║
-║                                            ║
-║  Physics:    ${TICK_RATE} Hz                        ║
-║  Network:    ${NETWORK_RATE} Hz                        ║
-╚════════════════════════════════════════════╝
-    `);
-
     // Start game loop
     gameLoop();
 });

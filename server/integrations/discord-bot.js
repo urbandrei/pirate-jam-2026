@@ -66,7 +66,6 @@ class DiscordBot {
                 this.connected = true;
                 this.status = 'connected';
                 this.lastError = null;
-                console.log(`[DiscordBot] Connected as ${this.client.user.tag}`);
             });
 
             this.client.on(Events.Error, (error) => {
@@ -77,7 +76,6 @@ class DiscordBot {
             this.client.on('disconnect', () => {
                 this.connected = false;
                 this.status = 'disconnected';
-                console.log('[DiscordBot] Disconnected');
             });
 
             await this.client.login(token);

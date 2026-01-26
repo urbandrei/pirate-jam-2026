@@ -23,7 +23,6 @@ class PlayerQueue {
      */
     setPlayerLimit(limit) {
         this.playerLimit = Math.max(1, Math.min(50, limit));
-        console.log(`[PlayerQueue] Player limit set to ${this.playerLimit}`);
     }
 
     /**
@@ -53,7 +52,6 @@ class PlayerQueue {
         });
 
         const position = this.queue.length;
-        console.log(`[PlayerQueue] Player ${peerId} added to queue at position ${position}`);
         return position;
     }
 
@@ -66,7 +64,6 @@ class PlayerQueue {
         const index = this.queue.findIndex(p => p.peerId === peerId);
         if (index !== -1) {
             this.queue.splice(index, 1);
-            console.log(`[PlayerQueue] Player ${peerId} removed from queue`);
             return true;
         }
         return false;
@@ -116,7 +113,6 @@ class PlayerQueue {
             return null;
         }
         const player = this.queue.shift();
-        console.log(`[PlayerQueue] Player ${player.peerId} removed from front of queue`);
         return player;
     }
 
@@ -154,9 +150,7 @@ class PlayerQueue {
      * Clear the entire queue
      */
     clear() {
-        const count = this.queue.length;
         this.queue = [];
-        console.log(`[PlayerQueue] Queue cleared (${count} players removed)`);
     }
 
     /**
@@ -167,7 +161,6 @@ class PlayerQueue {
         const entry = this.queue.find(p => p.peerId === peerId);
         if (entry && !entry.doorOpenedAt) {
             entry.doorOpenedAt = Date.now();
-            console.log(`[PlayerQueue] Door opened for ${peerId}`);
         }
     }
 
@@ -202,7 +195,6 @@ class PlayerQueue {
             const entry = this.queue.splice(index, 1)[0];
             entry.doorOpenedAt = null;  // Reset door timer
             this.queue.push(entry);
-            console.log(`[PlayerQueue] Player ${peerId} moved to back of queue (position ${this.queue.length})`);
         }
     }
 

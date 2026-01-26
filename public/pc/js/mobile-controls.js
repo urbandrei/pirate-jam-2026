@@ -64,7 +64,6 @@ export class MobileControls {
 
         // Always show toggle button (allows desktop testing too)
         this.toggleButton.classList.remove('hidden');
-        console.log('[MobileControls] Initialized with touch zones');
     }
 
     cacheElements() {
@@ -75,12 +74,6 @@ export class MobileControls {
         this.jumpButton = document.getElementById('mobile-jump-btn');
         this.interactButton = document.getElementById('mobile-interact-btn');
         this.toggleButton = document.getElementById('mobile-toggle-btn');
-
-        console.log('[MobileControls] Elements found:', {
-            container: !!this.container,
-            dynamicJoystick: !!this.dynamicJoystick,
-            toggleButton: !!this.toggleButton
-        });
     }
 
     setupEventListeners() {

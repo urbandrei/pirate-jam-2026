@@ -4,8 +4,6 @@
  * Handles Int16 PCM data at 16kHz sample rate.
  */
 
-console.log('[VoicePlayback] Module loaded');
-
 export class VoicePlayback {
     constructor() {
         this.audioContext = null;
@@ -33,7 +31,6 @@ export class VoicePlayback {
                 sampleRate: this.sampleRate
             });
             this.isInitialized = true;
-            console.log(`[VoicePlayback] Initialized (sample rate: ${this.audioContext.sampleRate}Hz)`);
             return true;
         } catch (err) {
             console.error('[VoicePlayback] Failed to initialize:', err);
@@ -56,7 +53,6 @@ export class VoicePlayback {
 
         // Ensure AudioContext is running
         if (this.audioContext.state === 'suspended') {
-            console.log('[VoicePlayback] Resuming AudioContext...');
             try {
                 await this.audioContext.resume();
             } catch (err) {
@@ -76,12 +72,6 @@ export class VoicePlayback {
             } else {
                 console.warn('[VoicePlayback] Unknown data type:', typeof audioData);
                 return;
-            }
-
-            // Log periodically
-            if (now - this._lastLogTime > 1000) {
-                console.log(`[VoicePlayback] Playing chunk #${this._chunkCount} from ${senderId}, samples: ${int16Data.length}`);
-                this._lastLogTime = now;
             }
 
             // Convert Int16 to Float32 for Web Audio API
@@ -138,7 +128,6 @@ export class VoicePlayback {
     }
 
     dispose() {
-        console.log('[VoicePlayback] Disposing...');
         this.activeSources.clear();
 
         if (this.audioContext) {
@@ -147,6 +136,5 @@ export class VoicePlayback {
         }
 
         this.isInitialized = false;
-        console.log('[VoicePlayback] Disposed');
     }
 }

@@ -220,8 +220,6 @@ export class SecurityRoomRenderer {
         this.monitors.push(monitor);
         this.monitorById.set(actualMonitorId, monitor);
 
-        console.log(`[SecurityRoomRenderer] Created monitor ${actualMonitorId} at (${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)})`);
-
         return monitor;
     }
 
@@ -237,7 +235,6 @@ export class SecurityRoomRenderer {
         }
 
         this.monitors[monitorIndex].cameraId = cameraId;
-        console.log(`[SecurityRoomRenderer] Assigned camera ${cameraId} to monitor ${monitorIndex}`);
     }
 
     /**
@@ -272,8 +269,6 @@ export class SecurityRoomRenderer {
             monitor.material.map = this.noSignalTexture;
             monitor.material.needsUpdate = true;
         }
-
-        console.log(`[SecurityRoomRenderer] Updated monitor ${monitorId}: ${oldCameraId} -> ${cameraId}`);
     }
 
     /**
@@ -368,7 +363,6 @@ export class SecurityRoomRenderer {
         }
         this.monitors = [];
         this.monitorById.clear();
-        console.log('[SecurityRoomRenderer] Cleared all monitors');
     }
 
     /**
@@ -388,7 +382,5 @@ export class SecurityRoomRenderer {
         if (this.screenGeometry) this.screenGeometry.dispose();
         if (this.frameMaterial) this.frameMaterial.dispose();
         if (this.noSignalTexture) this.noSignalTexture.dispose();
-
-        console.log('[SecurityRoomRenderer] Disposed all monitors');
     }
 }

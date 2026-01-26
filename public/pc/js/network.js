@@ -100,7 +100,6 @@ export class Network {
             this.socket.on('connect', () => {
                 this.playerId = this.socket.id;
                 this.isConnected = true;
-                console.log('Connected with ID:', this.playerId);
                 this.updateStatus('Connected');
 
                 // Don't auto-join - let home page handle joining
@@ -114,18 +113,12 @@ export class Network {
 
             // Handle voice audio from VR players (separate binary event)
             this.socket.on('voice', (payload) => {
-                // Debug log (throttled)
-                if (!this._lastVoiceLog || Date.now() - this._lastVoiceLog > 1000) {
-                    console.log('[Network] Received voice event:', payload ? `senderId=${payload.senderId}, hasData=${!!payload.data}` : 'null payload');
-                    this._lastVoiceLog = Date.now();
-                }
                 if (this.onVoiceReceived && payload && payload.senderId && payload.data) {
                     this.onVoiceReceived(payload.senderId, payload.data);
                 }
             });
 
             this.socket.on('disconnect', () => {
-                console.log('Disconnected from server');
                 this.isConnected = false;
                 this.updateStatus('Disconnected');
                 if (this.onDisconnected) this.onDisconnected();
@@ -143,7 +136,6 @@ export class Network {
     handleMessage(message) {
         switch (message.type) {
             case MSG.JOINED:
-                console.log('Joined game:', message);
                 // Status will be set by main.js after name is confirmed
                 if (this.onJoined) this.onJoined(message.player, message.state);
                 break;
@@ -163,74 +155,62 @@ export class Network {
                 break;
 
             case MSG.GRABBED:
-                console.log('You were grabbed by:', message.grabbedBy);
                 if (this.onGrabbed) this.onGrabbed(message.grabbedBy);
                 break;
 
             case MSG.RELEASED:
-                console.log('You were released');
                 if (this.onReleased) this.onReleased();
                 break;
 
             case MSG.PLAYER_JOINED:
-                console.log('Player joined:', message.player);
                 if (this.onPlayerJoined) this.onPlayerJoined(message.player);
                 break;
 
             case MSG.PLAYER_LEFT:
-                console.log('Player left:', message.playerId);
                 if (this.onPlayerLeft) this.onPlayerLeft(message.playerId);
                 break;
 
             case MSG.INTERACT_SUCCESS:
-                console.log('Interaction succeeded:', message.interactionType);
                 if (this.onInteractSuccess) {
                     this.onInteractSuccess(message.interactionType, message.targetId, message.result);
                 }
                 break;
 
             case MSG.INTERACT_FAIL:
-                console.log('Interaction failed:', message.reason);
                 if (this.onInteractFail) {
                     this.onInteractFail(message.interactionType, message.targetId, message.reason);
                 }
                 break;
 
             case MSG.TIMED_INTERACT_PROGRESS:
-                console.log('Timed interaction started:', message.interactionType, 'duration:', message.duration);
                 if (this.onTimedInteractProgress) {
                     this.onTimedInteractProgress(message.interactionType, message.targetId, message.duration);
                 }
                 break;
 
             case MSG.TIMED_INTERACT_COMPLETE:
-                console.log('Timed interaction complete:', message.interactionType);
                 if (this.onTimedInteractComplete) {
                     this.onTimedInteractComplete(message.interactionType, message.stationId, message.result);
                 }
                 break;
 
             case MSG.TIMED_INTERACT_CANCELLED:
-                console.log('Timed interaction cancelled:', message.reason);
                 if (this.onTimedInteractCancelled) {
                     this.onTimedInteractCancelled(message.reason);
                 }
                 break;
 
             case MSG.SLEEP_MINIGAME_RESULT:
-                console.log('Sleep minigame result:', message.score, message.multiplier);
                 if (this.onSleepMinigameResult) {
                     this.onSleepMinigameResult(message.score, message.multiplier);
                 }
                 break;
 
             case MSG.PLAYER_DIED:
-                console.log('You died at:', message.deathPosition, 'cause:', message.cause);
                 if (this.onPlayerDied) this.onPlayerDied(message.deathPosition, message.cause);
                 break;
 
             case MSG.PLAYER_REVIVED:
-                console.log('Player revived:', message.playerId || 'you');
                 if (message.position && this.onPlayerRevived) {
                     this.onPlayerRevived(message.position, message.needs);
                 }
@@ -238,14 +218,12 @@ export class Network {
 
             // Queue messages
             case 'JOIN_QUEUED':
-                console.log('Game full, added to queue at position:', message.position);
                 if (this.onJoinQueued) {
                     this.onJoinQueued(message.position, message.total, message.playerLimit, message.waitingRoomPosition);
                 }
                 break;
 
             case 'QUEUE_JOINED':
-                console.log('Joined queue at position:', message.position);
                 if (this.onQueueJoined) {
                     this.onQueueJoined(message.position, message.total);
                 }
@@ -258,14 +236,12 @@ export class Network {
                 break;
 
             case 'QUEUE_READY':
-                console.log('Slot available! Can join now.');
                 if (this.onQueueReady) {
                     this.onQueueReady();
                 }
                 break;
 
             case 'JOIN_FROM_QUEUE_FAILED':
-                console.log('Failed to join from queue:', message.reason);
                 if (this.onJoinFromQueueFailed) {
                     this.onJoinFromQueueFailed(message.reason);
                 }
@@ -279,7 +255,6 @@ export class Network {
                 break;
 
             case 'DOOR_TIMEOUT':
-                console.log('Took too long to enter door - moved to back of queue');
                 if (this.onDoorTimeout) {
                     this.onDoorTimeout();
                 }
@@ -293,35 +268,30 @@ export class Network {
                 break;
 
             case MSG.CHAT_FAILED:
-                console.log('Chat message failed:', message.reason);
                 if (this.onChatFailed) {
                     this.onChatFailed(message.reason);
                 }
                 break;
 
             case MSG.NAME_UPDATED:
-                console.log('Name updated to:', message.name);
                 if (this.onNameUpdated) {
                     this.onNameUpdated(message.name);
                 }
                 break;
 
             case MSG.NAME_UPDATE_FAILED:
-                console.log('Name update failed:', message.reason);
                 if (this.onNameUpdateFailed) {
                     this.onNameUpdateFailed(message.reason);
                 }
                 break;
 
             case MSG.PLAYER_MUTED:
-                console.log('Player muted:', message.playerId);
                 if (this.onPlayerMuted) {
                     this.onPlayerMuted(message.playerId, message.duration);
                 }
                 break;
 
             case MSG.PLAYER_KICKED:
-                console.log('Player kicked:', message.playerId);
                 if (this.onPlayerKicked) {
                     this.onPlayerKicked(message.playerId);
                 }
@@ -336,42 +306,36 @@ export class Network {
 
             // Camera messages
             case MSG.CAMERA_PLACED:
-                console.log('Camera placed:', message.camera);
                 if (this.onCameraPlaced) {
                     this.onCameraPlaced(message.camera);
                 }
                 break;
 
             case MSG.CAMERA_PICKED_UP:
-                console.log('Camera picked up:', message.cameraId);
                 if (this.onCameraPickedUp) {
                     this.onCameraPickedUp(message.cameraId);
                 }
                 break;
 
             case MSG.CAMERA_ADJUSTED:
-                console.log('Camera adjusted:', message.cameraId);
                 if (this.onCameraAdjusted) {
                     this.onCameraAdjusted(message.cameraId, message.rotation);
                 }
                 break;
 
             case MSG.CAMERA_LIMITS_UPDATED:
-                console.log('Camera limits updated:', message.limits);
                 if (this.onCameraLimitsUpdated) {
                     this.onCameraLimitsUpdated(message.limits);
                 }
                 break;
 
             case 'CAMERA_ADJUST_STARTED':
-                console.log('Camera adjust started:', message.cameraId, 'by', message.playerId);
                 if (this.onCameraAdjustStarted) {
                     this.onCameraAdjustStarted(message.cameraId, message.playerId);
                 }
                 break;
 
             case 'CAMERA_ADJUST_STOPPED':
-                console.log('Camera adjust stopped:', message.cameraId);
                 if (this.onCameraAdjustStopped) {
                     this.onCameraAdjustStopped(message.cameraId);
                 }
@@ -379,35 +343,30 @@ export class Network {
 
             // Monitor messages
             case 'MONITOR_VIEW_STARTED':
-                console.log('Monitor view started:', message.monitorId, 'camera:', message.cameraId);
                 if (this.onMonitorViewStarted) {
                     this.onMonitorViewStarted(message.monitorId, message.cameraId, message.cameraIds, message.currentIndex);
                 }
                 break;
 
             case 'MONITOR_VIEW_DENIED':
-                console.log('Monitor view denied:', message.monitorId, message.reason);
                 if (this.onMonitorViewDenied) {
                     this.onMonitorViewDenied(message.monitorId, message.reason);
                 }
                 break;
 
             case 'MONITOR_VIEWER_LOCKED':
-                console.log('Monitor viewer locked:', message.monitorId, 'by', message.viewerId);
                 if (this.onMonitorViewerLocked) {
                     this.onMonitorViewerLocked(message.monitorId, message.viewerId);
                 }
                 break;
 
             case 'MONITOR_VIEWER_RELEASED':
-                console.log('Monitor viewer released:', message.monitorId);
                 if (this.onMonitorViewerReleased) {
                     this.onMonitorViewerReleased(message.monitorId);
                 }
                 break;
 
             case 'MONITOR_CAMERA_CHANGED':
-                console.log('Monitor camera changed:', message.monitorId, 'to', message.cameraId);
                 if (this.onMonitorCameraChanged) {
                     this.onMonitorCameraChanged(message.monitorId, message.cameraId);
                 }

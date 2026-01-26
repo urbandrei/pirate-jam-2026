@@ -148,7 +148,6 @@ function updateItemRot(worldObjects, currentTime) {
             obj.type = 'trash';
             obj.stackCount = 1; // Trash doesn't stack
             rottedItems.push(id);
-            console.log(`[ItemSystem] Item ${id} rotted into trash after ${ageSeconds.toFixed(0)}s`);
         }
     }
 

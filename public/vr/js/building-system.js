@@ -67,8 +67,6 @@ export class BuildingSystem {
         this.createPalette();
         this.createRoomTypePalette();
         this.createGhostBlock();
-
-        console.log('[BuildingSystem] Initialized');
     }
 
     createMaterials() {
@@ -250,7 +248,6 @@ export class BuildingSystem {
      */
     toggleRotation() {
         this.currentRotation = this.currentRotation === 0 ? 1 : 0;
-        console.log(`[BuildingSystem] Rotation: ${this.currentRotation === 0 ? 'East-West' : 'North-South'}`);
 
         // Update grabbed block geometry if holding a 1x2
         if (this.grabbedBlock && this.grabbedBlock.userData.blockType === '1x2') {
@@ -413,7 +410,6 @@ export class BuildingSystem {
      * Request room type conversion from server
      */
     requestRoomConversion(gridX, gridZ) {
-        console.log(`[BuildingSystem] Requesting room conversion at (${gridX}, ${gridZ}) to ${this.selectedRoomType}`);
         this.network.send(createConvertRoomMessage(gridX, gridZ, this.selectedRoomType));
     }
 
@@ -457,8 +453,6 @@ export class BuildingSystem {
         };
         this.grabbedHand = hand;
         this.scene.add(this.grabbedBlock);
-
-        console.log(`[BuildingSystem] Grabbed ${blockType} block, rotation=${this.currentRotation}`);
     }
 
     /**
@@ -469,7 +463,6 @@ export class BuildingSystem {
 
         const gridCoords = this.getGrabbedBlockGridPosition();
         if (!gridCoords) {
-            console.log('[BuildingSystem] Block not over replica');
             return;
         }
 
@@ -478,12 +471,10 @@ export class BuildingSystem {
 
         // Check if placement is valid
         if (!this.canPlace(gridCoords.x, gridCoords.z, blockType, rotation)) {
-            console.log(`[BuildingSystem] Cannot place at (${gridCoords.x}, ${gridCoords.z})`);
             return;
         }
 
         // Send placement request to server
-        console.log(`[BuildingSystem] Requesting placement at (${gridCoords.x}, ${gridCoords.z}), type=${blockType}, rotation=${rotation}, roomType=${this.selectedRoomType}`);
         this.network.send(createPlaceBlockMessage(gridCoords.x, gridCoords.z, blockType, rotation, this.selectedRoomType));
     }
 
@@ -681,7 +672,6 @@ export class BuildingSystem {
         // Skip if version hasn't changed
         if (worldState.version === this.lastWorldVersion) return;
 
-        console.log(`[BuildingSystem] World state updated, version=${worldState.version}`);
         this.worldState = worldState;
         this.lastWorldVersion = worldState.version;
 
@@ -873,8 +863,6 @@ export class BuildingSystem {
      * Cleanup resources
      */
     dispose() {
-        console.log('[BuildingSystem] Disposing...');
-
         // Release any grabbed block
         this.releaseBlock();
 
@@ -911,7 +899,5 @@ export class BuildingSystem {
 
         // Clear room type swatches
         this.roomTypeSwatches = [];
-
-        console.log('[BuildingSystem] Disposed');
     }
 }

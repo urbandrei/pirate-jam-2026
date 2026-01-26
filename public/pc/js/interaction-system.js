@@ -272,7 +272,6 @@ export class InteractionSystem {
         };
 
         this._showProgressBar();
-        console.log(`[InteractionSystem] Started timed interaction: ${type} for ${duration}ms`);
     }
 
     /**
@@ -298,7 +297,6 @@ export class InteractionSystem {
             const distance = Math.sqrt(dx * dx + dz * dz);
 
             if (distance > INTERACTION_RANGE * 1.5) { // Slightly larger range for tolerance
-                console.log('[InteractionSystem] Player moved out of range during timed interaction');
                 this.cancelTimedInteraction();
                 return { complete: false, cancelled: true };
             }
@@ -318,7 +316,6 @@ export class InteractionSystem {
      */
     cancelTimedInteraction() {
         if (this.timedInteraction) {
-            console.log('[InteractionSystem] Cancelled timed interaction');
             this.timedInteraction = null;
             this._hideProgressBar();
 
@@ -333,7 +330,6 @@ export class InteractionSystem {
      */
     completeTimedInteraction() {
         if (this.timedInteraction) {
-            console.log('[InteractionSystem] Completed timed interaction');
             this.timedInteraction = null;
             this._hideProgressBar();
         }

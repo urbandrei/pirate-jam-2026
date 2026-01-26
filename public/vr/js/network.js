@@ -77,7 +77,6 @@ export class Network {
             this.socket.on('connect', () => {
                 this.playerId = this.socket.id;
                 this.isConnected = true;
-                console.log('Connected with ID:', this.playerId);
                 this.updateStatus('Connected! Enter VR to play');
 
                 // Send join request as VR player (with password if set)
@@ -92,7 +91,6 @@ export class Network {
             });
 
             this.socket.on('disconnect', () => {
-                console.log('Disconnected from server');
                 this.isConnected = false;
                 this.updateStatus('Disconnected');
                 if (this.onDisconnected) this.onDisconnected();
@@ -110,7 +108,6 @@ export class Network {
     handleMessage(message) {
         switch (message.type) {
             case MSG.JOINED:
-                console.log('Joined game as VR player:', message);
                 this.updateStatus('Ready - Enter VR to play');
                 break;
 
@@ -125,12 +122,10 @@ export class Network {
                 break;
 
             case MSG.PLAYER_JOINED:
-                console.log('Player joined:', message.player);
                 if (this.onPlayerJoined) this.onPlayerJoined(message.player);
                 break;
 
             case MSG.PLAYER_LEFT:
-                console.log('Player left:', message.playerId);
                 if (this.onPlayerLeft) this.onPlayerLeft(message.playerId);
                 break;
 
@@ -166,7 +161,6 @@ export class Network {
                 break;
 
             case 'REJECTED':
-                console.log('Connection rejected:', message.reason);
                 this.updateStatus('Rejected: ' + message.reason);
                 if (this.onRejected) {
                     this.onRejected(message.reason);

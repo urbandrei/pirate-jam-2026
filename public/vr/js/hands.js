@@ -543,7 +543,6 @@ export class Hands {
             try {
                 pose = frame.getPose(inputSpace, referenceSpace);
             } catch (poseError) {
-                console.debug('Could not get controller pose:', poseError.message);
                 handMesh.visible = false;
                 return;
             }

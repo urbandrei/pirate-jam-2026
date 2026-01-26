@@ -80,9 +80,6 @@ export class CameraPlacementSystem {
         this._createPreviewOverlay();
         this._showPlayerMesh();
         document.addEventListener('keydown', this._onKeyDown);
-
-        const walls = this.getWalls();
-        console.log(`[CameraPlacement] Activated - look at a wall to place camera (${walls?.length || 0} walls available)`);
     }
 
     deactivate() {
@@ -93,8 +90,6 @@ export class CameraPlacementSystem {
         this._removePreviewOverlay();
         this._hidePlayerMesh();
         document.removeEventListener('keydown', this._onKeyDown);
-
-        console.log('[CameraPlacement] Deactivated');
     }
 
     _createPreviewMesh() {
